@@ -412,7 +412,11 @@ async function handleRevisionReport(uids) {
   for (const item of result.collected || []) {
     await addFeedback(
       item.uid,
-      { text: item.feedback, collected_at: item.collected_at || new Date().toISOString() },
+      {
+        text: item.feedback,
+        notes: item.notes || [],
+        collected_at: item.collected_at || new Date().toISOString(),
+      },
       { source_url: item.page_url || null }
     );
     stored++;

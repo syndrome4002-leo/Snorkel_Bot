@@ -41,6 +41,41 @@ var SnorkelBot = {
     );
   },
 
+  /** One line, whitespace collapsed, curly quotes and dashes folded. */
+  normText(value) {
+    return String(value == null ? '' : value)
+      .replace(/\u00a0/g, ' ')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201c\u201d]/g, '"')
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+  },
+
+  /** Loose comparison for a label: case, trailing punctuation and "(optional)". */
+  normLabel(value) {
+    return this.normText(value)
+      .toLowerCase()
+      .replace(/^\[[^\]]*\]\s*/, '')
+      .replace(/^\([^)]*\)\s*/, '')
+      .replace(/\s*\(optional\)\s*$/, '')
+      .replace(/[\s:;.,]+$/, '')
+      .trim();
+  },
+
+  /** Keeps paragraph breaks but tidies trailing space and runs of blank lines. */
+  cleanBlock(value) {
+    return String(value == null ? '' : value)
+      .replace(/\r\n?/g, '\n')
+      .replace(/\u00a0/g, ' ')
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+$/, ''))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+/, '')
+      .replace(/\s+$/, '');
+  },
+
   text(el) {
     if (!el) return '';
     // innerText (not textContent) so the DOM's own line breaks survive and the

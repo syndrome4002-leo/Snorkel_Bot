@@ -131,66 +131,127 @@
   // ---------------------------------------------------------- feedback ----
 
   /*
-   * Reviewer feedback, on a task that has been sent back.
+   * Reviewer feedback, read from the Task Notes sidebar.
    *
-   * Lifted from snorkel_ext/content.js, which solved the two awkward parts:
-   * the panel is a collapsible whose content region UNMOUNTS while collapsed
-   * (so it has to be expanded before reading), and the region is found through
-   * aria-controls rather than DOM position. Reading .whitespace-pre-line blocks
-   * keeps the message and leaves out the "Do you disagree?" control.
+   * Ported from stn_ext/src/notes.js, which gets three things right that a
+   * document-wide search for a "Reviewer Feedback" button does not:
    *
-   * Unlike that extension this does not use the clipboard: the text is returned
-   * to the service worker directly, so no clipboard permission is needed and
-   * nothing is disturbed if you happen to have something copied.
+   *   1. A COLLAPSED CARD KEEPS NO BODY IN THE DOM. The form is a Radix
+   *      accordion and unmounts closed content, so a card that happens to be
+   *      shut reads as empty. Every wanted card is opened first, with a pause
+   *      between clicks and a settle afterwards.
+   *   2. There are TWO notes worth having — "Reviewer Feedback" and
+   *      "Automated feedback" — not one.
+   *   3. The prose sits in .whitespace-pre-line OR .whitespace-pre-wrap. Taking
+   *      only the former misses the other kind entirely.
+   *
+   * Everything is scoped to the sidebar panel so a collapsible elsewhere on the
+   * form cannot be mistaken for a note.
    */
-  function findFeedbackHeader() {
-    for (const button of document.querySelectorAll('button[aria-controls]')) {
-      if ((button.textContent || '').trim().startsWith('Reviewer Feedback')) return button;
-    }
-    return null;
+  const NOTES_PANEL = '[data-testid="collapsible-sidebar-panel"]';
+  const WANTED_NOTES = ['Reviewer Feedback', 'Automated feedback'];
+
+  function isNoteHeader(el) {
+    return (
+      el.tagName === 'BUTTON' &&
+      !!el.getAttribute('aria-controls') &&
+      el.getAttribute('aria-expanded') != null &&
+      !!el.querySelector(':scope > div')
+    );
   }
 
-  function feedbackRegion(header) {
+  function noteHeaders() {
+    // The panel is the right scope. Falling back to the whole document keeps
+    // this working if the sidebar is ever restructured — a wanted title is
+    // still required, so nothing unrelated gets swept in.
+    const panel = document.querySelector(NOTES_PANEL) || document;
+    return Array.from(panel.querySelectorAll('button[aria-controls]')).filter(isNoteHeader);
+  }
+
+  function noteTitle(header) {
+    const first = header.querySelector(':scope > div');
+    return first ? SnorkelBot.normText(SnorkelBot.text(first)) : '';
+  }
+
+  function isWantedNote(title) {
+    const t = SnorkelBot.normLabel(title);
+    return WANTED_NOTES.some((w) => SnorkelBot.normLabel(w) === t);
+  }
+
+  function noteBody(header) {
     const id = header.getAttribute('aria-controls');
-    return id ? document.getElementById(id) : null;
+    const region = id ? document.getElementById(id) : null;
+    if (!region) return '';
+
+    // The prose only — the controls beneath it are not part of the note.
+    const prose = region.querySelectorAll('.whitespace-pre-line, .whitespace-pre-wrap');
+    if (prose.length) {
+      return Array.from(prose)
+        .map((node) => SnorkelBot.cleanBlock(SnorkelBot.text(node)))
+        .filter(Boolean)
+        .join('\n\n');
+    }
+    const grouped = region.querySelector('.space-y-12');
+    return SnorkelBot.cleanBlock(SnorkelBot.text(grouped || region));
   }
 
-  function readFeedback(region) {
-    const blocks = region.querySelectorAll('.whitespace-pre-line');
-    if (blocks.length) {
-      return Array.from(blocks)
-        .map((block) => block.innerText)
-        .join('\n\n')
-        .trim();
+  /** Opens the wanted cards that are shut, so their bodies exist to be read. */
+  async function expandNotes() {
+    let opened = 0;
+    for (const header of noteHeaders()) {
+      if (header.getAttribute('aria-expanded') !== 'false') continue;
+      if (!isWantedNote(noteTitle(header))) continue;
+      SnorkelBot.click(header);
+      opened++;
+      await SnorkelBot.sleep(120);
     }
-    const first = region.querySelector('.space-y-12');
-    return SnorkelBot.text(first || region);
+    if (opened) await SnorkelBot.sleep(200);
+    return opened;
+  }
+
+  /** [{ title, body }] for the notes actually present, in WANTED_NOTES order. */
+  function noteSections() {
+    const headers = noteHeaders();
+    const out = [];
+    for (const wanted of WANTED_NOTES) {
+      for (const header of headers) {
+        if (SnorkelBot.normLabel(noteTitle(header)) !== SnorkelBot.normLabel(wanted)) continue;
+        const body = noteBody(header);
+        if (!body) continue;
+        out.push({ title: SnorkelBot.normText(noteTitle(header)), body });
+      }
+    }
+    return out;
   }
 
   SnorkelBot.on('COPY_FEEDBACK', async (msg) => {
     assertOnReviewPage();
 
-    const header = await SnorkelBot.waitFor(findFeedbackHeader, {
+    // Wait for the sidebar rather than for one particular card: which notes are
+    // present depends on how far the review got.
+    await SnorkelBot.waitFor(() => noteHeaders().length > 0, {
       timeout: msg.timeout || 30000,
-      label: 'the "Reviewer Feedback" panel',
+      label: 'the Task Notes sidebar',
     });
 
-    if (header.getAttribute('aria-expanded') === 'false') {
-      SnorkelBot.click(header);
-      await SnorkelBot.sleep(300);
+    const opened = await expandNotes();
+    const sections = noteSections();
+
+    if (!sections.length) {
+      throw new Error(
+        'The Task Notes sidebar is here but holds no Reviewer Feedback or Automated feedback.'
+      );
     }
 
-    const region = await SnorkelBot.waitFor(() => feedbackRegion(header), {
-      timeout: 10000,
-      label: 'the feedback panel to open',
-    });
-
-    const text = readFeedback(region);
-    if (!text) throw new Error('The Reviewer Feedback panel is open but empty.');
+    // Each note under its own heading, so the two are still tellable apart
+    // after they have been joined into one stored string.
+    const text = sections.map((n) => `${n.title}\n\n${n.body}`).join('\n\n');
 
     return {
       uid: findUid(),
       feedback: text,
+      notes: sections,
+      expanded: opened,
       page_url: location.href,
       collected_at: new Date().toISOString(),
     };
