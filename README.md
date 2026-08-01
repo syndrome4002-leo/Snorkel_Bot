@@ -4,8 +4,8 @@ Two pieces that work together:
 
 | Folder | What it is |
 | --- | --- |
-| [extension/](extension/) | Chrome MV3 extension that drives `experts.snorkel-ai.com` |
-| [server/](server/) | Node server that commands the extension and writes to Firebase |
+| [snorkel_extension/](snorkel_extension/) | Chrome MV3 extension that drives `experts.snorkel-ai.com` |
+| [snorkel_server/](snorkel_server/) | Node server that commands the extension and writes to Firebase |
 
 The server never touches the browser and the extension never touches Firebase.
 They talk over a single WebSocket.
@@ -92,13 +92,14 @@ schema_version = "1.3"
 ### 1. Server
 
 ```bash
-cd server
+cd snorkel_server
 npm install
 npm start
 ```
 
-`server/.env` and `server/serviceAccount.json` are already in place for Firebase
-project **`snorkel-fe3eb`**. Both are git-ignored, and the key file is `chmod 600`.
+`snorkel_server/.env` and `snorkel_server/serviceAccount.json` are already in
+place for Firebase project **`snorkel-fe3eb`**. Both are git-ignored, and the key
+file is `chmod 600`.
 
 ### Credentials on another machine
 
@@ -111,18 +112,18 @@ order, so the same checkout works anywhere:
    FIREBASE_SERVICE_ACCOUNT_JSON=$(base64 -w0 serviceAccount.json)
    ```
 2. **`FIREBASE_SERVICE_ACCOUNT`** — a path to the key file. **Relative paths
-   resolve from the `server/` folder, not the working directory**, and it
-   defaults to `serviceAccount.json`. So copying `server/` anywhere and dropping
-   the key next to `package.json` just works — no path to edit, and it does not
-   matter whether you start the server from `server/`, from the repo root, or
-   from a systemd unit with no working directory.
+   resolve from the `snorkel_server/` folder, not the working directory**, and
+   it defaults to `serviceAccount.json`. So copying `snorkel_server/` anywhere
+   and dropping the key next to `package.json` just works — no path to edit, and
+   it does not matter whether you start the server from `snorkel_server/`, from
+   the repo root, or from a systemd unit with no working directory.
 3. **Application Default Credentials** — `gcloud auth application-default login`,
    or the metadata server on GCE / Cloud Run, where no key file exists at all.
 
 The startup log prints which one it used. A path you set explicitly that turns
 out to be missing is reported as an error rather than silently falling through.
 
-**To deploy:** copy `server/`, run `npm install`, and either put
+**To deploy:** copy `snorkel_server/`, run `npm install`, and either put
 `serviceAccount.json` beside `package.json` or set
 `FIREBASE_SERVICE_ACCOUNT_JSON`. Then point the extension's popup at that host's
 WebSocket URL (`ws://<host>:8787/extension`) and set a `BOT_TOKEN` on both sides,
@@ -143,7 +144,7 @@ Set `FIREBASE_ENABLED=false` to skip Firestore deliberately (dry run).
 ### 2. Extension
 
 1. `chrome://extensions` → enable **Developer mode**
-2. **Load unpacked** → select the [extension/](extension/) folder
+2. **Load unpacked** → select the [snorkel_extension/](snorkel_extension/) folder
 3. Click the extension icon. The dot should turn green (`connected`). If you set
    `BOT_TOKEN` in `.env`, put the same value in the popup's Token field and hit
    **Save & reconnect**.
@@ -182,7 +183,7 @@ Derived from your saved `snorkel_homepage.html` and
 `snorkel_sentinel_project_UI.html`, and verified against both files with a real
 DOM parser.
 
-**Home page** — [extension/content/homepage.js](extension/content/homepage.js)
+**Home page** — [snorkel_extension/content/homepage.js](snorkel_extension/content/homepage.js)
 
 | Thing | Selector |
 | --- | --- |
@@ -191,7 +192,7 @@ DOM parser.
 | New vs. resume | resume cards are prefixed with an assignment UUID (`029c1c0c-…-CDG_Sentinel_Ultra_00000`); the new one is `Submission-CDG_Sentinel_Ultra_00000` |
 | Start button | the `<button>` inside that anchor |
 
-**Review page** — [extension/content/sentinel.js](extension/content/sentinel.js)
+**Review page** — [snorkel_extension/content/sentinel.js](snorkel_extension/content/sentinel.js)
 
 | Thing | Selector |
 | --- | --- |

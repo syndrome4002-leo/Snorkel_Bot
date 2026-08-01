@@ -8,14 +8,14 @@ const bool = (value, fallback) => {
 };
 
 /**
- * The server/ directory, wherever this checkout happens to live. Everything
- * path-shaped is resolved against this rather than process.cwd(), so the server
- * behaves the same whether it is started from server/, from the repo root, or
- * by a systemd unit with no working directory at all.
+ * The snorkel_server/ directory, wherever this checkout happens to live.
+ * Everything path-shaped is resolved against this rather than process.cwd(), so
+ * the server behaves the same whether it is started from snorkel_server/, from
+ * the repo root, or by a systemd unit with no working directory at all.
  */
 export const serverRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 
-/** Absolute paths pass through; relative ones are anchored to server/. */
+/** Absolute paths pass through; relative ones are anchored to snorkel_server/. */
 const resolveFromServerRoot = (p) => (p ? (path.isAbsolute(p) ? p : path.resolve(serverRoot, p)) : '');
 
 export const config = {
@@ -36,7 +36,7 @@ export const config = {
      *   1. FIREBASE_SERVICE_ACCOUNT_JSON — the key itself, as raw JSON or base64.
      *      Use this on hosts where you cannot ship a file (containers, PaaS, CI).
      *   2. FIREBASE_SERVICE_ACCOUNT / GOOGLE_APPLICATION_CREDENTIALS — a path,
-     *      relative to server/ unless absolute. Defaults to serviceAccount.json.
+     *      relative to snorkel_server/ unless absolute. Defaults to serviceAccount.json.
      *   3. Application Default Credentials (gcloud login, GCE/Cloud Run metadata).
      */
     credentialsJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '',

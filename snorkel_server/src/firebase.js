@@ -66,7 +66,7 @@ async function loadCredential() {
     if (!credentialsPathIsDefault) {
       throw new Error(
         `Service-account file not found at ${credentialsPath}. Set FIREBASE_SERVICE_ACCOUNT ` +
-          `(relative paths are resolved from the server/ folder), or pass the key inline ` +
+          `(relative paths are resolved from the snorkel_server/ folder), or pass the key inline ` +
           `via FIREBASE_SERVICE_ACCOUNT_JSON.`
       );
     }
