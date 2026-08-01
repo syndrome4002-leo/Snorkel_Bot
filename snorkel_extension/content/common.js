@@ -48,13 +48,31 @@ var SnorkelBot = {
     return (el.innerText || el.textContent || '').trim();
   },
 
-  /** Real user-ish click: some React handlers need the pointer events too. */
-  click(el) {
+  /**
+   * Clicks an element the way the browser does.
+   *
+   * Default is the element's native .click() — a single event, which is what a
+   * real press ultimately produces. The synthetic pointer/mouse sequence is
+   * available via {sequence: true} for handlers that genuinely need it, but it
+   * is NOT the default: firing five events can make an app run its handler more
+   * than once (say a mouseup handler and a click handler both acting), and
+   * fabricating 'pointerdown' as a MouseEvent rather than a PointerEvent can
+   * push a component down a different code path than a real click would.
+   */
+  click(el, { sequence = false } = {}) {
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
+
+    if (!sequence && typeof el.click === 'function') {
+      if (typeof el.focus === 'function') el.focus();
+      el.click();
+      return;
+    }
+
     for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
-      el.dispatchEvent(
-        new MouseEvent(type, { bubbles: true, cancelable: true, view: window })
-      );
+      const Ctor = type.startsWith('pointer') && typeof PointerEvent === 'function'
+        ? PointerEvent
+        : MouseEvent;
+      el.dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true, view: window }));
     }
   },
 

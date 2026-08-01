@@ -179,6 +179,25 @@
     };
   });
 
+  /*
+   * The download button navigates the page to a signed URL, which trips the
+   * form's beforeunload guard and puts a "Leave site?" dialog in the way. A
+   * native dialog cannot be dismissed by an extension, so unload-guard.js
+   * (MAIN world) silences the handler while we click and restores it after.
+   */
+  function suppressUnloadPrompt() {
+    window.dispatchEvent(new CustomEvent('snorkelbot:suppress-unload'));
+  }
+
+  function restoreUnloadPrompt() {
+    window.dispatchEvent(new CustomEvent('snorkelbot:restore-unload'));
+  }
+
+  SnorkelBot.on('RESTORE_UNLOAD', () => {
+    restoreUnloadPrompt();
+    return { restored: true };
+  });
+
   SnorkelBot.on('CLICK_DOWNLOAD', async (msg) => {
     assertOnReviewPage();
 
@@ -199,7 +218,20 @@
       throw new Error('The download button is disabled — no task file is attached yet.');
     }
 
-    SnorkelBot.click(btn);
-    return { clicked: true, file_name: fileName };
+    suppressUnloadPrompt();
+    // Safety net: if the background never gets to send RESTORE_UNLOAD (the tab
+    // is closed, the flow errors out), put the site's guard back anyway rather
+    // than leaving the page unprotected.
+    const restoreTimer = setTimeout(restoreUnloadPrompt, 30000);
+
+    try {
+      SnorkelBot.click(btn);
+    } catch (err) {
+      clearTimeout(restoreTimer);
+      restoreUnloadPrompt();
+      throw err;
+    }
+
+    return { clicked: true, file_name: fileName, unload_prompt_suppressed: true };
   });
 })();

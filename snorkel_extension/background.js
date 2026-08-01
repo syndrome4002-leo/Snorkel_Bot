@@ -307,6 +307,12 @@ async function runSentinelFlow(requestId, options) {
   progress(requestId, 'scraped', `UID ${scraped.uid}`);
 
   // 4b — download (listener armed before the click)
+  //
+  // CLICK_DOWNLOAD silences the page's beforeunload guard first: the button
+  // navigates the tab to a signed URL, and Chrome asks "Leave site?" before it
+  // can tell that the response is a download. That dialog is native, so no
+  // extension can dismiss it — it has to be prevented. The guard goes back on
+  // as soon as the download has been observed.
   progress(requestId, 'download', scraped.file_name || '(filename unknown)');
   const capture = armDownloadCapture(options.downloadTimeout || 45000);
   let item = null;
@@ -316,6 +322,9 @@ async function runSentinelFlow(requestId, options) {
   } catch (err) {
     capture.cancel();
     throw err;
+  } finally {
+    // Runs on the error path too, so the site's guard is never left off.
+    await askTab(tab.id, { type: 'RESTORE_UNLOAD' }).catch(() => {});
   }
 
   let savedName = null;

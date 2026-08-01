@@ -232,8 +232,19 @@ function startJob(options) {
     job.step = step;
   })
     .then((result) => {
-      job.status = 'succeeded';
       job.result = result;
+      // Downloading the file is not the job. If the record never reached
+      // Firestore the Dropbox step was skipped too, so reporting "succeeded"
+      // would be a lie — the task is half done and sitting in the spool.
+      if (!result.snorkel.saved) {
+        job.status = 'failed';
+        job.error =
+          `${result.snorkel.warning} The file was downloaded and the record is queued in ` +
+          `pending-tasks.jsonl — fix Firebase, then POST /api/flush and POST /api/upload.`;
+        console.error(`[job] ${job.id} INCOMPLETE — ${result.snorkel.warning}`);
+        return;
+      }
+      job.status = 'succeeded';
       console.log(`[job] ${job.id} succeeded (${result.snorkel.task.UID})`);
     })
     .catch((err) => {

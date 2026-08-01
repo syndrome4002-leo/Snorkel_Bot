@@ -27,8 +27,16 @@ export async function locateTaskFile(task) {
   const root = path.resolve(config.downloadsDir);
   const problems = [];
 
+  // Windows paths are case-insensitive, and Chrome does not always report the
+  // same casing as os.homedir() ("C:\Users\Goran\Downloads" vs
+  // "C:\Users\goran\Downloads"). Comparing raw strings there would reject the
+  // server's own downloads folder as "outside" itself.
+  const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+  const foldedRoot = fold(root);
+
   for (const candidate of candidates) {
-    if (candidate !== root && !candidate.startsWith(root + path.sep)) {
+    const folded = fold(candidate);
+    if (folded !== foldedRoot && !folded.startsWith(foldedRoot + path.sep)) {
       problems.push(`${candidate} is outside the downloads folder (${root})`);
       continue;
     }

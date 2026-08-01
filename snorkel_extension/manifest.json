@@ -26,6 +26,17 @@
         "https://experts.snorkel-ai.com/*"
       ],
       "js": [
+        "content/unload-guard.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://experts.snorkel-ai.com/*"
+      ],
+      "js": [
         "content/common.js",
         "content/homepage.js",
         "content/sentinel.js"

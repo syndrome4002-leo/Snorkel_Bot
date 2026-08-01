@@ -22,14 +22,37 @@ export const PENDING_FILE = path.join(serverRoot, 'pending-tasks.jsonl');
 let db = null;
 let initError = null;
 let credentialSource = 'none';
+let missingKeyPath = null;
 
 const SETUP_HINT = (projectId) =>
   `Firestore has not been created in project "${projectId || 'your project'}" yet. ` +
   `Open https://console.firebase.google.com/project/${projectId}/firestore and click ` +
   `"Create database" (pick a region — it is permanent), then restart this server.`;
 
-/** Turns the opaque "5 NOT_FOUND" gRPC error into something actionable. */
+/** Turns opaque gRPC / auth errors into something actionable. */
 function describe(err) {
+  const message = err ? String(err.message || err) : 'unknown error';
+
+  // The classic symptom of a checkout that arrived without its key file:
+  // firebase-admin falls back to ADC and then cannot work out which project it
+  // is meant to talk to. Name the file rather than repeating Google's wording.
+  if (/Unable to detect a Project Id/i.test(message)) {
+    if (missingKeyPath) {
+      return (
+        `No Firebase credentials. Expected the service-account key at ${missingKeyPath}, ` +
+        `but there is no file there — it is git-ignored, so it does not travel with a ` +
+        `clone or copy of the project. Put the key at that path (or set ` +
+        `FIREBASE_SERVICE_ACCOUNT_JSON to its contents) and restart. ` +
+        `This is the Google Cloud project id, nothing to do with your task records.`
+      );
+    }
+    return (
+      `Firebase could not determine which project to use. Set FIREBASE_PROJECT_ID, or ` +
+      `supply a service-account key. This is the Google Cloud project id, nothing to do ` +
+      `with your task records.`
+    );
+  }
+
   if (err && err.code === 5) return SETUP_HINT(config.firebase.projectId);
   if (err && err.code === 7) {
     return `Permission denied writing to Firestore. Check that the service account ` +
@@ -78,6 +101,11 @@ async function loadCredential() {
           `via FIREBASE_SERVICE_ACCOUNT_JSON.`
       );
     }
+    // Remembered so a later ADC failure can name the file that was missing,
+    // instead of surfacing a bare "Unable to detect a Project Id".
+    missingKeyPath = credentialsPath;
+    console.warn(`[firebase] no service-account file at ${credentialsPath}`);
+    console.warn('[firebase] falling back to application default credentials');
   }
 
   credentialSource = 'application-default credentials';

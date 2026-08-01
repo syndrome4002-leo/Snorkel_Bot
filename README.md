@@ -365,6 +365,22 @@ panels, these files are the only places to update.
   *before* the click so the event can't be missed. If no download is observed
   within 45s, it falls back to the name shown on the page and flags
   `download_confirmed: false` in `meta`.
+- **Clicks are native, not synthetic.** `SnorkelBot.click()` calls the element's
+  own `.click()`. An earlier version fired a five-event pointer/mouse sequence,
+  which can make an app run its handler twice (a `mouseup` handler *and* a
+  `click` handler both acting) and pushes components down a different path than
+  a real press. `{sequence: true}` still fires the full sequence where needed.
+- **The "Leave site?" prompt is suppressed around the download click.**
+  [content/unload-guard.js](snorkel_extension/content/unload-guard.js) runs in
+  the page's MAIN world at `document_start` — early enough that its
+  `beforeunload` listener is registered before the app's, so
+  `stopImmediatePropagation()` suppresses them. It is off by default and armed
+  only for the click, then restored, so the form's unsaved-changes guard keeps
+  working the rest of the time. Needs Chrome 111+ for `world: "MAIN"`.
+  It deliberately never writes `event.returnValue`: on `BeforeUnloadEvent` that
+  is a string where `''` means "no dialog", but on the legacy `Event` interface
+  it is a boolean where *any falsy assignment cancels the event* — i.e. asks for
+  the very dialog we are trying to prevent.
 - **The MV3 worker gets evicted when idle.** A 30-second alarm wakes it to
   re-establish the socket, and reconnects use capped exponential backoff, so the
   extension recovers on its own if you restart the server.
