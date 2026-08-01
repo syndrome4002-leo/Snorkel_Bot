@@ -11,9 +11,11 @@ function when(iso) {
 /** "in build" would otherwise become two class names. */
 const statusClass = (status) => String(status).trim().toLowerCase().replace(/\s+/g, '-');
 
-function TaskRow({ task, showMachine }) {
+function TaskRow({ task, showMachine, onMarkSent }) {
   const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState(false);
   const status = task.task_status || '—';
+  const feedbacks = Array.isArray(task.feedbacks) ? task.feedbacks : [];
 
   return (
     <>
@@ -26,7 +28,24 @@ function TaskRow({ task, showMachine }) {
         </td>
         <td>{task.file_uploaded ? 'yes' : 'no'}</td>
         <td>{when(task.updated_at)}</td>
-        <td>
+        <td className="row-actions">
+          {onMarkSent && status === 'in build' ? (
+            <button
+              className="link"
+              disabled={sending}
+              title="You have submitted this on Snorkel — makes it eligible for feedback"
+              onClick={async () => {
+                setSending(true);
+                try {
+                  await onMarkSent(task.UID);
+                } finally {
+                  setSending(false);
+                }
+              }}
+            >
+              {sending ? 'sending…' : 'mark as sent'}
+            </button>
+          ) : null}
           <button className="link" onClick={() => setOpen((value) => !value)}>
             {open ? 'hide' : 'details'}
           </button>
@@ -38,6 +57,24 @@ function TaskRow({ task, showMachine }) {
             <div className="muted">
               {task.dropbox_path || 'not uploaded'} &middot; created {when(task.created_at)}
             </div>
+
+            {feedbacks.length ? (
+              <div className="feedbacks">
+                <h4>
+                  Reviewer feedback ({feedbacks.length} round{feedbacks.length === 1 ? '' : 's'})
+                </h4>
+                {feedbacks.map((entry, index) => (
+                  <div key={index} className="feedback">
+                    <div className="muted">
+                      round {index + 1} &middot; {when(entry.collected_at)}
+                    </div>
+                    <pre>{entry.text}</pre>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <h4>Task info</h4>
             <pre>{task.initial_infos || '(no infos captured)'}</pre>
           </td>
         </tr>
@@ -46,7 +83,7 @@ function TaskRow({ task, showMachine }) {
   );
 }
 
-export default function TaskTable({ tasks, note, onRefresh, showMachine = false }) {
+export default function TaskTable({ tasks, note, onRefresh, onMarkSent, showMachine = false }) {
   const [filter, setFilter] = useState('');
 
   const rows = useMemo(() => {
@@ -93,7 +130,9 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false 
           </thead>
           <tbody>
             {rows.length ? (
-              rows.map((task) => <TaskRow key={task.UID} task={task} showMachine={showMachine} />)
+              rows.map((task) => (
+                <TaskRow key={task.UID} task={task} showMachine={showMachine} onMarkSent={onMarkSent} />
+              ))
             ) : (
               <tr>
                 <td colSpan={showMachine ? 7 : 6} className="muted">

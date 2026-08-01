@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { firebaseConfigured, missingConfigKeys } from '@/lib/firebase';
-import { watchServerStatus } from '@/lib/commands';
+import { markSent, watchServerStatus } from '@/lib/commands';
 import { findInBuild, watchTasks } from '@/lib/tasks';
 import { addMachine, getSelected, listMachines, removeMachine, setSelected } from '@/lib/machines';
 import MachinePicker from '@/components/MachinePicker';
@@ -133,7 +133,12 @@ export default function Page() {
         </section>
       )}
 
-      <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} />
+      <TaskTable
+        tasks={tasks}
+        note={tasksNote}
+        showMachine={!selected}
+        onMarkSent={selected ? (uid) => markSent(selected, uid) : null}
+      />
     </>
   );
 }

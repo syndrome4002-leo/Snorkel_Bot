@@ -37,6 +37,12 @@ export const PENDING_FILE = path.join(serverRoot, 'pending-tasks.jsonl');
  */
 export const TASK_STATUS_STARTED = 'in build';
 
+/** Submitted on Snorkel and waiting for a reviewer. Set from the dashboard. */
+export const TASK_STATUS_SENT = 'sent';
+
+/** The reviewer sent it back; `feedbacks` holds what they said. */
+export const TASK_STATUS_NEEDS_REVISION = 'needs revision';
+
 let db = null;
 let initError = null;
 let credentialSource = 'none';
@@ -334,6 +340,89 @@ export async function markUploaded(uid, extra = {}) {
   await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
   console.log(`[firebase] ${config.firebase.collection}/${uid} -> file_uploaded=true (still "in build")`);
   return patch;
+}
+
+/** Marks a task as submitted and awaiting review. */
+export async function markSent(uid) {
+  if (!db) throw new Error(describe(initError));
+  const patch = {
+    task_status: TASK_STATUS_SENT,
+    sent_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
+  console.log(`[firebase] ${config.firebase.collection}/${uid} -> task_status="${TASK_STATUS_SENT}"`);
+  return patch;
+}
+
+/**
+ * Records reviewer feedback and flips the task to "needs revision".
+ *
+ * `feedbacks` is an append-only array, so a task sent back several times keeps
+ * every round rather than only the latest. A round already stored with the same
+ * text is not added twice — the 30-minute check will see the same feedback
+ * again on every pass until the task is resubmitted.
+ */
+export async function addFeedback(uid, entry, extra = {}) {
+  if (!db) throw new Error(describe(initError));
+
+  const ref = db.collection(config.firebase.collection).doc(String(uid));
+  const snapshot = await ref.get();
+  const existing = snapshot.exists ? snapshot.data() : null;
+  const feedbacks = Array.isArray(existing?.feedbacks) ? existing.feedbacks : [];
+
+  const duplicate = feedbacks.some((item) => item && item.text === entry.text);
+  const next = duplicate ? feedbacks : [...feedbacks, entry];
+
+  const now = new Date().toISOString();
+  const record = {
+    UID: String(uid),
+    machine_id: existing?.machine_id || machineId(),
+    task_status: TASK_STATUS_NEEDS_REVISION,
+    feedbacks: next,
+    updated_at: now,
+    ...extra,
+  };
+  // A submission the reviewer sent back that this bot never downloaded is still
+  // a task worth having — it just starts life needing revision.
+  if (!snapshot.exists) {
+    record.created_at = now;
+    record.file_uploaded = false;
+    record.initial_infos = existing?.initial_infos || '';
+  }
+
+  await ref.set(record, { merge: true });
+  console.log(
+    `[firebase] ${config.firebase.collection}/${uid} -> task_status="${TASK_STATUS_NEEDS_REVISION}", ` +
+      `${next.length} feedback round(s)${duplicate ? ' (unchanged)' : ''}${snapshot.exists ? '' : ' [new task]'}`
+  );
+  return { record, created: !snapshot.exists, duplicate, rounds: next.length };
+}
+
+/** The subset of `uids` that are marked as sent, i.e. awaiting a reviewer. */
+export async function findSentTasks(uids) {
+  if (!db || !uids.length) return [];
+  const found = [];
+  // Read one at a time by document id: an "in" query is capped at 30 values and
+  // these lists are short.
+  for (const uid of uids) {
+    const snap = await db.collection(config.firebase.collection).doc(String(uid)).get();
+    if (snap.exists && snap.data().task_status === TASK_STATUS_SENT) {
+      found.push({ id: snap.id, ...snap.data() });
+    }
+  }
+  return found;
+}
+
+/** Which of `uids` this database has never heard of. */
+export async function findUnknownUids(uids) {
+  if (!db || !uids.length) return [];
+  const unknown = [];
+  for (const uid of uids) {
+    const snap = await db.collection(config.firebase.collection).doc(String(uid)).get();
+    if (!snap.exists) unknown.push(String(uid));
+  }
+  return unknown;
 }
 
 /**

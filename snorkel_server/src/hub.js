@@ -200,6 +200,12 @@ export class ExtensionHub {
       case 'heartbeat':
         break;
 
+      case 'revisions':
+        // Not a reply to anything — the extension raises this on its own timer.
+        this.#emit({ ...msg, role });
+        if (this.onRevisions) this.onRevisions(msg);
+        break;
+
       default:
         console.log(`[hub] unhandled frame from ${role}:`, msg.type);
     }

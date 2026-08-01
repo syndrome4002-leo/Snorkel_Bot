@@ -48,6 +48,10 @@ import {
   markUploaded,
   findPendingUpload,
   findInBuildTask,
+  markSent,
+  addFeedback,
+  findSentTasks,
+  findUnknownUids,
   firebaseStatus,
   flushPending,
   pendingCount,
@@ -372,6 +376,54 @@ app.post('/api/upload', async (req, res) => {
   }
 });
 
+// --------------------------------------------------------- revisions ----
+
+/*
+ * The extension reports every submission the site wants revised, every 30
+ * minutes. Two of those are worth acting on:
+ *
+ *   - one we already know about and marked as "sent" — the reviewer has come
+ *     back with feedback
+ *   - one this database has never seen — somebody else's task, or one started
+ *     before the bot existed; it becomes a task that starts life needing revision
+ *
+ * Anything else in the list is already in build or already recorded as needing
+ * revision, so there is nothing new to fetch.
+ */
+async function handleRevisionReport(uids) {
+  if (!uids.length) return { considered: 0, collected: 0 };
+
+  const [sent, unknown] = await Promise.all([findSentTasks(uids), findUnknownUids(uids)]);
+  const wanted = [...new Set([...sent.map((t) => t.UID), ...unknown])];
+
+  if (!wanted.length) {
+    console.log(`[revisions] ${uids.length} awaiting revision, none of them new`);
+    return { considered: uids.length, collected: 0 };
+  }
+
+  console.log(
+    `[revisions] ${wanted.length} to collect feedback for ` +
+      `(${sent.length} previously sent, ${unknown.length} not seen before)`
+  );
+
+  const result = await hub.command('snorkel', { type: 'collect_feedback', uids: wanted });
+
+  let stored = 0;
+  for (const item of result.collected || []) {
+    await addFeedback(
+      item.uid,
+      { text: item.feedback, collected_at: item.collected_at || new Date().toISOString() },
+      { source_url: item.page_url || null }
+    );
+    stored++;
+  }
+  for (const failure of result.failures || []) {
+    console.warn(`[revisions] could not read feedback for ${failure.uid}: ${failure.error}`);
+  }
+
+  return { considered: uids.length, collected: stored, failed: (result.failures || []).length };
+}
+
 // ----------------------------------------------------- the whole thing ----
 
 /** Snorkel step then Dropbox step, with no caller involvement in between. */
@@ -637,7 +689,34 @@ startStatusHeartbeat(async () => ({
   downloads_dir: config.downloadsDir,
 }));
 
+/*
+ * The extension raises this by itself every 30 minutes; nothing asked for it,
+ * so it is handled here rather than as a command reply.
+ */
+hub.onRevisions = async (msg) => {
+  if (msg.error) return console.warn('[revisions] extension check failed:', msg.error);
+  try {
+    await handleRevisionReport(msg.uids || []);
+  } catch (err) {
+    console.error('[revisions] handling failed:', err.message);
+  }
+};
+
 watchCommands(async (command, report) => {
+  // Marks a task submitted, which is what later makes it eligible for feedback
+  // collection. The dashboard cannot write to Firestore itself, so it asks.
+  if (command.type === 'mark_sent') {
+    if (!command.uid) throw new Error('mark_sent needs a uid.');
+    await markSent(command.uid);
+    return { step: 'done', uid: command.uid, task_status: 'sent' };
+  }
+
+  if (command.type === 'check_revisions') {
+    const report_ = await hub.command('snorkel', { type: 'check_revisions' });
+    const outcome = await handleRevisionReport(report_.revisions?.map((r) => r.uid) || []);
+    return { step: 'done', ...outcome };
+  }
+
   if (command.type !== 'start_new_task') {
     throw new Error(`Unknown command type "${command.type}".`);
   }

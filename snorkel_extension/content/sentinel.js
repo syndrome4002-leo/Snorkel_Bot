@@ -128,6 +128,74 @@
     );
   }
 
+  // ---------------------------------------------------------- feedback ----
+
+  /*
+   * Reviewer feedback, on a task that has been sent back.
+   *
+   * Lifted from snorkel_ext/content.js, which solved the two awkward parts:
+   * the panel is a collapsible whose content region UNMOUNTS while collapsed
+   * (so it has to be expanded before reading), and the region is found through
+   * aria-controls rather than DOM position. Reading .whitespace-pre-line blocks
+   * keeps the message and leaves out the "Do you disagree?" control.
+   *
+   * Unlike that extension this does not use the clipboard: the text is returned
+   * to the service worker directly, so no clipboard permission is needed and
+   * nothing is disturbed if you happen to have something copied.
+   */
+  function findFeedbackHeader() {
+    for (const button of document.querySelectorAll('button[aria-controls]')) {
+      if ((button.textContent || '').trim().startsWith('Reviewer Feedback')) return button;
+    }
+    return null;
+  }
+
+  function feedbackRegion(header) {
+    const id = header.getAttribute('aria-controls');
+    return id ? document.getElementById(id) : null;
+  }
+
+  function readFeedback(region) {
+    const blocks = region.querySelectorAll('.whitespace-pre-line');
+    if (blocks.length) {
+      return Array.from(blocks)
+        .map((block) => block.innerText)
+        .join('\n\n')
+        .trim();
+    }
+    const first = region.querySelector('.space-y-12');
+    return SnorkelBot.text(first || region);
+  }
+
+  SnorkelBot.on('COPY_FEEDBACK', async (msg) => {
+    assertOnReviewPage();
+
+    const header = await SnorkelBot.waitFor(findFeedbackHeader, {
+      timeout: msg.timeout || 30000,
+      label: 'the "Reviewer Feedback" panel',
+    });
+
+    if (header.getAttribute('aria-expanded') === 'false') {
+      SnorkelBot.click(header);
+      await SnorkelBot.sleep(300);
+    }
+
+    const region = await SnorkelBot.waitFor(() => feedbackRegion(header), {
+      timeout: 10000,
+      label: 'the feedback panel to open',
+    });
+
+    const text = readFeedback(region);
+    if (!text) throw new Error('The Reviewer Feedback panel is open but empty.');
+
+    return {
+      uid: findUid(),
+      feedback: text,
+      page_url: location.href,
+      collected_at: new Date().toISOString(),
+    };
+  });
+
   // ---------------------------------------------------------- handlers ----
 
   function assertOnReviewPage() {

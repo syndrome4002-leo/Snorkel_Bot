@@ -31,7 +31,7 @@
 
         ".validate": "newData.hasChildren(['type', 'status', 'requested_at'])",
 
-        "type": { ".validate": "newData.val() == 'start_new_task'" },
+        "type": { ".validate": "newData.val() == 'start_new_task' || newData.val() == 'mark_sent' || newData.val() == 'check_revisions'" },
         "status": {
           ".validate": "newData.val() == 'pending' || newData.val() == 'running' || newData.val() == 'succeeded' || newData.val() == 'failed' || newData.val() == 'expired'"
         },

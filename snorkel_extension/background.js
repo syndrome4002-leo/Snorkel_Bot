@@ -26,6 +26,8 @@ const DEFAULT_CONFIG = {
 
 const REVIEW_URL_RE = /\/projects\/[^/]+\/submission-[^/]+\/review/i;
 const KEEPALIVE_ALARM = 'snorkel-bot-keepalive';
+const REVISION_ALARM = 'snorkel-bot-revision-check';
+const REVISION_EVERY_MINUTES = 30;
 
 let ws = null;
 let busy = false;
@@ -130,6 +132,34 @@ function scheduleReconnect() {
 
 async function handleServerMessage(msg) {
   if (msg.type === 'ping') return void send({ type: 'pong', at: Date.now() });
+
+  // The server asks for feedback only for the UIDs it cares about, so this
+  // never opens more task pages than necessary.
+  if (msg.type === 'collect_feedback') {
+    const requestId = msg.requestId || String(Date.now());
+    if (busy) {
+      return void send({ type: 'result', requestId, ok: false, error: 'Extension is busy.' });
+    }
+    busy = true;
+    try {
+      const result = await collectFeedback(requestId, msg.uids || [], msg.options || {});
+      send({ type: 'result', requestId, ok: true, ...result });
+    } catch (err) {
+      send({ type: 'result', requestId, ok: false, error: String((err && err.message) || err), code: err && err.code });
+    } finally {
+      busy = false;
+    }
+  }
+
+  if (msg.type === 'check_revisions') {
+    const requestId = msg.requestId || String(Date.now());
+    try {
+      const result = await listRevisions();
+      send({ type: 'result', requestId, ok: true, ...result });
+    } catch (err) {
+      send({ type: 'result', requestId, ok: false, error: String((err && err.message) || err) });
+    }
+  }
 
   if (msg.type === 'start_sentinel') {
     const requestId = msg.requestId || String(Date.now());
@@ -385,6 +415,84 @@ async function runSentinelFlow(requestId, options) {
   };
 }
 
+// --------------------------------------------------------- revisions ----
+
+/*
+ * Every half hour, reload the home page and see which submissions the site is
+ * asking to have revised.
+ *
+ * The page is reloaded rather than read as-is because the assignments list is
+ * rendered once at load; a tab left open for hours would keep showing what was
+ * true when it opened.
+ */
+async function listRevisions() {
+  const cfg = await getConfig();
+  const tab = await openHome(cfg.homeUrl);
+  const res = await askTab(tab.id, { type: 'LIST_REVISIONS', projectKey: cfg.projectKey });
+  log(`revision check: ${res.count} awaiting revision`);
+  return { revisions: res.revisions, count: res.count, checked_at: new Date().toISOString() };
+}
+
+/** Reports what is awaiting revision; the server decides what to do about it. */
+async function reportRevisions() {
+  if (busy) return log('revision check skipped — a task is running');
+  if (!ws || ws.readyState !== WebSocket.OPEN) return log('revision check skipped — not connected');
+
+  busy = true;
+  try {
+    const { revisions, checked_at } = await listRevisions();
+    send({
+      type: 'revisions',
+      uids: revisions.map((r) => r.uid),
+      checked_at,
+    });
+  } catch (err) {
+    log('revision check failed:', err.message);
+    send({ type: 'revisions', uids: [], error: String(err.message || err) });
+  } finally {
+    busy = false;
+  }
+}
+
+/**
+ * Opens each submission's task page through its Revise button and reads the
+ * reviewer feedback. One at a time, because they all share the one tab.
+ */
+async function collectFeedback(requestId, uids, options) {
+  const cfg = await getConfig();
+  const collected = [];
+  const failures = [];
+
+  for (const uid of uids) {
+    progress(requestId, 'feedback', uid);
+    try {
+      // Back to the list each time: after reading one task the tab is on that
+      // task's page, and the next Revise button only exists on the home page.
+      const tab = await openHome(options.homeUrl || cfg.homeUrl);
+      await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey: cfg.projectKey });
+      await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 60000);
+      await askTab(tab.id, { type: 'WAIT_READY', timeout: 60000 });
+
+      const res = await askTab(tab.id, { type: 'COPY_FEEDBACK' });
+      collected.push({
+        uid,
+        // The page's own UID is kept when it disagrees with the card's, so a
+        // mismatch is visible in the data rather than silently wrong.
+        page_uid: res.uid || null,
+        feedback: res.feedback,
+        page_url: res.page_url,
+        collected_at: res.collected_at,
+      });
+      progress(requestId, 'feedback_ok', `${uid} (${res.feedback.length} chars)`);
+    } catch (err) {
+      log(`feedback for ${uid} failed:`, err.message);
+      failures.push({ uid, error: String(err.message || err) });
+    }
+  }
+
+  return { collected, failures };
+}
+
 // --------------------------------------------------- popup / lifecycle ----
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -448,10 +556,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // An MV3 worker is evicted when idle. The alarm wakes it up so the socket is
 // re-established (and stays re-established) without the user touching anything.
 chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
+chrome.alarms.create(REVISION_ALARM, { periodInMinutes: REVISION_EVERY_MINUTES });
+
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name !== KEEPALIVE_ALARM) return;
-  if (ws && ws.readyState === WebSocket.OPEN) send({ type: 'heartbeat', at: Date.now() });
-  else connect();
+  if (alarm.name === KEEPALIVE_ALARM) {
+    if (ws && ws.readyState === WebSocket.OPEN) send({ type: 'heartbeat', at: Date.now() });
+    else connect();
+    return;
+  }
+  if (alarm.name === REVISION_ALARM) reportRevisions();
 });
 
 chrome.runtime.onStartup.addListener(() => connect());
