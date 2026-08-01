@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { firebaseConfigured, missingConfigKeys } from '@/lib/firebase';
 import { watchServerStatus } from '@/lib/commands';
-import { watchTasks } from '@/lib/tasks';
+import { findInBuild, watchTasks } from '@/lib/tasks';
 import { addMachine, getSelected, listMachines, removeMachine, setSelected } from '@/lib/machines';
 import MachinePicker from '@/components/MachinePicker';
 import StatusPills from '@/components/StatusPills';
@@ -96,6 +96,9 @@ export default function Page() {
   if (!firebaseConfigured) return <NotConfigured />;
 
   const status = selected ? statuses[selected] : null;
+  // `tasks` is already scoped to the selected machine, so this is that
+  // machine's unfinished task rather than anyone else's.
+  const inBuildTask = selected ? findInBuild(tasks) : null;
 
   return (
     <>
@@ -114,7 +117,12 @@ export default function Page() {
       />
 
       {selected ? (
-        <StartTask machine={selected} serverOnline={Boolean(status?.online)} />
+        <StartTask
+          machine={selected}
+          serverOnline={Boolean(status?.online)}
+          inBuildTask={inBuildTask}
+          taskInFlight={Boolean(status?.task_in_flight)}
+        />
       ) : (
         <section className="card">
           <p className="muted">

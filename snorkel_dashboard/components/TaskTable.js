@@ -8,6 +8,9 @@ function when(iso) {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
 
+/** "in build" would otherwise become two class names. */
+const statusClass = (status) => String(status).trim().toLowerCase().replace(/\s+/g, '-');
+
 function TaskRow({ task, showMachine }) {
   const [open, setOpen] = useState(false);
   const status = task.task_status || '—';
@@ -19,7 +22,7 @@ function TaskRow({ task, showMachine }) {
         {showMachine ? <td className="mono">{task.machine_id || '—'}</td> : null}
         <td className="mono">{task.file_name || '—'}</td>
         <td>
-          <span className={`badge ${status}`}>{status}</span>
+          <span className={`badge ${statusClass(status)}`}>{status}</span>
         </td>
         <td>{task.file_uploaded ? 'yes' : 'no'}</td>
         <td>{when(task.updated_at)}</td>

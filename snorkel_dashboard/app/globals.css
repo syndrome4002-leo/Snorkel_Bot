@@ -136,7 +136,7 @@ pre {
   border: 1px solid var(--line);
 }
 .badge.new { border-color: var(--ok); color: var(--ok); }
-.badge.downloaded { border-color: var(--warn); color: var(--warn); }
+.badge.in-build { border-color: var(--warn); color: var(--warn); }
 
 .gate {
   position: fixed;

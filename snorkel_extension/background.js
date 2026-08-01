@@ -148,9 +148,11 @@ async function handleServerMessage(msg) {
       send({ type: 'result', requestId, ok: true, ...result });
     } catch (err) {
       const error = String((err && err.message) || err);
-      lastRun = { ok: false, at: Date.now(), error };
+      lastRun = { ok: false, at: Date.now(), error, code: err && err.code };
       log('flow failed:', error);
-      send({ type: 'result', requestId, ok: false, error });
+      // The code travels with the message so the dashboard can tell "no task was
+      // available" apart from "something broke".
+      send({ type: 'result', requestId, ok: false, error, code: err && err.code });
     } finally {
       busy = false;
     }
@@ -296,8 +298,27 @@ async function runSentinelFlow(requestId, options) {
   progress(requestId, 'clicked_start', start.href || '');
 
   // 3 — the SPA routes to the review page
+  //
+  // Clicking Start does not always get you a task: the platform can refuse
+  // (daily limit reached, nothing left in the queue, the assignment taken by
+  // somebody else) and simply leave you on /home. That is a normal outcome, not
+  // a broken extension, so it is reported with its own code rather than as a
+  // generic timeout.
   progress(requestId, 'await_review_page');
-  const reviewTab = await waitForUrl(tab.id, REVIEW_URL_RE, 90000);
+  let reviewTab;
+  try {
+    reviewTab = await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 90000);
+  } catch (err) {
+    const stillHome = await getTab(tab.id).then((t) => t && /\/home/i.test(t.url || ''));
+    const failure = new Error(
+      stillHome
+        ? 'Clicked Start but the site stayed on the home page — no task was handed out ' +
+          '(daily limit, empty queue, or the assignment went to someone else).'
+        : `Clicked Start but never reached a task page: ${err.message}`
+    );
+    failure.code = 'START_UNAVAILABLE';
+    throw failure;
+  }
   await waitForTabComplete(reviewTab.id).catch(() => {}); // SPA routes stay 'complete'
   await askTab(tab.id, { type: 'WAIT_READY', timeout: 90000 });
 

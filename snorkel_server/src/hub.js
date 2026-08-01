@@ -185,8 +185,14 @@ export class ExtensionHub {
         this.#emit({ ...msg, role });
         if (!entry) return;
         clearTimeout(entry.timer);
-        if (msg.ok) entry.resolve({ ...msg, progress: entry.progress });
-        else entry.reject(new Error(msg.error || 'The extension reported an unknown failure.'));
+        if (msg.ok) {
+          entry.resolve({ ...msg, progress: entry.progress });
+        } else {
+          const error = new Error(msg.error || 'The extension reported an unknown failure.');
+          // e.g. START_UNAVAILABLE — the site handed out no task.
+          if (msg.code) error.code = msg.code;
+          entry.reject(error);
+        }
         break;
       }
 

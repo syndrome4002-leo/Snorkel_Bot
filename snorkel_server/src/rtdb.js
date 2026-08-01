@@ -99,18 +99,28 @@ export async function publishStatus(snapshot) {
   }
 }
 
+let snapshotSource = null;
+
 export function startStatusHeartbeat(getSnapshot, everyMs = 10000) {
   if (!db) return;
-  const tick = async () => {
-    try {
-      await publishStatus(await getSnapshot());
-    } catch (err) {
-      console.warn('[rtdb] status heartbeat failed:', err.message);
-    }
-  };
-  tick();
-  statusTimer = setInterval(tick, everyMs);
+  snapshotSource = getSnapshot;
+  publishNow();
+  statusTimer = setInterval(publishNow, everyMs);
   statusTimer.unref?.();
+}
+
+/**
+ * Pushes the status straight away instead of waiting for the next beat. Used
+ * when something the dashboard reacts to changes — a run starting or ending —
+ * so the button does not stay wrong for up to ten seconds.
+ */
+export async function publishNow() {
+  if (!db || !snapshotSource) return;
+  try {
+    await publishStatus(await snapshotSource());
+  } catch (err) {
+    console.warn('[rtdb] status publish failed:', err.message);
+  }
 }
 
 export function stopStatusHeartbeat() {
@@ -176,6 +186,9 @@ export function watchCommands(run) {
       await commandRef.update({
         status: 'failed',
         error: String(err.message || err),
+        // e.g. START_UNAVAILABLE (no task was handed out) or TASK_IN_BUILD.
+        // The dashboard reacts to the code rather than matching on wording.
+        error_code: err.code || null,
         finished_at: new Date().toISOString(),
       });
       console.error(`[rtdb] command ${id} failed: ${err.message}`);

@@ -38,7 +38,7 @@ import {
   applyRefreshToken,
 } from './dropbox.js';
 import { updateEnvFile, ENV_PATH } from './envfile.js';
-import { initRtdb, rtdbStatus, startStatusHeartbeat, watchCommands } from './rtdb.js';
+import { initRtdb, rtdbStatus, startStatusHeartbeat, publishNow, watchCommands } from './rtdb.js';
 import { machineId, machineInfo } from './machine.js';
 import {
   initFirebase,
@@ -47,6 +47,7 @@ import {
   getTask,
   markUploaded,
   findPendingUpload,
+  findInBuildTask,
   firebaseStatus,
   flushPending,
   pendingCount,
@@ -90,6 +91,7 @@ app.get('/api/status', async (_req, res) => {
     },
     realtime_db: rtdbStatus(),
     machine: machineInfo(),
+    task_in_flight: Boolean(currentRun()),
     downloads_dir: config.downloadsDir,
     // Tasks scraped successfully but not yet in Firestore, waiting on a flush.
     pending_tasks: pending,
@@ -186,6 +188,89 @@ app.post('/api/flush', async (_req, res) => {
 
 // -------------------------------------------------------- snorkel step ----
 
+/**
+ * Refuses to start a second task while one is still in build.
+ *
+ * The dashboard checks this too, but that check lives in a browser: a second
+ * tab, another machine's dashboard, or a plain curl would sail past it. Here it
+ * holds however the task was started. Downloading a second task before the
+ * first is finished and uploaded would leave two zips in ~/Downloads and make
+ * the pipeline pick the wrong one.
+ *
+ * Pass {"force": true} to override — needed when a task is genuinely stuck in
+ * build and would otherwise wedge this machine for good.
+ */
+/*
+ * Set for as long as a pipeline is in flight.
+ *
+ * The Firestore check below cannot cover the start of a run: the task document
+ * is only written once the download has finished, so for the minute or so the
+ * Snorkel step takes there is nothing in Firestore to find. This closes that
+ * window, and unlike the dashboard's disabled button it survives a page reload
+ * and applies to every caller.
+ */
+let runInFlight = null;
+
+export function currentRun() {
+  return runInFlight;
+}
+
+async function assertNoTaskInBuild(options = {}) {
+  if (options.force) return;
+
+  if (runInFlight) {
+    const error = new Error(
+      `A task is in building (started ${runInFlight.started_at}). Wait for it to finish, ` +
+        `or pass {"force": true} to start another anyway.`
+    );
+    error.code = 'TASK_IN_BUILD';
+    throw error;
+  }
+
+  const existing = await findInBuildTask(machineId()).catch((err) => {
+    // Not being able to check is not a reason to refuse work.
+    console.warn('[server] could not check for a task in build:', err.message);
+    return null;
+  });
+  if (!existing) return;
+
+  const error = new Error(
+    `A task is in building (${existing.UID}). Finish and upload it first, ` +
+      `or pass {"force": true} to start another anyway.`
+  );
+  error.code = 'TASK_IN_BUILD';
+  error.uid = existing.UID;
+  throw error;
+}
+
+/** 409 rather than 500: a task already in build is a conflict, not a fault. */
+function sendError(res, err, where) {
+  const status = err.code === 'TASK_IN_BUILD' ? 409 : 500;
+  if (status !== 409) console.error(`[api] ${where} failed:`, err.message);
+  res.status(status).json({
+    ok: false,
+    error: err.message,
+    ...(err.code ? { code: err.code } : {}),
+    ...(err.uid ? { uid: err.uid } : {}),
+  });
+}
+
+/**
+ * Runs `fn` as the machine's one task. Refuses if another is already in flight
+ * or in build, and always releases, so a thrown error cannot wedge the machine.
+ */
+async function withRunLock(options, fn) {
+  await assertNoTaskInBuild(options);
+  runInFlight = { started_at: new Date().toISOString() };
+  publishNow();
+  try {
+    return await fn();
+  } finally {
+    runInFlight = null;
+    publishNow();
+  }
+}
+
 async function runSnorkelStep(options) {
   const { task, meta, progress } = await hub.startSentinel(options);
   const saved = await saveTask(task, meta);
@@ -206,10 +291,10 @@ app.post('/api/start', async (req, res) => {
     });
   }
   try {
-    res.json({ ok: true, ...(await runSnorkelStep(req.body || {})) });
+    const options = req.body || {};
+    res.json({ ok: true, ...(await withRunLock(options, () => runSnorkelStep(options))) });
   } catch (err) {
-    console.error('[api] /api/start failed:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    sendError(res, err, '/api/start');
   }
 });
 
@@ -291,6 +376,12 @@ app.post('/api/upload', async (req, res) => {
 
 /** Snorkel step then Dropbox step, with no caller involvement in between. */
 async function runFullPipeline(options, onStep = () => {}) {
+  // The lock is taken around the whole pipeline, not just the Snorkel step, so
+  // a second run cannot start while the first is still uploading.
+  return withRunLock(options, () => runPipelineSteps(options, onStep));
+}
+
+async function runPipelineSteps(options, onStep) {
   onStep('snorkel');
   const snorkel = await runSnorkelStep(options);
 
@@ -362,6 +453,7 @@ function startJob(options) {
     .catch((err) => {
       job.status = 'failed';
       job.error = err.message;
+      job.error_code = err.code || null;
       console.error(`[job] ${job.id} failed: ${err.message}`);
     })
     .finally(() => {
@@ -380,6 +472,7 @@ function summarise(job) {
     started_at: job.started_at,
     finished_at: job.finished_at,
     ...(job.error ? { error: job.error } : {}),
+    ...(job.error_code ? { error_code: job.error_code } : {}),
     ...(job.result
       ? {
           uid: job.result.snorkel.task.UID,
@@ -416,8 +509,7 @@ app.post('/api/run', async (req, res) => {
   try {
     res.json({ ok: true, ...(await runFullPipeline(options)) });
   } catch (err) {
-    console.error('[api] /api/run failed:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    sendError(res, err, '/api/run');
   }
 });
 
@@ -442,6 +534,14 @@ async function startNewTask(req, res) {
   const body = req.method === 'GET' ? {} : req.body || {};
   const { async: runAsync = true, ...options } = body;
 
+  // Checked before the job is created so the caller gets a straight 409 rather
+  // than a 202 and a job that fails a moment later.
+  try {
+    await assertNoTaskInBuild(options);
+  } catch (err) {
+    return sendError(res, err, '/start_new_task');
+  }
+
   if (runAsync) {
     const job = startJob(options);
     return res.status(202).json({ ok: true, job: summarise(job), poll: `/api/jobs/${job.id}` });
@@ -450,8 +550,7 @@ async function startNewTask(req, res) {
   try {
     res.json({ ok: true, ...(await runFullPipeline(options)) });
   } catch (err) {
-    console.error('[api] /start_new_task failed:', err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    sendError(res, err, '/start_new_task');
   }
 }
 
@@ -528,6 +627,9 @@ if (queued) {
 await initRtdb();
 
 startStatusHeartbeat(async () => ({
+  // Lets the dashboard block the button during the window where a run has
+  // started but its task document does not exist yet.
+  task_in_flight: Boolean(currentRun()),
   extension_connected: hub.isConnected('snorkel'),
   firebase_ready: firebaseStatus().ready === true,
   dropbox_configured: dropboxConfigured(),

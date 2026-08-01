@@ -1,5 +1,8 @@
 node_modules/
 .next/
 out/
+# Your Firebase web config. Not secret (it ships to every browser), but an
+# env file still has no business in git.
+.env
 .env*.local
 *.log

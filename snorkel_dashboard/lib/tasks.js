@@ -11,6 +11,14 @@ import { firestore } from './firebase';
 
 export const TASKS_COLLECTION = process.env.NEXT_PUBLIC_FIREBASE_COLLECTION || 'Tasks';
 
+/** Matches TASK_STATUS_STARTED on the server: a task that is still being worked on. */
+export const TASK_STATUS_IN_BUILD = 'in build';
+
+/** The task currently in build on this machine, if there is one. */
+export function findInBuild(tasks) {
+  return tasks.find((task) => task.task_status === TASK_STATUS_IN_BUILD) || null;
+}
+
 /**
  * Live task list, newest first. Pass a machine id to see only that machine's
  * work, or '' for all of them.

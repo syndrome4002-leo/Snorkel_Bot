@@ -21,6 +21,15 @@ import { machineId } from './machine.js';
  */
 export const PENDING_FILE = path.join(serverRoot, 'pending-tasks.jsonl');
 
+/*
+ * The two values task_status ever takes.
+ *
+ *   "in build"  the task has been started and downloaded; it is yours to work on
+ *   "new"       the file is in Dropbox and the task is ready to be picked up
+ */
+export const TASK_STATUS_STARTED = 'in build';
+export const TASK_STATUS_UPLOADED = 'new';
+
 let db = null;
 let initError = null;
 let credentialSource = 'none';
@@ -266,10 +275,11 @@ export async function saveTask(task, meta = {}) {
     // Where Chrome put the zip, so the Dropbox step can find it later even
     // across a server restart.
     local_path: meta.download_path || null,
-    // Set up front so the fields always exist and can be queried; the Dropbox
-    // step flips them to true / "new" once the upload lands.
+    // Set up front so the fields always exist and can be queried. "in build" is
+    // the task as it stands right after being started and downloaded — the
+    // Dropbox step flips these to true / "new" once the upload lands.
     file_uploaded: false,
-    task_status: 'downloaded',
+    task_status: TASK_STATUS_STARTED,
     updated_at: new Date().toISOString(),
   };
 
@@ -310,7 +320,7 @@ export async function markUploaded(uid, extra = {}) {
   if (!db) throw new Error(describe(initError));
   const patch = {
     file_uploaded: true,
-    task_status: 'new',
+    task_status: TASK_STATUS_UPLOADED,
     uploaded_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...extra,
@@ -318,6 +328,23 @@ export async function markUploaded(uid, extra = {}) {
   await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
   console.log(`[firebase] ${config.firebase.collection}/${uid} -> file_uploaded=true, task_status="new"`);
   return patch;
+}
+
+/**
+ * The task this machine is still working on, if any.
+ *
+ * Two equality filters need no composite index — Firestore merges the automatic
+ * single-field ones — so this works without any index setup.
+ */
+export async function findInBuildTask(machine) {
+  if (!db) return null;
+  const snap = await db
+    .collection(config.firebase.collection)
+    .where('machine_id', '==', machine)
+    .where('task_status', '==', TASK_STATUS_STARTED)
+    .limit(1)
+    .get();
+  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
 /**

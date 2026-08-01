@@ -27,7 +27,7 @@ that the server hosts, so it shares an origin with the API.
   │                 │  saveTask()                              │ 2. click "Start"
   │   node server   │ ──▶ Tasks/<UID>                          │ 3. scrape + download
   │                 │      file_uploaded: false                ▼
-  │                 │      task_status: "downloaded"   experts.snorkel-ai.com
+  │                 │      task_status: "in build"     experts.snorkel-ai.com
   │                 │                                          │
   │                 │           reads the zip from     ~/Downloads/<file>.zip
   │                 │ ◀─────────────────────────────────────────┘
@@ -53,7 +53,7 @@ that the server hosts, so it shares an origin with the API.
    `chrome.downloads.onCreated` listener armed *before* the click captures the
    real filename Chrome saved. The tab stays open for you to work in.
 4. The server writes `Tasks/<UID>` with `file_uploaded: false` and
-   `task_status: "downloaded"`.
+   `task_status: "in build"`.
 
 **Step 2 — Dropbox** (`POST /api/upload`)
 
@@ -80,7 +80,7 @@ the same task updates the record instead of duplicating it):
 | `file_name` | the filename Chrome actually saved, falling back to the name shown on the page |
 | `initial_infos` | `innerText` of the whole left panel, as plain text |
 | `file_uploaded` | `false` on download, `true` once Dropbox has the file |
-| `task_status` | `"downloaded"` on download, `"new"` once uploaded |
+| `task_status` | `"in build"` when the task is started, `"new"` once uploaded |
 | `source_url` | the review page URL (extra context) |
 | `local_path` | where the zip sits until it is uploaded, then `null` |
 | `dropbox_path` | where it landed in Dropbox |
@@ -343,6 +343,12 @@ made to carry a header — it is protected by its own one-time `state` value.
 `mode` picks which card to click: `new` (default) takes a fresh task,
 `resume` continues one you already claimed, `any` prefers new and falls back.
 
+**One task at a time.** Starting a task while another is `"in build"` on that
+machine is refused with **409** — by the server, so it holds however the task was
+started (dashboard, curl, or a Realtime Database command). Pass
+`{"force": true}` to override, which is the escape hatch when a task is stuck in
+build and would otherwise wedge the machine.
+
 `POST /api/upload` with no `uid` picks the most recently updated task that has
 not been uploaded yet. An already-uploaded task is skipped unless you pass
 `{"force": true}`.
@@ -483,7 +489,7 @@ that uploads go through its API.
 - **Jobs live in memory.** Restarting the server loses the job *list*, never the
   *work*: every durable effect is already in Firestore or on disk by then. A job
   that was mid-flight when the server died leaves the task at
-  `task_status: "downloaded"`, and `POST /api/upload` picks it up again.
+  `task_status: "in build"`, and `POST /api/upload` picks it up again.
 
 ## Not included
 

@@ -17,7 +17,7 @@ const STEPS = [
  * work is the server's once the command is written: closing this tab, or losing
  * the network, does not cancel anything.
  */
-export default function StartTask({ machine, serverOnline }) {
+export default function StartTask({ machine, serverOnline, inBuildTask, taskInFlight }) {
   const [command, setCommand] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -33,6 +33,16 @@ export default function StartTask({ machine, serverOnline }) {
   useEffect(() => detach, [detach]);
 
   async function start() {
+    // Only one task at a time: a second one would download over the first
+    // machine's work before it has been finished and uploaded. Checked here so
+    // nothing is written to the database at all.
+    // taskInFlight covers the window the Firestore check cannot: a run that has
+    // started but whose task document is not written until the download ends.
+    if (inBuildTask || taskInFlight) {
+      window.alert('A task is in building');
+      return;
+    }
+
     setBusy(true);
     setError('');
     setCommand(null);
@@ -46,6 +56,11 @@ export default function StartTask({ machine, serverOnline }) {
         if (['succeeded', 'failed', 'expired'].includes(value.status)) {
           setBusy(false);
           detach();
+          // Snorkel handed out no task — a normal outcome (daily limit, empty
+          // queue), so it is called out rather than buried in the error line.
+          if (value.error_code === 'START_UNAVAILABLE') {
+            window.alert('currently not able to start a new task');
+          }
         }
       });
     } catch (err) {
@@ -77,6 +92,22 @@ export default function StartTask({ machine, serverOnline }) {
                     : ''}
         </span>
       </div>
+
+      {inBuildTask ? (
+        <p className="muted">
+          <strong>{inBuildTask.UID}</strong> is still in build. Finish and upload it before starting
+          another.
+        </p>
+      ) : taskInFlight ? (
+        <p className="muted">A task is being started on this machine.</p>
+      ) : null}
+
+      {command?.error_code === 'START_UNAVAILABLE' ? (
+        <p className="muted">
+          Snorkel did not hand out a task. That usually means a daily limit, an empty queue, or
+          somebody else took the assignment — try again later.
+        </p>
+      ) : null}
 
       {!serverOnline ? (
         <p className="muted">
