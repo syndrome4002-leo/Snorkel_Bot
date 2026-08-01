@@ -1,14 +1,15 @@
 # Snorkel Bot
 
-Two pieces that work together:
+Three pieces that work together:
 
 | Folder | What it is |
 | --- | --- |
 | [snorkel_extension/](snorkel_extension/) | Chrome MV3 extension that drives `experts.snorkel-ai.com` |
-| [snorkel_server/](snorkel_server/) | Node server that commands the extension and writes to Firebase |
+| [dropbox_extension/](dropbox_extension/) | Chrome MV3 extension that drives `dropbox.com` |
+| [snorkel_server/](snorkel_server/) | Node server that commands both extensions and writes to Firebase |
 
-The server never touches the browser and the extension never touches Firebase.
-They talk over a single WebSocket.
+Neither extension touches Firebase, and the server never touches the browser.
+Both extensions connect to the same WebSocket and identify themselves by role.
 
 ---
 
@@ -16,37 +17,59 @@ They talk over a single WebSocket.
 
 ```
   YOU / cron / another service
-        │  POST /api/start
+        │  POST /api/run
         ▼
-  ┌─────────────────┐   ws://localhost:8787/extension    ┌────────────────────┐
-  │  node server    │ ────── start_sentinel ──────────▶  │  chrome extension  │
-  │                 │ ◀───── progress ×5 ─────────────   │  (service worker)  │
-  │                 │ ◀───── result {task, meta} ─────   └─────────┬──────────┘
-  └────────┬────────┘                                              │
-           │ saveTask()                                            │ 1. open /home
-           ▼                                                       │ 2. click "Start"
-  Firestore  Tasks/<UID>                                           │ 3. review page:
-    UID, file_name, initial_infos                                  │    scrape + download
-                                                                   ▼
-                                                          experts.snorkel-ai.com
+  ┌─────────────────┐  ws /extension?role=snorkel   ┌──────────────────────┐
+  │                 │ ──── start_sentinel ───────▶  │  snorkel extension   │
+  │                 │ ◀─── result {task, meta} ───  └──────────┬───────────┘
+  │                 │                                          │ 1. open /home
+  │                 │  saveTask()                              │ 2. click "Start"
+  │   node server   │ ──▶ Tasks/<UID>                          │ 3. scrape + download
+  │                 │      file_uploaded: false                ▼
+  │                 │      task_status: "downloaded"   experts.snorkel-ai.com
+  │                 │                                          │
+  │                 │  ws /extension?role=dropbox     ~/Downloads/<file>.zip
+  │                 │ ──── upload_to_dropbox ────▶  ┌──────────┴───────────┐
+  │                 │ ◀─── GET /tasks/:uid/file ──  │  dropbox extension   │
+  │                 │ ◀─── result {uploaded} ─────  └──────────┬───────────┘
+  └────────┬────────┘                                          │ 4. inject into
+           │ delete the local file                             │    the hidden
+           ▼ markUploaded()                                    │    file input
+  Tasks/<UID>  file_uploaded: true, task_status: "new"          ▼
+                                                          dropbox.com
 ```
 
-Step by step:
+**Step 1 — Snorkel** (`POST /api/start`)
 
-1. **Server asks.** `POST /api/start` → the hub sends
-   `{type:"start_sentinel", requestId}` down the socket and holds the HTTP
+1. The hub sends `{type:"start_sentinel", requestId}` and holds the HTTP
    response open until the extension answers.
-2. **Extension goes home.** The service worker opens (or reuses) a tab on
-   `https://experts.snorkel-ai.com/home`, then asks the content script to find
-   the Sentinel project card and **click its `Start` button**.
-3. **Extension works the review page.** The site routes to
-   `/projects/<id>/submission-<id>/review`. The content script waits for the page
-   to render, scrapes the submission UID and the left-hand info panel, then
-   clicks the task's **Download file** button. The service worker had already
-   armed a `chrome.downloads.onCreated` listener, so it captures the *real*
-   filename Chrome saved to disk. The tab is left open for you to work in.
-4. **Server saves.** The extension sends back `{task, meta}`; the server writes
-   `Tasks/<UID>` to Firestore and returns the stored record as the HTTP response.
+2. The service worker opens (or reuses) a tab on
+   `https://experts.snorkel-ai.com/home` and asks the content script to find the
+   Sentinel project card and **click its `Start` button**.
+3. The site routes to `/projects/<id>/submission-<id>/review`. The content script
+   waits for the page to render, scrapes the submission UID and the left-hand
+   info panel, then clicks the task's **Download file** button. A
+   `chrome.downloads.onCreated` listener armed *before* the click captures the
+   real filename Chrome saved. The tab stays open for you to work in.
+4. The server writes `Tasks/<UID>` with `file_uploaded: false` and
+   `task_status: "downloaded"`.
+
+**Step 2 — Dropbox** (`POST /api/upload`)
+
+5. The server finds the zip in `~/Downloads`, then sends
+   `{type:"upload_to_dropbox", task, fileUrl}` to the Dropbox extension.
+6. That extension's **service worker** fetches the bytes from
+   `GET /api/tasks/:uid/file` — the worker, not the content script, because it
+   holds the host permission and is not subject to the page's CORS or
+   private-network rules — and base64-encodes them.
+7. It opens `dropbox.com`, and the content script turns the bytes back into a
+   `File`, puts it into Dropbox's **hidden upload input** via `DataTransfer`, and
+   fires `change`. Dropbox's own uploader takes over. Completion is detected by
+   watching the file grid for the new `data-filename` row.
+8. The server **deletes the local file** and sets `file_uploaded: true` and
+   `task_status: "new"`.
+
+`POST /api/run` does both steps back to back.
 
 ---
 
@@ -60,8 +83,15 @@ the same task updates the record instead of duplicating it):
 | `UID` | the `UID:` badge in the review page top bar |
 | `file_name` | the filename Chrome actually saved, falling back to the name shown on the page |
 | `initial_infos` | `innerText` of the whole left panel, as plain text |
+| `file_uploaded` | `false` on download, `true` once Dropbox has the file |
+| `task_status` | `"downloaded"` on download, `"new"` once uploaded |
 | `source_url` | the review page URL (extra context) |
-| `created_at` / `updated_at` | ISO timestamps written by the server |
+| `local_path` | where the zip sits until it is uploaded, then `null` |
+| `dropbox_path` | where it landed in Dropbox |
+| `created_at` / `updated_at` / `uploaded_at` | ISO timestamps written by the server |
+
+`file_uploaded` and `task_status` are written up front rather than only after the
+upload, so the fields always exist and can be queried.
 
 Example `initial_infos`:
 
@@ -141,24 +171,71 @@ since the socket will no longer be on localhost.
 
 Set `FIREBASE_ENABLED=false` to skip Firestore deliberately (dry run).
 
-### 2. Extension
+### 2. Both extensions
 
 1. `chrome://extensions` → enable **Developer mode**
-2. **Load unpacked** → select the [snorkel_extension/](snorkel_extension/) folder
-3. Click the extension icon. The dot should turn green (`connected`). If you set
-   `BOT_TOKEN` in `.env`, put the same value in the popup's Token field and hit
+2. **Load unpacked** → [snorkel_extension/](snorkel_extension/)
+3. **Load unpacked** again → [dropbox_extension/](dropbox_extension/)
+4. Click each icon. Both dots should turn green (`connected`). If you set
+   `BOT_TOKEN` in `.env`, put the same value in each popup's Token field and hit
    **Save & reconnect**.
-4. Sign in to `https://experts.snorkel-ai.com` in that same Chrome profile. The
-   extension reuses your session; it never handles your password. If it lands on
-   the login page it aborts with a clear error instead of guessing.
+5. Sign in to `https://experts.snorkel-ai.com` **and** `https://www.dropbox.com`
+   in that same Chrome profile. The extensions reuse your sessions and never
+   handle your passwords; if either lands on a login page it aborts with a clear
+   error instead of guessing.
+
+`GET /api/status` shows both roles:
+
+```json
+{ "extensions": { "snorkel": {"connected": true}, "dropbox": {"connected": true} } }
+```
 
 ### 3. Run it
 
+**One call does everything** — Snorkel start → scrape → download → save →
+Dropbox upload → delete the local file → flip the flags:
+
 ```bash
-curl -X POST http://localhost:8787/api/start
+curl -X POST http://localhost:8787/start_new_task
 ```
 
-Or click **Start now** in the popup to test the browser half on its own.
+```json
+{ "ok": true,
+  "job": { "id": "c2b84522-…", "status": "running", "step": "snorkel" },
+  "poll": "/api/jobs/c2b84522-…" }
+```
+
+That returns in milliseconds and the workflow carries on by itself. Check on it
+whenever you like:
+
+```bash
+curl -s localhost:8787/api/jobs/<id> | python3 -m json.tool
+```
+
+```json
+{ "status": "succeeded", "step": "done",
+  "uid": "9e399c85-…", "file_name": "…_submission.zip",
+  "file_uploaded": true, "task_status": "new" }
+```
+
+`step` moves `queued → snorkel → dropbox → done`; `status` ends `succeeded` or
+`failed` with an `error`. `GET /api/jobs` lists the last 50.
+
+`GET` works too, so a browser or a bare cron line can trigger it:
+`curl http://localhost:8787/start_new_task`. `/api/start_new_task` is the same
+endpoint if you prefer everything under `/api`.
+
+Pass `{"async": false}` to hold the connection until the whole thing finishes and
+get the full result back — simpler to script, but the request can stay open for
+minutes, so only use it interactively. (`POST /api/run` is the same pipeline with
+the opposite default: blocking unless you pass `{"async": true}`.)
+
+The individual steps stay available if you want to drive them yourself:
+
+```bash
+curl -X POST http://localhost:8787/api/start    # Snorkel step only
+curl -X POST http://localhost:8787/api/upload   # Dropbox step only
+```
 
 ---
 
@@ -166,14 +243,64 @@ Or click **Start now** in the popup to test the browser half on its own.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /api/start` | Run the flow, save to Firestore, return the record. Optional body: `{"projectKey":"…","mode":"new\|resume\|any"}` |
-| `GET /api/status` | Extension connected? Firebase ready? |
+| `GET`/`POST` `/start_new_task` | **The whole workflow.** Returns a job id at once. Also at `/api/start_new_task` |
+| `POST /api/run` | Same pipeline, blocking unless you pass `{"async":true}` |
+| `GET /api/jobs` | The last 50 runs |
+| `GET /api/jobs/:id` | One run: status, step, and the full result |
+| `POST /api/start` | Snorkel step only. Optional body: `{"projectKey":"…","mode":"new\|resume\|any"}` |
+| `POST /api/upload` | Dropbox step only. Optional body: `{"uid":"…","folder":"…","force":true}` |
+| `GET /api/status` | Extensions connected? Firebase ready? Queue depth? |
 | `GET /api/tasks` | 50 most recent `Tasks` documents |
 | `GET /api/tasks/:uid` | One document |
+| `GET /api/tasks/:uid/file` | The downloaded zip — what the Dropbox extension fetches |
+| `POST /api/flush` | Replay queued tasks into Firestore (see below) |
 | `GET /api/events` | Server-sent events stream of live progress |
 
 `mode` picks which card to click: `new` (default) takes a fresh task,
 `resume` continues one you already claimed, `any` prefers new and falls back.
+
+`POST /api/upload` with no `uid` picks the most recently updated task that has
+not been uploaded yet. An already-uploaded task is skipped unless you pass
+`{"force": true}`.
+
+---
+
+## Seeing your rows
+
+Three ways, once Firestore exists:
+
+```bash
+curl -s localhost:8787/api/tasks | python3 -m json.tool          # recent rows
+curl -s localhost:8787/api/tasks/<submission-uid> | python3 -m json.tool
+```
+
+or the console data viewer:
+<https://console.firebase.google.com/project/snorkel-fe3eb/firestore/data/~2FTasks>
+
+`GET /api/status` tells you whether writes are landing at all:
+
+```json
+{ "firebase": { "ready": true, "collection": "Tasks" }, "pending_tasks": 0 }
+```
+
+`ready: false` means nothing is being written — read the `reason` field.
+
+## Nothing is lost when Firestore is down
+
+A task that scrapes fine but cannot be written is appended in full to
+`snorkel_server/pending-tasks.jsonl` (git-ignored), and `POST /api/start`
+answers with `saved: false` plus a `warning`. **`ok: true` means the browser
+half worked — check `saved` to know whether it reached the database.**
+
+Queued tasks are replayed automatically the next time the server starts with a
+working Firestore connection, or on demand:
+
+```bash
+curl -X POST localhost:8787/api/flush     # -> {"flushed":1,"remaining":0}
+```
+
+The file is deleted once everything lands; anything that still fails stays
+queued. `pending_tasks` in `/api/status` is the current queue depth.
 
 ---
 
@@ -206,9 +333,25 @@ DOM parser.
 holding your *uploaded* result (e.g. `…_corrected.zip`). Every download selector
 is scoped inside the download field so that one is never picked up by mistake.
 
+**Dropbox** — [dropbox_extension/content/dropbox.js](dropbox_extension/content/dropbox.js),
+derived from your saved `dropbox_ui.html` and verified the same way.
+
+| Thing | Selector |
+| --- | --- |
+| Upload input | `input[data-testid="uploader-file-field"]` (hidden, `multiple`) |
+| File listing | `[role="grid"]` with `[role="row"][aria-label^="File, "]` rows |
+| File names | `[data-filename]` on each gridcell |
+| Current folder | `[data-testid="browse-renamable-title"]` |
+
+⚠️ There is also `input[data-testid="uploader-folder-field"]` (a
+`webkitdirectory` picker). The selector targets the file field only.
+
+⚠️ The folder heading renders its name **twice**, so a plain `.trim()` yields
+`"All files\n   \n  All files"`. The code takes the first non-empty line.
+
 Each selector has a fallback (text scan, body regex, URL parsing), so a cosmetic
-class change won't break the run — but if Snorkel restructures these panels,
-these two files are the only places to update.
+class change won't break the run — but if Snorkel or Dropbox restructures these
+panels, these files are the only places to update.
 
 ---
 
@@ -226,9 +369,31 @@ these two files are the only places to update.
   re-establish the socket, and reconnects use capped exponential backoff, so the
   extension recovers on its own if you restart the server.
 - **One task at a time.** A second `start_sentinel` while one is running is
-  rejected rather than queued.
+  rejected rather than queued. Same for `upload_to_dropbox`.
+- **The upload bypasses the OS file dialog.** Dropbox's Upload button opens a
+  native dialog no extension can drive — but the dialog only exists to fill in a
+  hidden `<input type="file">`, so the extension fills that in directly with a
+  `DataTransfer` and fires `change`.
+- **The bytes travel server → worker → page.** A Chrome extension cannot read
+  `~/Downloads`; there is no filesystem API for arbitrary paths. So the server
+  serves the file over HTTP, the *service worker* fetches it (it holds the host
+  permission and sidesteps the page's CORS and private-network rules, which a
+  content script does not), and hands it to the page as base64. This is why the
+  server must run on the same machine as the browser.
+- **Uploads are confirmed, not assumed.** After injecting, the content script
+  watches the file grid until the new `data-filename` row appears. If a file of
+  the same name already existed, it accepts Dropbox's renamed version
+  (`… (1).zip`) and reports `renamed: true`.
+- **The local file is deleted only after the extension confirms.** A failed
+  delete does not undo the upload — it comes back as a `warning` alongside
+  `ok: true`.
+- **Jobs live in memory.** Restarting the server loses the job *list*, never the
+  *work*: every durable effect is already in Firestore or on disk by then. A job
+  that was mid-flight when the server died leaves the task at
+  `task_status: "downloaded"`, and `POST /api/upload` picks it up again.
 
 ## Not included
 
-The extension stops after the download and reports back. It does not fill in the
-review form, upload a result, or click Submit — that stays manual.
+The Snorkel extension stops after the download. It does not fill in the review
+form, upload a result, or click Submit — that stays manual. The Dropbox
+extension only uploads; it does not organise, rename, or share.

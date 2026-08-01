@@ -7,9 +7,17 @@
  * Fields:      UID, file_name, initial_infos  (+ created_at / updated_at / source_url)
  */
 
-import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { appendFile, readFile, writeFile, rm } from 'node:fs/promises';
 import admin from 'firebase-admin';
-import { config } from './config.js';
+import { config, serverRoot } from './config.js';
+
+/**
+ * Records that could not reach Firestore are appended here as one JSON object
+ * per line, in full. Nothing is lost while the database is unreachable, and
+ * flushPending() replays the file once it comes back.
+ */
+export const PENDING_FILE = path.join(serverRoot, 'pending-tasks.jsonl');
 
 let db = null;
 let initError = null;
@@ -129,6 +137,81 @@ export function firebaseStatus() {
   return { enabled: true, ready: false, reason: initError ? describe(initError) : 'not initialised' };
 }
 
+// ------------------------------------------------------ pending spool ----
+
+async function spool(record) {
+  try {
+    await appendFile(PENDING_FILE, JSON.stringify(record) + '\n', 'utf8');
+  } catch (err) {
+    console.error('[firebase] could not spool the record to disk:', err.message);
+  }
+}
+
+async function readPending() {
+  try {
+    const raw = await readFile(PENDING_FILE, 'utf8');
+    return raw
+      .split('\n')
+      .filter((line) => line.trim())
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+export async function pendingCount() {
+  return (await readPending()).length;
+}
+
+/**
+ * Replays every spooled record into Firestore. Later entries win for a repeated
+ * UID, matching the merge-by-UID behaviour of a live save. The file is removed
+ * only when everything lands; on partial failure the survivors stay queued.
+ */
+export async function flushPending() {
+  const pending = await readPending();
+  if (!pending.length) return { flushed: 0, remaining: 0 };
+  if (!db) {
+    return {
+      flushed: 0,
+      remaining: pending.length,
+      reason: initError ? describe(initError) : 'Firestore is not connected.',
+    };
+  }
+
+  const failed = [];
+  let flushed = 0;
+  for (const record of pending) {
+    try {
+      const ref = db.collection(config.firebase.collection).doc(String(record.UID));
+      const existing = await ref.get();
+      if (!existing.exists && !record.created_at) record.created_at = record.updated_at;
+      await ref.set(record, { merge: true });
+      flushed++;
+    } catch (err) {
+      console.error(`[firebase] replay failed for ${record.UID}:`, describe(err));
+      failed.push(record);
+    }
+  }
+
+  if (failed.length) {
+    await writeFile(PENDING_FILE, failed.map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8');
+  } else {
+    await rm(PENDING_FILE, { force: true });
+  }
+
+  console.log(`[firebase] replayed ${flushed} pending record(s); ${failed.length} still queued`);
+  return { flushed, remaining: failed.length };
+}
+
 /**
  * Saves one task. `task` must carry UID, file_name and initial_infos; `meta` is
  * optional context from the extension (page url, download path, ...).
@@ -141,6 +224,13 @@ export async function saveTask(task, meta = {}) {
     file_name: task.file_name ? String(task.file_name) : null,
     initial_infos: task.initial_infos ? String(task.initial_infos) : '',
     source_url: meta.page_url || null,
+    // Where Chrome put the zip, so the Dropbox step can find it later even
+    // across a server restart.
+    local_path: meta.download_path || null,
+    // Set up front so the fields always exist and can be queried; the Dropbox
+    // step flips them to true / "new" once the upload lands.
+    file_uploaded: false,
+    task_status: 'downloaded',
     updated_at: new Date().toISOString(),
   };
 
@@ -148,11 +238,10 @@ export async function saveTask(task, meta = {}) {
     const reason = config.firebase.enabled
       ? describe(initError)
       : 'Firebase is disabled (FIREBASE_ENABLED=false).';
-    console.log('[firebase] NOT WRITTEN —', reason, '\n', {
-      ...record,
-      initial_infos: `${record.initial_infos.slice(0, 120)}… (${record.initial_infos.length} chars)`,
-    });
-    return { saved: false, id: record.UID, record, reason };
+    await spool(record);
+    console.log(`[firebase] NOT WRITTEN — ${reason}`);
+    console.log(`[firebase] full record spooled to ${PENDING_FILE} — replay it with POST /api/flush`);
+    return { saved: false, id: record.UID, record, reason, spooled: true };
   }
 
   try {
@@ -164,12 +253,42 @@ export async function saveTask(task, meta = {}) {
     console.log(`[firebase] saved ${config.firebase.collection}/${record.UID} (${record.file_name})`);
     return { saved: true, id: record.UID, record };
   } catch (err) {
-    // The task itself succeeded, so the record is still returned to the caller
-    // (and logged) rather than thrown away.
+    // The task itself succeeded, so the record is spooled and returned to the
+    // caller rather than thrown away.
     const reason = describe(err);
+    await spool(record);
     console.error('[firebase] write failed —', reason);
-    return { saved: false, id: record.UID, record, reason };
+    console.error(`[firebase] full record spooled to ${PENDING_FILE}`);
+    return { saved: false, id: record.UID, record, reason, spooled: true };
   }
+}
+
+/**
+ * Marks a task as uploaded to Dropbox. This is the state change the whole
+ * Dropbox step exists to make.
+ */
+export async function markUploaded(uid, extra = {}) {
+  if (!db) throw new Error(describe(initError));
+  const patch = {
+    file_uploaded: true,
+    task_status: 'new',
+    uploaded_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ...extra,
+  };
+  await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
+  console.log(`[firebase] ${config.firebase.collection}/${uid} -> file_uploaded=true, task_status="new"`);
+  return patch;
+}
+
+/**
+ * The most recently updated task whose file has not reached Dropbox yet.
+ * Filtering happens in memory on purpose: a where() + orderBy() on different
+ * fields would require a composite index to be created by hand first.
+ */
+export async function findPendingUpload() {
+  const recent = await listTasks(50);
+  return recent.find((t) => t.file_uploaded !== true && t.UID) || null;
 }
 
 export async function listTasks(limit = 50) {

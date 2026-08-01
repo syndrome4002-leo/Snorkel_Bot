@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import 'dotenv/config';
@@ -26,6 +27,18 @@ export const config = {
 
   /** How long POST /api/start waits for the extension to finish the whole flow. */
   commandTimeoutMs: Number(process.env.COMMAND_TIMEOUT_MS || 240000),
+
+  /** How long POST /api/upload waits for Dropbox to finish taking the file. */
+  uploadTimeoutMs: Number(process.env.UPLOAD_TIMEOUT_MS || 300000),
+
+  /**
+   * Where Chrome saves downloads. The server reads the task zip from here to
+   * hand it to the Dropbox extension, and deletes it once the upload lands, so
+   * it must be the same machine the browser runs on.
+   */
+  downloadsDir: process.env.DOWNLOADS_DIR
+    ? path.resolve(process.env.DOWNLOADS_DIR)
+    : path.join(os.homedir(), 'Downloads'),
 
   firebase: {
     /** Set FIREBASE_ENABLED=false to run the server without credentials (logs instead of writing). */

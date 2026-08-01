@@ -71,8 +71,10 @@ async function connect() {
   if (!cfg.autoConnect) return;
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
 
-  let url = cfg.serverUrl;
-  if (cfg.token) url += (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(cfg.token);
+  // role= lets the server tell this extension from the Dropbox one before the
+  // "hello" frame arrives.
+  let url = cfg.serverUrl + (cfg.serverUrl.includes('?') ? '&' : '?') + 'role=snorkel';
+  if (cfg.token) url += '&token=' + encodeURIComponent(cfg.token);
 
   log('connecting to', cfg.serverUrl);
   try {
@@ -89,6 +91,7 @@ async function connect() {
     send({
       type: 'hello',
       client: 'snorkel-extension',
+      role: 'snorkel',
       version: chrome.runtime.getManifest().version,
       projectKey: cfg.projectKey,
     });
