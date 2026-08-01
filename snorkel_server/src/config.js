@@ -25,6 +25,9 @@ export const config = {
   /** Shared secret the extension must present as ?token= on the WS URL. Empty = no auth. */
   botToken: process.env.BOT_TOKEN || '',
 
+  /** Set when the server sits behind a tunnel/reverse proxy, so client IPs are real. */
+  trustProxy: bool(process.env.TRUST_PROXY, false),
+
   /** How long POST /api/start waits for the extension to finish the whole flow. */
   commandTimeoutMs: Number(process.env.COMMAND_TIMEOUT_MS || 240000),
 
@@ -36,6 +39,16 @@ export const config = {
   downloadsDir: process.env.DOWNLOADS_DIR
     ? path.resolve(process.env.DOWNLOADS_DIR)
     : path.join(os.homedir(), 'Downloads'),
+
+  /**
+   * The built dashboard (Next.js `output: 'export'` writes it here). Serving it
+   * from this server means the page and the API share an origin, so there is no
+   * CORS to configure and only one process to run.
+   *
+   * Missing until `npm run build` has been run in snorkel_dashboard/; during
+   * development you would use `npm run dev` there instead, on port 3000.
+   */
+  dashboardDir: resolveFromServerRoot(process.env.DASHBOARD_DIR || '../snorkel_dashboard/out'),
 
   dropbox: {
     appKey: process.env.DROPBOX_APP_KEY || '',
@@ -83,5 +96,13 @@ export const config = {
 
     projectId: process.env.FIREBASE_PROJECT_ID || '',
     collection: process.env.FIREBASE_COLLECTION || 'Tasks',
+
+    /**
+     * Realtime Database URL — the channel the dashboard talks to this server
+     * through. Separate product from Firestore and created separately; the
+     * console shows the URL once the database exists. Empty turns the channel
+     * off and the server is then only reachable over HTTP.
+     */
+    databaseUrl: process.env.FIREBASE_DATABASE_URL || '',
   },
 };

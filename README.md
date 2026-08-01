@@ -1,14 +1,16 @@
 # Snorkel Bot
 
-Two pieces that work together:
+Three pieces that work together:
 
 | Folder | What it is |
 | --- | --- |
 | [snorkel_extension/](snorkel_extension/) | Chrome MV3 extension that drives `experts.snorkel-ai.com` |
 | [snorkel_server/](snorkel_server/) | Node server that commands it, uploads to Dropbox, and writes to Firebase |
+| [snorkel_dashboard/](snorkel_dashboard/) | Next.js dashboard — see tasks, start new ones, from any machine |
 
 The extension never touches Firebase or Dropbox, and the server never touches the
-browser. They talk over a WebSocket.
+browser. They talk over a WebSocket. The dashboard is a static Next.js export
+that the server hosts, so it shares an origin with the API.
 
 ---
 
@@ -74,6 +76,7 @@ the same task updates the record instead of duplicating it):
 | Field | Source |
 | --- | --- |
 | `UID` | the `UID:` badge in the review page top bar |
+| `machine_id` | which computer ran it, e.g. `goran-virtual-machine-70e3eec3` |
 | `file_name` | the filename Chrome actually saved, falling back to the name shown on the page |
 | `initial_infos` | `innerText` of the whole left panel, as plain text |
 | `file_uploaded` | `false` on download, `true` once Dropbox has the file |
@@ -220,7 +223,36 @@ Files up to 150 MB go in one request; larger ones use an upload session
 automatically. Name clashes are resolved by Dropbox's own `autorename`, and the
 stored name comes back in `dropbox_name` / `dropbox_path`.
 
-### 3. The extension
+### 3. Dashboard
+
+```bash
+cd snorkel_dashboard
+npm install
+npm run build      # writes out/, which the server then hosts
+```
+
+Restart the server and open **http://localhost:8787** — or, from another PC on
+the same network, the LAN address the server prints at startup:
+
+```
+[server] dashboard:  http://localhost:8787
+[server]             http://192.168.1.20:8787   <- from another PC
+```
+
+It shows the health of the three things a run depends on (extension, Firebase,
+Dropbox), a **Start new task** button that follows the job through to the end,
+and the task table with every stored field — click *details* for the full
+`initial_infos`.
+
+> **Set `BOT_TOKEN` in `.env` before exposing this.** Without it, anyone who can
+> reach the port can start tasks and read every stored task. With it, the API
+> requires the token and the dashboard asks for it once, then keeps it in the
+> browser's localStorage. The server warns loudly at startup when it is unset.
+
+For dashboard development, `npm run dev` serves on :3000 and proxies `/api` and
+`/start_new_task` to :8787, so you get hot reload without a CORS setup.
+
+### 4. The extension
 
 1. `chrome://extensions` → enable **Developer mode**
 2. **Load unpacked** → [snorkel_extension/](snorkel_extension/)
@@ -235,7 +267,7 @@ stored name comes back in `dropbox_name` / `dropbox_path`.
 { "extension": { "snorkel": {"connected": true} } }
 ```
 
-### 4. Run it
+### 5. Run it
 
 **One call does everything** — Snorkel start → scrape → download → save →
 Dropbox upload → delete the local file → flip the flags:
@@ -285,6 +317,11 @@ curl -X POST http://localhost:8787/api/upload   # Dropbox step only
 ---
 
 ## Server API
+
+All `/api/*` routes and `/start_new_task` require the `X-Bot-Token` header when
+`BOT_TOKEN` is set (`?token=` also works, for `EventSource`). The only exception
+is `/api/dropbox/callback`, which Dropbox redirects a browser to and cannot be
+made to carry a header — it is protected by its own one-time `state` value.
 
 | Endpoint | Purpose |
 | --- | --- |

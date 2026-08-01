@@ -1,0 +1,31 @@
+rules_version = '2';
+
+// Firestore rules for the Tasks collection.
+//
+// Deploy with:  firebase deploy --only firestore:rules
+// or paste into Firebase console -> Firestore Database -> Rules.
+//
+// The dashboard has no sign-in, so reads are open: anyone who knows the project
+// id can read your task records. That is the accepted trade-off for a
+// login-free dashboard.
+//
+// Writes stay closed to browsers because the dashboard never writes here — the
+// server does, through the Admin SDK, which bypasses rules entirely. Leaving
+// writes open would let anyone rewrite your task history for no benefit.
+//
+// Deploy these anyway: a database left in "test mode" starts denying everything
+// after 30 days, which would silently break the dashboard.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /Tasks/{taskId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

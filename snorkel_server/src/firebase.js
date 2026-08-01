@@ -4,13 +4,15 @@
  * Collection: "Tasks"   (override with FIREBASE_COLLECTION)
  * Document id: the submission UID, so re-running the same task updates the
  *              existing record instead of creating a duplicate.
- * Fields:      UID, file_name, initial_infos  (+ created_at / updated_at / source_url)
+ * Fields:      UID, machine_id, file_name, initial_infos, file_uploaded,
+ *              task_status  (+ created_at / updated_at / source_url / local_path)
  */
 
 import path from 'node:path';
 import { appendFile, readFile, writeFile, rm } from 'node:fs/promises';
 import admin from 'firebase-admin';
 import { config, serverRoot } from './config.js';
+import { machineId } from './machine.js';
 
 /**
  * Records that could not reach Firestore are appended here as one JSON object
@@ -124,7 +126,13 @@ export async function initFirebase() {
       const loaded = await loadCredential();
       const projectId = config.firebase.projectId || loaded.projectId;
       if (!config.firebase.projectId && projectId) config.firebase.projectId = projectId;
-      admin.initializeApp({ credential: loaded.credential, ...(projectId ? { projectId } : {}) });
+      admin.initializeApp({
+        credential: loaded.credential,
+        ...(projectId ? { projectId } : {}),
+        // Needed up front: the RTDB client cannot be pointed at a database
+        // after the app has been created.
+        ...(config.firebase.databaseUrl ? { databaseURL: config.firebase.databaseUrl } : {}),
+      });
       console.log(`[firebase] credentials from ${credentialSource}`);
     }
     const candidate = admin.firestore();
@@ -249,6 +257,9 @@ export async function saveTask(task, meta = {}) {
 
   const record = {
     UID: String(task.UID),
+    // Which computer actually ran this. Lets the dashboard show one machine's
+    // work when several report into the same project.
+    machine_id: machineId(),
     file_name: task.file_name ? String(task.file_name) : null,
     initial_infos: task.initial_infos ? String(task.initial_infos) : '',
     source_url: meta.page_url || null,

@@ -1,0 +1,49 @@
+{
+  "//": [
+    "Realtime Database rules for the dashboard <-> server channel.",
+    "",
+    "Deploy with:  firebase deploy --only database",
+    "or paste into Firebase console -> Realtime Database -> Rules.",
+    "",
+    "The dashboard has no sign-in, so these rules allow unauthenticated access.",
+    "Anyone who knows this database URL can therefore read the command history",
+    "and queue a task. That is the accepted trade-off for a login-free dashboard.",
+    "",
+    "The server uses the Admin SDK, which bypasses rules entirely — these only",
+    "constrain browsers.",
+    "",
+    "Two things are still locked down, because they are correctness rather than",
+    "access control: /server/status is read-only (only the server publishes it),",
+    "and a command cannot be rewritten once the server has claimed it, which",
+    "would otherwise corrupt a run in progress."
+  ],
+
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "commands": {
+      ".read": true,
+
+      "$commandId": {
+        ".read": true,
+        ".write": "!data.exists() || data.child('status').val() == 'pending'",
+
+        ".validate": "newData.hasChildren(['type', 'status', 'requested_at'])",
+
+        "type": { ".validate": "newData.val() == 'start_new_task'" },
+        "status": {
+          ".validate": "newData.val() == 'pending' || newData.val() == 'running' || newData.val() == 'succeeded' || newData.val() == 'failed' || newData.val() == 'expired'"
+        },
+        "requested_at": { ".validate": "newData.isString()" },
+        "$other": { ".validate": true }
+      }
+    },
+
+    "server": {
+      "//": "Published by the server; browsers only read it.",
+      ".read": true,
+      ".write": false
+    }
+  }
+}

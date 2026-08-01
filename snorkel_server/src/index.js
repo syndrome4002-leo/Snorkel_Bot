@@ -12,17 +12,21 @@
  *   GET  /api/tasks/:uid        one Tasks document
  *   POST /api/flush             replay tasks that could not reach Firestore
  *   GET  /api/events            server-sent events stream of live progress
+ *   GET  /                      the dashboard (public/)
  *
  * The Snorkel extension connects to ws://<host>:<port>/extension?role=snorkel.
  * Dropbox uploads go straight from this server over HTTPS.
  */
 
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
+import { requireToken, authEnabled } from './auth.js';
 import { ExtensionHub } from './hub.js';
 import { locateTaskFile, deleteTaskFile } from './localfile.js';
 import {
@@ -34,6 +38,8 @@ import {
   applyRefreshToken,
 } from './dropbox.js';
 import { updateEnvFile, ENV_PATH } from './envfile.js';
+import { initRtdb, rtdbStatus, startStatusHeartbeat, watchCommands } from './rtdb.js';
+import { machineId, machineInfo } from './machine.js';
 import {
   initFirebase,
   saveTask,
@@ -49,8 +55,26 @@ import {
 const app = express();
 const hub = new ExtensionHub();
 
+// Behind a tunnel or reverse proxy (Cloudflare Tunnel, nginx, ngrok) every
+// request arrives from 127.0.0.1, which would make the auth throttle treat all
+// callers as one client. TRUST_PROXY=1 makes Express read X-Forwarded-For.
+if (config.trustProxy) app.set('trust proxy', true);
+
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
+
+// The dashboard itself is public — it holds no secrets and only asks for the
+// token. Everything it calls is not.
+if (existsSync(config.dashboardDir)) {
+  app.use(express.static(config.dashboardDir));
+} else {
+  console.warn(
+    `[server] no built dashboard at ${config.dashboardDir}\n` +
+      '[server]   build it with:  cd snorkel_dashboard && npm install && npm run build\n' +
+      '[server]   or run it in dev mode:  npm run dev  (serves on :3000)'
+  );
+}
+app.use(['/api', '/start_new_task'], requireToken);
 
 // ------------------------------------------------------------- status ----
 
@@ -64,6 +88,8 @@ app.get('/api/status', async (_req, res) => {
       configured: dropboxConfigured(),
       folder: config.dropbox.folder || '/',
     },
+    realtime_db: rtdbStatus(),
+    machine: machineInfo(),
     downloads_dir: config.downloadsDir,
     // Tasks scraped successfully but not yet in Firestore, waiting on a flush.
     pending_tasks: pending,
@@ -491,10 +517,79 @@ if (queued) {
   else if (flushed) console.log('[server] queue is now empty');
 }
 
+/*
+ * The Realtime Database channel.
+ *
+ * This is how the dashboard reaches the server without the server being
+ * reachable: both sides connect outward to Firebase. The dashboard writes a
+ * command, this picks it up, runs the same pipeline as POST /start_new_task,
+ * and reports progress back onto the same node.
+ */
+await initRtdb();
+
+startStatusHeartbeat(async () => ({
+  extension_connected: hub.isConnected('snorkel'),
+  firebase_ready: firebaseStatus().ready === true,
+  dropbox_configured: dropboxConfigured(),
+  pending_tasks: await pendingCount().catch(() => 0),
+  downloads_dir: config.downloadsDir,
+}));
+
+watchCommands(async (command, report) => {
+  if (command.type !== 'start_new_task') {
+    throw new Error(`Unknown command type "${command.type}".`);
+  }
+
+  const missing = requiredRoles().filter((role) => !hub.isConnected(role));
+  if (missing.length) throw new Error(`Not connected: ${missing.join(', ')} extension(s).`);
+
+  const result = await runFullPipeline(command.options || {}, (step) => report({ step }));
+
+  if (!result.snorkel.saved) {
+    // Same rule as the HTTP job: a downloaded file with no record and no upload
+    // is not a success.
+    throw new Error(
+      `${result.snorkel.warning} The file was downloaded and the record is queued in ` +
+        `pending-tasks.jsonl — fix Firebase, then POST /api/flush and POST /api/upload.`
+    );
+  }
+
+  return {
+    step: 'done',
+    uid: result.snorkel.task.UID,
+    file_name: result.snorkel.task.file_name,
+    file_uploaded: result.dropbox.task ? result.dropbox.task.file_uploaded : false,
+    task_status: result.dropbox.task ? result.dropbox.task.task_status : null,
+    dropbox_path: result.dropbox.task ? result.dropbox.task.dropbox_path || null : null,
+  };
+});
+
+/** Addresses another machine on the same network can actually reach. */
+function lanAddresses() {
+  return Object.values(os.networkInterfaces())
+    .flat()
+    .filter((nic) => nic && nic.family === 'IPv4' && !nic.internal)
+    .map((nic) => nic.address);
+}
+
+// Binding to 0.0.0.0 (the default) is what lets the dashboard be opened from
+// another PC. That is also why the token warning below matters.
 server.listen(config.port, () => {
-  console.log(`[server] http://localhost:${config.port}`);
-  console.log(`[server] extension websocket: ws://localhost:${config.port}/extension`);
-  console.log(`[server] downloads folder: ${config.downloadsDir}`);
-  if (config.botToken) console.log('[server] token auth is ON');
-  console.log(`[server] full pipeline: curl -X POST http://localhost:${config.port}/api/run`);
+  console.log(`[server] machine id: ${machineId()}`);
+  console.log(`[server] dashboard:  http://localhost:${config.port}`);
+  for (const address of lanAddresses()) {
+    console.log(`[server]             http://${address}:${config.port}   <- from another PC`);
+  }
+  console.log(`[server] websocket:  ws://localhost:${config.port}/extension`);
+  console.log(`[server] downloads:  ${config.downloadsDir}`);
+
+  if (authEnabled()) {
+    console.log('[server] token auth is ON — the dashboard will ask for BOT_TOKEN');
+  } else {
+    console.warn(
+      '[server] WARNING: BOT_TOKEN is empty, so anyone who can reach this port can\n' +
+        '[server]          start tasks and read every stored task. Set BOT_TOKEN in .env\n' +
+        '[server]          before using the dashboard from another machine.'
+    );
+  }
 });

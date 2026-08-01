@@ -1,0 +1,131 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { firebaseConfigured, missingConfigKeys } from '@/lib/firebase';
+import { watchServerStatus } from '@/lib/commands';
+import { watchTasks } from '@/lib/tasks';
+import { addMachine, getSelected, listMachines, removeMachine, setSelected } from '@/lib/machines';
+import MachinePicker from '@/components/MachinePicker';
+import StatusPills from '@/components/StatusPills';
+import StartTask from '@/components/StartTask';
+import TaskTable from '@/components/TaskTable';
+
+/** Shown only when .env.local has not been filled in — a setup problem, not a login. */
+function NotConfigured() {
+  return (
+    <div className="gate">
+      <div className="card">
+        <h1>🤿 Snorkel Bot</h1>
+        <p className="muted">This dashboard is not connected to Firebase yet.</p>
+        <p className="error">Missing: {missingConfigKeys().join(', ')}</p>
+        <p className="muted">
+          Copy <code>.env.local.example</code> to <code>.env.local</code>, fill in the values from
+          Firebase console → Project settings → Your apps, then rebuild.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export default function Page() {
+  const [ready, setReady] = useState(false);
+  const [machines, setMachines] = useState([]);
+  const [selected, setSelectedState] = useState('');
+  const [statuses, setStatuses] = useState({}); // machine id -> status
+  const [tasks, setTasks] = useState([]);
+  const [tasksNote, setTasksNote] = useState('Loading…');
+
+  // localStorage and Firebase are both browser-only.
+  useEffect(() => {
+    setMachines(listMachines());
+    setSelectedState(getSelected());
+    setReady(true);
+  }, []);
+
+  // One status subscription per known machine, so the picker can show which
+  // ones are up without you having to select each in turn.
+  useEffect(() => {
+    if (!ready || !firebaseConfigured || machines.length === 0) return undefined;
+    const stops = machines.map((id) =>
+      watchServerStatus(id, (value) => setStatuses((current) => ({ ...current, [id]: value })))
+    );
+    return () => stops.forEach((stop) => stop());
+  }, [ready, machines]);
+
+  useEffect(() => {
+    if (!ready || !firebaseConfigured) return undefined;
+    setTasksNote('Loading…');
+
+    return watchTasks(
+      selected,
+      (list) => {
+        setTasks(list);
+        setTasksNote(
+          `${list.length} task${list.length === 1 ? '' : 's'}${selected ? ' on this machine' : ' across all machines'}`
+        );
+      },
+      (err) => {
+        setTasksNote(
+          err.code === 'permission-denied'
+            ? 'Firestore rules are blocking this read — deploy firestore.rules.'
+            : `Could not read tasks: ${err.message}`
+        );
+      }
+    );
+  }, [ready, selected]);
+
+  const select = useCallback((id) => {
+    setSelected(id);
+    setSelectedState(id);
+  }, []);
+
+  const add = useCallback(
+    (id) => {
+      setMachines(addMachine(id));
+      select(id);
+    },
+    [select]
+  );
+
+  const remove = useCallback((id) => {
+    setMachines(removeMachine(id));
+    setSelectedState(getSelected());
+  }, []);
+
+  if (!ready) return null;
+  if (!firebaseConfigured) return <NotConfigured />;
+
+  const status = selected ? statuses[selected] : null;
+
+  return (
+    <>
+      <header>
+        <h1>🤿 Snorkel Bot</h1>
+        {selected ? <StatusPills status={status} /> : <span className="muted">All machines</span>}
+      </header>
+
+      <MachinePicker
+        machines={machines}
+        selected={selected}
+        statuses={statuses}
+        onSelect={select}
+        onAdd={add}
+        onRemove={remove}
+      />
+
+      {selected ? (
+        <StartTask machine={selected} serverOnline={Boolean(status?.online)} />
+      ) : (
+        <section className="card">
+          <p className="muted">
+            {machines.length
+              ? 'Pick a machine above to start a task on it.'
+              : 'Add a machine above to start tasks on it.'}
+          </p>
+        </section>
+      )}
+
+      <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} />
+    </>
+  );
+}

@@ -1,0 +1,185 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --card: #fff;
+  --line: #dfe3e8;
+  --text: #1b1f24;
+  --muted: #6b7480;
+  --accent: #2563eb;
+  --ok: #1e9e5a;
+  --warn: #b7791f;
+  --bad: #c5382f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c;
+    --card: #1c2027;
+    --line: #2c323b;
+    --text: #e7eaee;
+    --muted: #97a1ad;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 3rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+header h1 { font-size: 18px; margin: 0; margin-right: auto; }
+
+h2 { font-size: 15px; margin: 0; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  margin: 16px 20px;
+}
+
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row.space { justify-content: space-between; }
+
+.muted { color: var(--muted); font-size: 13px; }
+.error { color: var(--bad); font-size: 13px; white-space: pre-wrap; }
+
+button {
+  font: inherit;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+button:hover { background: rgba(128, 128, 128, 0.12); }
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+button.primary:hover { filter: brightness(1.08); }
+button.primary:disabled { opacity: 0.55; cursor: default; filter: none; }
+button.link {
+  border: 0;
+  padding: 4px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+input {
+  font: inherit;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: inherit;
+}
+
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--ok); }
+.dot.bad { background: var(--bad); }
+.dot.warn { background: var(--warn); }
+
+.steps { margin: 12px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
+.steps li { margin: 2px 0; }
+.steps li.done { color: var(--text); }
+
+.table-wrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+tr.details td { background: rgba(128, 128, 128, 0.06); }
+pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  max-height: 340px;
+  overflow: auto;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+.badge.new { border-color: var(--ok); color: var(--ok); }
+.badge.downloaded { border-color: var(--warn); color: var(--warn); }
+
+.gate {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  padding: 20px;
+}
+.gate .card { width: min(380px, 100%); margin: 0; }
+.gate h1 { font-size: 18px; margin: 0 0 4px; }
+.gate label { display: block; font-size: 12px; font-weight: 600; margin: 14px 0 4px; }
+.gate input { width: 100%; }
+.gate button { width: 100%; margin-top: 12px; }
+
+/* --- machine picker --- */
+.machines { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+.machine {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  padding: 0;
+}
+.machine.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+.machine-main,
+button.machine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 7px 12px;
+  border-radius: 8px;
+  text-align: left;
+}
+.machine-name { font-weight: 600; }
+.machine-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
