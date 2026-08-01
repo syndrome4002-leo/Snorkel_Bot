@@ -1,0 +1,493 @@
+<body data-project-id="daas-v2" class="monaco-enable-motion underline-links">
+    <script>
+        // Sync theme mode before any CSS is processed to prevent FOUC (Flash of Unstyled Content).
+        (function () {
+            // Storage key below is substituted by the 'inject-build-metadata' Vite plugin (vite.config.ts).
+            var m = localStorage.getItem('daas-theme-mode');
+            if (m) document.documentElement.setAttribute('data-mode', m);
+        })();
+    </script>
+    <div id="root">
+        <div data-rht-toaster="" style="position: fixed; z-index: 9999; inset: 16px; pointer-events: none;"></div>
+        <div class="flex h-screen flex-col">
+            <header class="border-divider bg-default px-md py-sm flex h-11 w-full items-center justify-between border-b"
+                role="banner">
+                <nav class="gap-xl flex flex-1 items-center" aria-label="Top navigation">
+                    <div class="pl-sm flex shrink-0 items-center"><a href="/home" class="active" data-status="active"
+                            aria-current="page"><img alt="Snorkel Logo" class="w-auto dark:hidden"
+                                src="/static/images/logo_header.svg" style="height: 26px;"><img alt="Snorkel Logo"
+                                class="hidden w-auto dark:block" src="/static/images/logo_header_dark.svg"
+                                style="height: 26px;"></a></div><button type="button"
+                        class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-sm h-icon-btn-sm rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                        aria-pressed="true" aria-label="Collapse sidebar"><span
+                            class="flex shrink-0 items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg"
+                                width="16" height="16" fill="currentColor" viewBox="0 0 256 256" class=""
+                                aria-hidden="true">
+                                <path
+                                    d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z">
+                                </path>
+                            </svg></span></button>
+                    <div class="px-md min-w-0 flex-1">
+                        <div class="relative flex min-w-0 flex-1 items-center">
+                            <div class="absolute inset-y-0 left-0 flex items-center" style="opacity: 1;"></div>
+                        </div>
+                    </div>
+                    <div class="gap-sm ml-auto flex shrink-0 items-center" role="toolbar" aria-label="Actions"><button
+                            type="button"
+                            class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-sm h-icon-btn-sm rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                            data-testid="topbar-help-trigger" aria-label="Help" id="radix-_r_2_" aria-haspopup="menu"
+                            aria-expanded="false" data-state="closed"><span
+                                class="flex shrink-0 items-center justify-center"><svg
+                                    xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                    <path
+                                        d="M140,180a12,12,0,1,1-12-12A12,12,0,0,1,140,180ZM128,72c-22.06,0-40,16.15-40,36v4a8,8,0,0,0,16,0v-4c0-11,10.77-20,24-20s24,9,24,20-10.77,20-24,20a8,8,0,0,0-8,8v8a8,8,0,0,0,16,0v-.72c18.24-3.35,32-17.9,32-35.28C168,88.15,150.06,72,128,72Zm104,56A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z">
+                                    </path>
+                                </svg></span></button><button type="button"
+                            class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-sm h-icon-btn-sm rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                            data-testid="topbar-user-trigger" aria-label="jacob.c.schweyer@outlook.com" id="radix-_r_5_"
+                            aria-haspopup="menu" aria-expanded="false" data-state="closed"><span
+                                class="flex shrink-0 items-center justify-center"><svg
+                                    xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                    <path
+                                        d="M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z">
+                                    </path>
+                                </svg></span></button></div>
+                </nav>
+            </header>
+            <div class="flex flex-1 overflow-hidden">
+                <aside
+                    class="flex h-full shrink-0 flex-row justify-start overflow-hidden text-xs-normal w-sidebar motion-safe:transition-[width,opacity] motion-safe:duration-300 motion-safe:ease-in-out">
+                    <div class="w-sidebar relative flex h-full shrink-0 flex-col" aria-hidden="false"
+                        style="pointer-events: auto;">
+                        <div
+                            class="flex min-h-0 flex-1 flex-col overflow-y-auto px-md my-xl border-divider border-r motion-safe:transition-[width,opacity] motion-safe:duration-300 motion-safe:ease-in-out opacity-100">
+                            <nav aria-label="App navigation" data-orientation="vertical" dir="ltr">
+                                <div style="position: relative;">
+                                    <ul data-orientation="vertical" class="flex flex-col gap-xl" dir="ltr">
+                                        <li class="gap-md flex flex-col">
+                                            <ul class="gap-sm flex flex-col">
+                                                <li><a data-testid="sidebar-nav-home" aria-current="page" tabindex="0"
+                                                        data-radix-collection-item=""
+                                                        class="flex w-full cursor-pointer items-center gap-sm rounded-sm px-sm py-xs text-sm-normal outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 [&amp;.active_[data-side-navigation-icon]]:drop-shadow-stroke-bold text-color-primary hover:bg-menu-hover [&amp;.active]:bg-menu-selected [&amp;.active]:text-color-primary [&amp;.active]:text-sm-semibold [&amp;.active]:hover:bg-menu-selected active"
+                                                        href="/home" data-status="active"><span
+                                                            class="text-icon-primary flex h-16 w-16 shrink-0 items-center justify-center"
+                                                            data-side-navigation-icon="true" aria-hidden="true"><span
+                                                                class="in-[.active]:hidden"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z">
+                                                                    </path>
+                                                                </svg></span><span
+                                                                class="hidden in-[.active]:block"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M224,120v96a8,8,0,0,1-8,8H160a8,8,0,0,1-8-8V164a4,4,0,0,0-4-4H108a4,4,0,0,0-4,4v52a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V120a16,16,0,0,1,4.69-11.31l80-80a16,16,0,0,1,22.62,0l80,80A16,16,0,0,1,224,120Z">
+                                                                    </path>
+                                                                </svg></span></span><span
+                                                            class="flex-1 truncate">Home</span></a></li>
+                                                <li><a data-testid="sidebar-nav-marketplace" tabindex="0"
+                                                        data-radix-collection-item="" href="/marketplace"
+                                                        class="flex w-full cursor-pointer items-center gap-sm rounded-sm px-sm py-xs text-sm-normal outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 [&amp;.active_[data-side-navigation-icon]]:drop-shadow-stroke-bold text-color-primary hover:bg-menu-hover [&amp;.active]:bg-menu-selected [&amp;.active]:text-color-primary [&amp;.active]:text-sm-semibold [&amp;.active]:hover:bg-menu-selected"><span
+                                                            class="text-icon-primary flex h-16 w-16 shrink-0 items-center justify-center"
+                                                            data-side-navigation-icon="true" aria-hidden="true"><span
+                                                                class="in-[.active]:hidden"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M232,96a7.89,7.89,0,0,0-.3-2.2L217.35,43.6A16.07,16.07,0,0,0,202,32H54A16.07,16.07,0,0,0,38.65,43.6L24.31,93.8A7.89,7.89,0,0,0,24,96h0v16a40,40,0,0,0,16,32v72a8,8,0,0,0,8,8H208a8,8,0,0,0,8-8V144a40,40,0,0,0,16-32V96ZM54,48H202l11.42,40H42.61Zm50,56h48v8a24,24,0,0,1-48,0Zm-16,0v8a24,24,0,0,1-35.12,21.26,7.88,7.88,0,0,0-1.82-1.06A24,24,0,0,1,40,112v-8ZM200,208H56V151.2a40.57,40.57,0,0,0,8,.8,40,40,0,0,0,32-16,40,40,0,0,0,64,0,40,40,0,0,0,32,16,40.57,40.57,0,0,0,8-.8Zm4.93-75.8a8.08,8.08,0,0,0-1.8,1.05A24,24,0,0,1,168,112v-8h48v8A24,24,0,0,1,204.93,132.2Z">
+                                                                    </path>
+                                                                </svg></span><span
+                                                                class="hidden in-[.active]:block"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M231.69,93.81,217.35,43.6A16.07,16.07,0,0,0,202,32H54A16.07,16.07,0,0,0,38.65,43.6L24.31,93.81A7.94,7.94,0,0,0,24,96v16a40,40,0,0,0,16,32v72a8,8,0,0,0,8,8H208a8,8,0,0,0,8-8V144a40,40,0,0,0,16-32V96A7.94,7.94,0,0,0,231.69,93.81ZM88,112a24,24,0,0,1-35.12,21.26,7.88,7.88,0,0,0-1.82-1.06A24,24,0,0,1,40,112v-8H88Zm64,0a24,24,0,0,1-48,0v-8h48Zm64,0a24,24,0,0,1-11.07,20.2,8.08,8.08,0,0,0-1.8,1.05A24,24,0,0,1,168,112v-8h48Z">
+                                                                    </path>
+                                                                </svg></span></span><span
+                                                            class="flex-1 truncate">Marketplace</span></a></li>
+                                                <li><a data-testid="sidebar-nav-dashboard" tabindex="0"
+                                                        data-radix-collection-item="" href="/dashboard"
+                                                        class="flex w-full cursor-pointer items-center gap-sm rounded-sm px-sm py-xs text-sm-normal outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 [&amp;.active_[data-side-navigation-icon]]:drop-shadow-stroke-bold text-color-primary hover:bg-menu-hover [&amp;.active]:bg-menu-selected [&amp;.active]:text-color-primary [&amp;.active]:text-sm-semibold [&amp;.active]:hover:bg-menu-selected"><span
+                                                            class="text-icon-primary flex h-16 w-16 shrink-0 items-center justify-center"
+                                                            data-side-navigation-icon="true" aria-hidden="true"><span
+                                                                class="in-[.active]:hidden"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" viewBox="0 0 16 16" fill="currentColor"
+                                                                    stroke-width="1.5" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M6.16667 11.3333C6.16667 11.2413 6.09205 11.1667 6 11.1667H2.66667C2.57462 11.1667 2.5 11.2413 2.5 11.3333V13.3333C2.5 13.4254 2.57462 13.5 2.66667 13.5H6C6.09205 13.5 6.16667 13.4254 6.16667 13.3333V11.3333ZM13.5 8.66667C13.5 8.57462 13.4254 8.5 13.3333 8.5H10C9.90795 8.5 9.83333 8.57462 9.83333 8.66667V13.3333C9.83333 13.4254 9.90795 13.5 10 13.5H13.3333C13.4254 13.5 13.5 13.4254 13.5 13.3333V8.66667ZM6.16667 2.66667C6.16667 2.57462 6.09205 2.5 6 2.5H2.66667C2.57462 2.5 2.5 2.57462 2.5 2.66667V7.33333C2.5 7.42538 2.57462 7.5 2.66667 7.5H6C6.09205 7.5 6.16667 7.42538 6.16667 7.33333V2.66667ZM13.5 2.66667C13.5 2.57462 13.4254 2.5 13.3333 2.5H10C9.90795 2.5 9.83333 2.57462 9.83333 2.66667V4.66667C9.83333 4.75871 9.90795 4.83333 10 4.83333H13.3333C13.4254 4.83333 13.5 4.75871 13.5 4.66667V2.66667ZM7.16667 13.3333C7.16667 13.9777 6.64433 14.5 6 14.5H2.66667C2.02233 14.5 1.5 13.9777 1.5 13.3333V11.3333C1.5 10.689 2.02233 10.1667 2.66667 10.1667H6C6.64433 10.1667 7.16667 10.689 7.16667 11.3333V13.3333ZM14.5 13.3333C14.5 13.9777 13.9777 14.5 13.3333 14.5H10C9.35567 14.5 8.83333 13.9777 8.83333 13.3333V8.66667C8.83333 8.02233 9.35567 7.5 10 7.5H13.3333C13.9777 7.5 14.5 8.02233 14.5 8.66667V13.3333ZM7.16667 7.33333C7.16667 7.97767 6.64433 8.5 6 8.5H2.66667C2.02233 8.5 1.5 7.97767 1.5 7.33333V2.66667C1.5 2.02233 2.02233 1.5 2.66667 1.5H6C6.64433 1.5 7.16667 2.02233 7.16667 2.66667V7.33333ZM14.5 4.66667C14.5 5.311 13.9777 5.83333 13.3333 5.83333H10C9.35567 5.83333 8.83333 5.311 8.83333 4.66667V2.66667C8.83333 2.02233 9.35567 1.5 10 1.5H13.3333C13.9777 1.5 14.5 2.02233 14.5 2.66667V4.66667Z"
+                                                                        fill="currentColor"></path>
+                                                                </svg></span><span
+                                                                class="hidden in-[.active]:block"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" viewBox="0 0 16 16" fill="currentColor"
+                                                                    stroke-width="1.5" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M7.16667 13.3333C7.16667 13.9777 6.64433 14.5 6 14.5H2.66667C2.02233 14.5 1.5 13.9777 1.5 13.3333V11.3333C1.5 10.689 2.02233 10.1667 2.66667 10.1667H6C6.64433 10.1667 7.16667 10.689 7.16667 11.3333V13.3333ZM14.5 13.3333C14.5 13.9777 13.9777 14.5 13.3333 14.5H10C9.35567 14.5 8.83333 13.9777 8.83333 13.3333V8.66667C8.83333 8.02233 9.35567 7.5 10 7.5H13.3333C13.9777 7.5 14.5 8.02233 14.5 8.66667V13.3333ZM7.16667 7.33333C7.16667 7.97767 6.64433 8.5 6 8.5H2.66667C2.02233 8.5 1.5 7.97767 1.5 7.33333V2.66667C1.5 2.02233 2.02233 1.5 2.66667 1.5H6C6.64433 1.5 7.16667 2.02233 7.16667 2.66667V7.33333ZM14.5 4.66667C14.5 5.311 13.9777 5.83333 13.3333 5.83333H10C9.35567 5.83333 8.83333 5.311 8.83333 4.66667V2.66667C8.83333 2.02233 9.35567 1.5 10 1.5H13.3333C13.9777 1.5 14.5 2.02233 14.5 2.66667V4.66667Z"
+                                                                        fill="currentColor"></path>
+                                                                </svg></span></span><span
+                                                            class="flex-1 truncate">Dashboard</span></a></li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </nav>
+                        </div>
+                    </div>
+                </aside>
+                <main class="w-full flex-1 overflow-auto p-24">
+                    <div class="grid grid-cols-2 gap-20">
+                        <div>
+                            <div class="space-y-8 pb-24">
+                                <div class="flex items-center gap-12">
+                                    <h1 class="text-heading">My projects</h1>
+                                </div>
+                                <div dir="auto" class="text-base-normal">3 projects available</div>
+                            </div>
+                            <div class="mb-24">
+                                <div>
+                                    <div class="gap-xs flex w-full flex-col">
+                                        <div class="gap-xs flex w-full flex-col">
+                                            <div
+                                                class="flex w-full rounded-sm border bg-field text-sm-normal motion-safe:transition-[color,background-color,border-color,box-shadow] motion-safe:duration-150 border-field text-color-primary h-32 items-center px-sm gap-sm focus-within:border-field-active focus-within:bg-field-active focus-within:shadow-md">
+                                                <input id="_r_6m_" placeholder="Search projects..."
+                                                    aria-describedby="search-help" aria-label="Search projects..."
+                                                    role="searchbox"
+                                                    class="w-full bg-transparent text-sm-normal placeholder:text-color-placeholder focus:outline-hidden"
+                                                    value=""></div>
+                                        </div>
+                                    </div>
+                                    <div id="search-help" class="sr-only">Search requires at least 2 characters. Results
+                                        update automatically.</div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-20">
+                                <div class="p-16 hover:shadow-sm transition-all duration-200 border-card border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl space-y-16"
+                                    data-testid="project-card">
+                                    <div class="space-y-8">
+                                        <div class="flex items-start justify-between gap-8">
+                                            <div class="flex max-w-[350px] flex-col items-start gap-12">
+                                                <h5 dir="auto" class="text-lg-semibold text-color-primary">Submission -
+                                                    Human Attempt (Workflow B)</h5>
+                                            </div><a
+                                                data-testid="Submission - Human Attempt (Workflow B)-CDG_Otter_Prod"
+                                                href="/projects/0427cc09-31fb-4237-8876-c5e8f1b83748/submission-316040e9-51e7-42c7-8524-f4ad1ca42ffd/review"
+                                                class="flex items-center no-underline"><button type="button"
+                                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-primary bg-button-primary-enabled text-button-primary hover:bg-button-primary-hover active:bg-button-primary-pressed border-button-primary-enabled hover:border-button-primary-hover active:border-button-primary-pressed">Start</button></a>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-8">
+                                        <div class="text-color-secondary flex flex-col gap-4">
+                                            <div class="flex w-full flex-row items-center justify-between">
+                                                <div dir="auto"
+                                                    class="text-base-normal flex flex-col items-start gap-4">
+                                                    <div>
+                                                        <div dir="auto" class="text-base-medium inline">Project:</div>
+                                                        CDG_Otter_Prod
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-16 hover:shadow-sm transition-all duration-200 border-card border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl space-y-16"
+                                    data-testid="project-card">
+                                    <div class="space-y-8">
+                                        <div class="flex items-start justify-between gap-8">
+                                            <div class="flex max-w-[350px] flex-col items-start gap-12">
+                                                <h5 dir="auto" class="text-lg-semibold text-color-primary">Submission -
+                                                    Task Creation (Workflow A)</h5>
+                                            </div><a
+                                                data-testid="Submission - Task Creation (Workflow A)-CDG_Otter_Prod"
+                                                href="/projects/0427cc09-31fb-4237-8876-c5e8f1b83748/submission-6734dcba-d3b0-45fd-9aef-a0d31d6ddf34/review"
+                                                class="flex items-center no-underline"><button type="button"
+                                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-primary bg-button-primary-enabled text-button-primary hover:bg-button-primary-hover active:bg-button-primary-pressed border-button-primary-enabled hover:border-button-primary-hover active:border-button-primary-pressed">Start</button></a>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-8">
+                                        <div class="text-color-secondary flex flex-col gap-4">
+                                            <div class="flex w-full flex-row items-center justify-between">
+                                                <div dir="auto"
+                                                    class="text-base-normal flex flex-col items-start gap-4">
+                                                    <div>
+                                                        <div dir="auto" class="text-base-medium inline">Project:</div>
+                                                        CDG_Otter_Prod
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-16 hover:shadow-sm transition-all duration-200 border-card border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl space-y-16"
+                                    data-testid="project-card">
+                                    <div class="space-y-8">
+                                        <div class="flex items-start justify-between gap-8">
+                                            <div class="flex max-w-[350px] flex-col items-start gap-12">
+                                                <h5 dir="auto" class="text-lg-semibold text-color-primary">Submission
+                                                </h5>
+                                            </div><a data-testid="Submission-CDG_Sentinel_Ultra_00000"
+                                                href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff/submission-efa51f15-91a5-430b-8362-85be0d89c7ee/review"
+                                                class="flex items-center no-underline"><button type="button"
+                                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-primary bg-button-primary-enabled text-button-primary hover:bg-button-primary-hover active:bg-button-primary-pressed border-button-primary-enabled hover:border-button-primary-hover active:border-button-primary-pressed">Start</button></a>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-8">
+                                        <div class="text-color-secondary flex flex-col gap-4">
+                                            <div class="flex w-full flex-row items-center justify-between">
+                                                <div dir="auto"
+                                                    class="text-base-normal flex flex-col items-start gap-4">
+                                                    <div>
+                                                        <div dir="auto" class="text-base-medium inline">Project:</div>
+                                                        CDG_Sentinel_Ultra_00000
+                                                    </div>
+                                                </div>
+                                            </div><a href="https://snorkel-ai.github.io/Sentinel_Ultra_Hub/login"
+                                                target="_blank" rel="noopener noreferrer"
+                                                class="inline-flex items-center gap-xs text-sm-normal text-color-primary">Instructions<svg
+                                                    xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                                                    fill="currentColor" viewBox="0 0 256 256" class=""
+                                                    aria-hidden="true">
+                                                    <path
+                                                        d="M200,64V168a8,8,0,0,1-16,0V83.31L69.66,197.66a8,8,0,0,1-11.32-11.32L172.69,72H88a8,8,0,0,1,0-16H192A8,8,0,0,1,200,64Z">
+                                                    </path>
+                                                </svg></a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="space-y-8 pb-24">
+                                <h1 class="text-heading">Tasks to be revised</h1>
+                                <div dir="auto" class="text-base-normal">5 tasks to be revised</div>
+                            </div>
+                            <div class="mb-24">
+                                <div class="gap-xs flex w-full flex-col">
+                                    <div class="gap-xs flex w-full flex-col">
+                                        <div id="snorkel-owner-filter">
+                                            <div id="snorkel-input-row">
+                                                <input id="snorkel-owner-input" type="text"
+                                                    placeholder="Filter by owner…" autocomplete="off"
+                                                    spellcheck="false">
+                                                <div id="snorkel-dropdown" hidden=""></div>
+                                            </div>
+                                            <div id="snorkel-badge" hidden="">
+                                                <span id="snorkel-badge-label"></span>
+                                                <button id="snorkel-clear-btn" title="Clear filter">×</button>
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="flex w-full rounded-sm border bg-field text-sm-normal motion-safe:transition-[color,background-color,border-color,box-shadow] motion-safe:duration-150 border-field text-color-primary h-32 items-center px-sm gap-sm focus-within:border-field-active focus-within:bg-field-active focus-within:shadow-md">
+                                            <input id="_r_6o_" placeholder="Search tasks to revise..."
+                                                data-testid="assignments-search-input"
+                                                class="w-full bg-transparent text-sm-normal placeholder:text-color-placeholder focus:outline-hidden"
+                                                value=""></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-20 overflow-y-auto" data-testid="assignments-list">
+                                <div class="p-16 hover:shadow-sm transition-all duration-200 border-card border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl space-y-16"
+                                    data-testid="project-card">
+                                    <div class="space-y-8">
+                                        <div class="flex items-start justify-between gap-8">
+                                            <div class="flex max-w-[350px] flex-col items-start gap-12">
+                                                <h5 dir="auto" class="text-lg-semibold text-color-primary">
+                                                    666396fc-413d-4c11-9ff9-95e59259aa81</h5>
+                                                <div class="snorkel-card-meta"><span class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 252, 163); color: rgb(17, 95, 30);">Rabidon</span><span
+                                                        class="snorkel-card-task"
+                                                        title="20260729_094233__agentwrapper_agent-orchestrator__2309">20260729_094233__agentwrapper_agent-orchestrator__2309</span>
+                                                </div>
+                                            </div><a
+                                                data-testid="666396fc-413d-4c11-9ff9-95e59259aa81-CDG_Sentinel_Ultra_00000"
+                                                href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff/submission-efa51f15-91a5-430b-8362-85be0d89c7ee/review?assignmentId=8265f6ba-af0f-4295-ad05-0e17c21d3f1c"
+                                                class="flex items-center no-underline"><button type="button"
+                                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-primary bg-button-primary-enabled text-button-primary hover:bg-button-primary-hover active:bg-button-primary-pressed border-button-primary-enabled hover:border-button-primary-hover active:border-button-primary-pressed">Revise</button></a>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-8">
+                                        <div class="text-color-secondary flex flex-col gap-4">
+                                            <div class="flex w-full flex-row items-center justify-between">
+                                                <div dir="auto"
+                                                    class="text-base-normal flex flex-col items-start gap-4">
+                                                    <div>
+                                                        <div dir="auto" class="text-base-medium inline">Project:</div>
+                                                        CDG_Sentinel_Ultra_00000
+                                                    </div>
+                                                    <div dir="auto" class="text-sm-normal inline">Expires at: 8/8/2026,
+                                                        2:26:21 PM</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-16 hover:shadow-sm transition-all duration-200 border-card border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl space-y-16"
+                                    data-testid="project-card">
+                                    <div class="space-y-8">
+                                        <div class="flex items-start justify-between gap-8">
+                                            <div class="flex max-w-[350px] flex-col items-start gap-12">
+                                                <h5 dir="auto" class="text-lg-semibold text-color-primary">
+                                                    350f88e5-d8cb-43ba-a131-a2f605666e34</h5>
+                                                <div class="snorkel-card-meta"><span class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 252, 163); color: rgb(17, 95, 30);">Rabidon</span><span
+                                                        class="snorkel-card-task"
+                                                        title="20260728_153118__apache_casbin-Casbin.NET__155">20260728_153118__apache_casbin-Casbin.NET__155</span>
+                                                </div>
+                                            </div><a
+                                                data-testid="350f88e5-d8cb-43ba-a131-a2f605666e34-CDG_Sentinel_Ultra_00000"
+                                                href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff/submission-efa51f15-91a5-430b-8362-85be0d89c7ee/review?assignmentId=f32d90bf-e084-40b2-9437-9171e9c1ceb8"
+                                                class="flex items-center no-underline"><button type="button"
+                                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-primary bg-button-primary-enabled text-button-primary hover:bg-button-primary-hover active:bg-button-primary-pressed border-button-primary-enabled hover:border-button-primary-hover active:border-button-primary-pressed">Revise</button></a>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-8">
+                                        <div class="text-color-secondary flex flex-col gap-4">
+                                            <div class="flex w-full flex-row items-center justify-between">
+                                                <div dir="auto"
+                                                    class="text-base-normal flex flex-col items-start gap-4">
+                                                    <div>
+                                                        <div dir="auto" class="text-base-medium inline">Project:</div>
+                                                        CDG_Sentinel_Ultra_00000
+                                                    </div>
+                                                    <div dir="auto" class="text-sm-normal inline">Expires at: 8/8/2026,
+                                                        2:35:03 PM</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-16 hover:shadow-sm transition-all duration-200 border-card border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl space-y-16"
+                                    data-testid="project-card">
+                                    <div class="space-y-8">
+                                        <div class="flex items-start justify-between gap-8">
+                                            <div class="flex max-w-[350px] flex-col items-start gap-12">
+                                                <h5 dir="auto" class="text-lg-semibold text-color-primary">
+                                                    e2c0f82f-4be9-4522-9bc3-36f44ebab877</h5>
+                                                <div class="snorkel-card-meta"><span class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 252, 163); color: rgb(17, 95, 30);">Rabidon</span><span
+                                                        class="snorkel-card-task"
+                                                        title="20260731_112631__Titan-Systems_titan__18">20260731_112631__Titan-Systems_titan__18</span>
+                                                </div>
+                                            </div><a
+                                                data-testid="e2c0f82f-4be9-4522-9bc3-36f44ebab877-CDG_Sentinel_Ultra_00000"
+                                                href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff/submission-efa51f15-91a5-430b-8362-85be0d89c7ee/review?assignmentId=0b5000de-3375-43dc-8e1d-ac6b54aa868a"
+                                                class="flex items-center no-underline"><button type="button"
+                                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-primary bg-button-primary-enabled text-button-primary hover:bg-button-primary-hover active:bg-button-primary-pressed border-button-primary-enabled hover:border-button-primary-hover active:border-button-primary-pressed">Revise</button></a>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-8">
+                                        <div class="text-color-secondary flex flex-col gap-4">
+                                            <div class="flex w-full flex-row items-center justify-between">
+                                                <div dir="auto"
+                                                    class="text-base-normal flex flex-col items-start gap-4">
+                                                    <div>
+                                                        <div dir="auto" class="text-base-medium inline">Project:</div>
+                                                        CDG_Sentinel_Ultra_00000
+                                                    </div>
+                                                    <div dir="auto" class="text-sm-normal inline">Expires at: 8/8/2026,
+                                                        2:36:42 PM</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-16 hover:shadow-sm transition-all duration-200 border-card border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl space-y-16"
+                                    data-testid="project-card">
+                                    <div class="space-y-8">
+                                        <div class="flex items-start justify-between gap-8">
+                                            <div class="flex max-w-[350px] flex-col items-start gap-12">
+                                                <h5 dir="auto" class="text-lg-semibold text-color-primary">
+                                                    029c1c0c-15f1-4ee6-ab50-421afd9e10ae</h5>
+                                                <div class="snorkel-card-meta"><span class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 252, 163); color: rgb(17, 95, 30);">Rabidon</span><span
+                                                        class="snorkel-card-task"
+                                                        title="20260726_020259__Siubaak_sval__8">20260726_020259__Siubaak_sval__8</span>
+                                                </div>
+                                            </div><a
+                                                data-testid="029c1c0c-15f1-4ee6-ab50-421afd9e10ae-CDG_Sentinel_Ultra_00000"
+                                                href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff/submission-efa51f15-91a5-430b-8362-85be0d89c7ee/review?assignmentId=1851bd20-0e7a-45af-bd75-6cfea9104067"
+                                                class="flex items-center no-underline"><button type="button"
+                                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-primary bg-button-primary-enabled text-button-primary hover:bg-button-primary-hover active:bg-button-primary-pressed border-button-primary-enabled hover:border-button-primary-hover active:border-button-primary-pressed">Revise</button></a>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-8">
+                                        <div class="text-color-secondary flex flex-col gap-4">
+                                            <div class="flex w-full flex-row items-center justify-between">
+                                                <div dir="auto"
+                                                    class="text-base-normal flex flex-col items-start gap-4">
+                                                    <div>
+                                                        <div dir="auto" class="text-base-medium inline">Project:</div>
+                                                        CDG_Sentinel_Ultra_00000
+                                                    </div>
+                                                    <div dir="auto" class="text-sm-normal inline">Expires at: 8/8/2026,
+                                                        3:37:19 PM</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="p-16 hover:shadow-sm transition-all duration-200 border-card border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl space-y-16"
+                                    data-testid="project-card">
+                                    <div class="space-y-8">
+                                        <div class="flex items-start justify-between gap-8">
+                                            <div class="flex max-w-[350px] flex-col items-start gap-12">
+                                                <h5 dir="auto" class="text-lg-semibold text-color-primary">
+                                                    4128e9d4-25a3-4fe0-8ec7-5d34f8cc0b96</h5>
+                                                <div class="snorkel-card-meta"><span class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 252, 163); color: rgb(17, 95, 30);">Rabidon</span><span
+                                                        class="snorkel-card-task"
+                                                        title="20260716_114438__OpenMined_PySyft__9432">20260716_114438__OpenMined_PySyft__9432</span>
+                                                </div>
+                                            </div><a
+                                                data-testid="4128e9d4-25a3-4fe0-8ec7-5d34f8cc0b96-CDG_Sentinel_Ultra_00000"
+                                                href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff/submission-efa51f15-91a5-430b-8362-85be0d89c7ee/review?assignmentId=bc006b56-5d76-40a2-bfc7-b90d19b3764e"
+                                                class="flex items-center no-underline"><button type="button"
+                                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-primary bg-button-primary-enabled text-button-primary hover:bg-button-primary-hover active:bg-button-primary-pressed border-button-primary-enabled hover:border-button-primary-hover active:border-button-primary-pressed">Revise</button></a>
+                                        </div>
+                                    </div>
+                                    <div class="space-y-8">
+                                        <div class="text-color-secondary flex flex-col gap-4">
+                                            <div class="flex w-full flex-row items-center justify-between">
+                                                <div dir="auto"
+                                                    class="text-base-normal flex flex-col items-start gap-4">
+                                                    <div>
+                                                        <div dir="auto" class="text-base-medium inline">Project:</div>
+                                                        CDG_Sentinel_Ultra_00000
+                                                    </div>
+                                                    <div dir="auto" class="text-sm-normal inline">Expires at: 8/8/2026,
+                                                        3:39:13 PM</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="freshworks-container" data-html2canvas-ignore="true"
+        style="width: 0px; height: 0px; bottom: 0px; right: 0px; z-index: 2147483647;">
+        <div aria-live="polite"></div>
+    </div><iframe title="FreshworksWidget" id="freshworks-frame" data-html2canvas-ignore="true"
+        style="display: none;"></iframe>
+    <div class="context-view" aria-hidden="true" style="display: none;"></div>
+    <div class="monaco-aria-container">
+        <div class="monaco-alert" role="alert" aria-atomic="true"></div>
+        <div class="monaco-alert" role="alert" aria-atomic="true"></div>
+        <div class="monaco-status" aria-live="polite" aria-atomic="true"></div>
+        <div class="monaco-status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+</body>

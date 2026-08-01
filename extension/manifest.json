@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Snorkel Bot — Sentinel Starter",
+  "version": "1.0.0",
+  "description": "Drives experts.snorkel-ai.com on command from the Snorkel Bot node server: starts a Sentinel task, downloads the task zip, and reports the submission info back.",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "downloads",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://experts.snorkel-ai.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Snorkel Bot"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://experts.snorkel-ai.com/*"
+      ],
+      "js": [
+        "content/common.js",
+        "content/homepage.js",
+        "content/sentinel.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
