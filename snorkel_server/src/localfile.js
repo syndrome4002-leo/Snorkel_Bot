@@ -1,10 +1,9 @@
 /*
  * localfile.js — everything the server does with the zip Chrome downloaded.
  *
- * This is the piece that requires the server and the browser to share a
- * machine: the Dropbox extension cannot read ~/Downloads itself (extensions
- * have no filesystem API for arbitrary paths), so the server reads the file and
- * serves it over HTTP for the extension to fetch.
+ * This is the piece that requires the server and the browser to share a machine:
+ * Chrome writes the download to ~/Downloads, and the server reads it from there
+ * to upload it to Dropbox and delete it afterwards.
  */
 
 import path from 'node:path';

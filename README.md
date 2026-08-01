@@ -1,15 +1,14 @@
 # Snorkel Bot
 
-Three pieces that work together:
+Two pieces that work together:
 
 | Folder | What it is |
 | --- | --- |
 | [snorkel_extension/](snorkel_extension/) | Chrome MV3 extension that drives `experts.snorkel-ai.com` |
-| [dropbox_extension/](dropbox_extension/) | Chrome MV3 extension that drives `dropbox.com` |
-| [snorkel_server/](snorkel_server/) | Node server that commands both extensions and writes to Firebase |
+| [snorkel_server/](snorkel_server/) | Node server that commands it, uploads to Dropbox, and writes to Firebase |
 
-Neither extension touches Firebase, and the server never touches the browser.
-Both extensions connect to the same WebSocket and identify themselves by role.
+The extension never touches Firebase or Dropbox, and the server never touches the
+browser. They talk over a WebSocket.
 
 ---
 
@@ -17,7 +16,7 @@ Both extensions connect to the same WebSocket and identify themselves by role.
 
 ```
   YOU / cron / another service
-        │  POST /api/run
+        │  POST /start_new_task
         ▼
   ┌─────────────────┐  ws /extension?role=snorkel   ┌──────────────────────┐
   │                 │ ──── start_sentinel ───────▶  │  snorkel extension   │
@@ -28,15 +27,15 @@ Both extensions connect to the same WebSocket and identify themselves by role.
   │                 │      file_uploaded: false                ▼
   │                 │      task_status: "downloaded"   experts.snorkel-ai.com
   │                 │                                          │
-  │                 │  ws /extension?role=dropbox     ~/Downloads/<file>.zip
-  │                 │ ──── upload_to_dropbox ────▶  ┌──────────┴───────────┐
-  │                 │ ◀─── GET /tasks/:uid/file ──  │  dropbox extension   │
-  │                 │ ◀─── result {uploaded} ─────  └──────────┬───────────┘
-  └────────┬────────┘                                          │ 4. inject into
-           │ delete the local file                             │    the hidden
-           ▼ markUploaded()                                    │    file input
-  Tasks/<UID>  file_uploaded: true, task_status: "new"          ▼
-                                                          dropbox.com
+  │                 │           reads the zip from     ~/Downloads/<file>.zip
+  │                 │ ◀─────────────────────────────────────────┘
+  │                 │
+  │                 │  HTTPS POST /2/files/upload
+  │                 │ ─────────────────────────────────────▶  dropbox.com
+  └────────┬────────┘
+           │ delete the local file
+           ▼ markUploaded()
+  Tasks/<UID>  file_uploaded: true, task_status: "new"
 ```
 
 **Step 1 — Snorkel** (`POST /api/start`)
@@ -56,17 +55,11 @@ Both extensions connect to the same WebSocket and identify themselves by role.
 
 **Step 2 — Dropbox** (`POST /api/upload`)
 
-5. The server finds the zip in `~/Downloads`, then sends
-   `{type:"upload_to_dropbox", task, fileUrl}` to the Dropbox extension.
-6. That extension's **service worker** fetches the bytes from
-   `GET /api/tasks/:uid/file` — the worker, not the content script, because it
-   holds the host permission and is not subject to the page's CORS or
-   private-network rules — and base64-encodes them.
-7. It opens `dropbox.com`, and the content script turns the bytes back into a
-   `File`, puts it into Dropbox's **hidden upload input** via `DataTransfer`, and
-   fires `change`. Dropbox's own uploader takes over. Completion is detected by
-   watching the file grid for the new `data-filename` row.
-8. The server **deletes the local file** and sets `file_uploaded: true` and
+5. The server finds the zip in `~/Downloads` and `POST`s it to
+   `https://content.dropboxapi.com/2/files/upload`, using an access token minted
+   from the stored refresh token. Files over 150 MB go via an upload session.
+   No browser is involved.
+6. The server **deletes the local file** and sets `file_uploaded: true` and
    `task_status: "new"`.
 
 `POST /api/run` does both steps back to back.
@@ -159,38 +152,90 @@ out to be missing is reported as an error rather than silently falling through.
 WebSocket URL (`ws://<host>:8787/extension`) and set a `BOT_TOKEN` on both sides,
 since the socket will no longer be on localhost.
 
-> **One manual step is still outstanding.** The service account authenticates
-> fine, but the project has no Firestore database yet, so writes fail with
-> `5 NOT_FOUND`. Open
-> <https://console.firebase.google.com/project/snorkel-fe3eb/firestore>, click
-> **Create database**, pick a region (permanent) and a rules mode, then restart
-> the server. `GET /api/status` will flip `firebase.ready` to `true`.
->
-> Until then the server still runs the full browser flow and logs each record to
-> the console; `POST /api/start` responds with `saved: false` and a `warning`.
+Firestore is created and the service account has the **Cloud Datastore User**
+role, so `GET /api/status` should report `"firebase": {"ready": true}`. If it
+ever says `ready: false`, the `reason` field names the exact problem — a missing
+key file is reported by path, and a missing IAM role names the role to grant.
 
 Set `FIREBASE_ENABLED=false` to skip Firestore deliberately (dry run).
 
-### 2. Both extensions
+### 2. Dropbox
+
+The server uploads over HTTPS — no browser, no extension, no DOM to break; real
+status codes, and it works headless under cron.
+
+Set it up once. Create the app at
+<https://www.dropbox.com/developers/apps> (*Scoped access*, **App folder**), tick
+`files.content.write`, `files.content.read` and `account_info.read` on the
+**Permissions** tab and **Submit** — scopes are baked into the token at approval
+time, so do this first. Put the App key and secret in `.env`, then add this to
+**Settings → Redirect URIs**:
+
+```
+http://localhost:8787/api/dropbox/callback
+```
+
+Start the server and open:
+
+```
+http://localhost:8787/api/dropbox/connect
+```
+
+Approve once, and the server exchanges the code, writes
+`DROPBOX_REFRESH_TOKEN` into `.env`, and starts using it — **no restart, nothing
+to copy and paste**.
+
+`npm run dropbox:auth` does the same thing from a terminal if you would rather
+not register a redirect URI; it shows a code you paste back.
+
+**Why a refresh token and not just a token from the App Console?** The console's
+"Generate access token" button hands out a *short-lived* token — Dropbox retired
+long-lived ones in 2021, and it stops working after about four hours with no way
+to renew it. A refresh token does not expire, and the server trades it for a
+fresh access token whenever it needs one. There is no button for a refresh token
+anywhere in the console; the authorize-code exchange with
+`token_access_type=offline` is the only way to get one.
+
+**Can the server mint one by itself?** No — and no client can. A refresh token
+represents *a person having approved this app for their account*, so the one
+click on Dropbox's consent screen is irreducible; an app that could skip it could
+read anybody's files. Everything either side of that click is automated: the
+server builds the authorize URL, receives the code, exchanges it, stores the
+token and starts using it. After that first click nothing is manual again — the
+4-hour access tokens are minted and cached automatically, for as long as the
+refresh token lives.
+
+To try the upload out immediately, you can paste a console token into
+`DROPBOX_ACCESS_TOKEN` and skip the OAuth flow — the server will use it as-is and
+warn you on every start. Fine for a smoke test, useless for an unattended bot.
+
+Confirm it works without uploading anything:
+
+```bash
+curl -s localhost:8787/api/dropbox/check
+# {"ok":true,"mode":"api","account":{"email":"you@example.com",...}}
+```
+
+Files up to 150 MB go in one request; larger ones use an upload session
+automatically. Name clashes are resolved by Dropbox's own `autorename`, and the
+stored name comes back in `dropbox_name` / `dropbox_path`.
+
+### 3. The extension
 
 1. `chrome://extensions` → enable **Developer mode**
 2. **Load unpacked** → [snorkel_extension/](snorkel_extension/)
-3. **Load unpacked** again → [dropbox_extension/](dropbox_extension/)
-4. Click each icon. Both dots should turn green (`connected`). If you set
-   `BOT_TOKEN` in `.env`, put the same value in each popup's Token field and hit
+3. Click the icon. The dot should turn green (`connected`). If you set
+   `BOT_TOKEN` in `.env`, put the same value in the popup's Token field and hit
    **Save & reconnect**.
-5. Sign in to `https://experts.snorkel-ai.com` **and** `https://www.dropbox.com`
-   in that same Chrome profile. The extensions reuse your sessions and never
-   handle your passwords; if either lands on a login page it aborts with a clear
-   error instead of guessing.
-
-`GET /api/status` shows both roles:
+4. Sign in to `https://experts.snorkel-ai.com` in that same Chrome profile. The
+   extension reuses your session and never handles your password; if it lands on
+   a login page it aborts with a clear error instead of guessing.
 
 ```json
-{ "extensions": { "snorkel": {"connected": true}, "dropbox": {"connected": true} } }
+{ "extension": { "snorkel": {"connected": true} } }
 ```
 
-### 3. Run it
+### 4. Run it
 
 **One call does everything** — Snorkel start → scrape → download → save →
 Dropbox upload → delete the local file → flip the flags:
@@ -249,10 +294,12 @@ curl -X POST http://localhost:8787/api/upload   # Dropbox step only
 | `GET /api/jobs/:id` | One run: status, step, and the full result |
 | `POST /api/start` | Snorkel step only. Optional body: `{"projectKey":"…","mode":"new\|resume\|any"}` |
 | `POST /api/upload` | Dropbox step only. Optional body: `{"uid":"…","folder":"…","force":true}` |
-| `GET /api/status` | Extensions connected? Firebase ready? Queue depth? |
+| `GET /api/status` | Extension connected? Firebase ready? Dropbox configured? Queue depth? |
+| `GET /api/dropbox/connect` | Approve the app in Dropbox; stores the refresh token and starts using it |
+| `GET /api/dropbox/callback` | Where Dropbox sends you back — register this as the app's Redirect URI |
+| `GET /api/dropbox/check` | Confirm the Dropbox credentials without uploading |
 | `GET /api/tasks` | 50 most recent `Tasks` documents |
 | `GET /api/tasks/:uid` | One document |
-| `GET /api/tasks/:uid/file` | The downloaded zip — what the Dropbox extension fetches |
 | `POST /api/flush` | Replay queued tasks into Firestore (see below) |
 | `GET /api/events` | Server-sent events stream of live progress |
 
@@ -333,25 +380,10 @@ DOM parser.
 holding your *uploaded* result (e.g. `…_corrected.zip`). Every download selector
 is scoped inside the download field so that one is never picked up by mistake.
 
-**Dropbox** — [dropbox_extension/content/dropbox.js](dropbox_extension/content/dropbox.js),
-derived from your saved `dropbox_ui.html` and verified the same way.
-
-| Thing | Selector |
-| --- | --- |
-| Upload input | `input[data-testid="uploader-file-field"]` (hidden, `multiple`) |
-| File listing | `[role="grid"]` with `[role="row"][aria-label^="File, "]` rows |
-| File names | `[data-filename]` on each gridcell |
-| Current folder | `[data-testid="browse-renamable-title"]` |
-
-⚠️ There is also `input[data-testid="uploader-folder-field"]` (a
-`webkitdirectory` picker). The selector targets the file field only.
-
-⚠️ The folder heading renders its name **twice**, so a plain `.trim()` yields
-`"All files\n   \n  All files"`. The code takes the first non-empty line.
-
 Each selector has a fallback (text scan, body regex, URL parsing), so a cosmetic
-class change won't break the run — but if Snorkel or Dropbox restructures these
-panels, these files are the only places to update.
+class change won't break the run — but if Snorkel restructures these panels,
+these files are the only places to update. Dropbox needs no selectors at all now
+that uploads go through its API.
 
 ---
 

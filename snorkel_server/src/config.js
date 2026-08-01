@@ -28,17 +28,35 @@ export const config = {
   /** How long POST /api/start waits for the extension to finish the whole flow. */
   commandTimeoutMs: Number(process.env.COMMAND_TIMEOUT_MS || 240000),
 
-  /** How long POST /api/upload waits for Dropbox to finish taking the file. */
-  uploadTimeoutMs: Number(process.env.UPLOAD_TIMEOUT_MS || 300000),
-
   /**
    * Where Chrome saves downloads. The server reads the task zip from here to
-   * hand it to the Dropbox extension, and deletes it once the upload lands, so
-   * it must be the same machine the browser runs on.
+   * upload it, and deletes it once Dropbox has it, so the server must run on the
+   * same machine as the browser.
    */
   downloadsDir: process.env.DOWNLOADS_DIR
     ? path.resolve(process.env.DOWNLOADS_DIR)
     : path.join(os.homedir(), 'Downloads'),
+
+  dropbox: {
+    appKey: process.env.DROPBOX_APP_KEY || '',
+    appSecret: process.env.DROPBOX_APP_SECRET || '',
+    refreshToken: process.env.DROPBOX_REFRESH_TOKEN || '',
+
+    /**
+     * A token pasted straight from the App Console's "Generate access token"
+     * button. Handy to prove the upload works without doing the OAuth dance,
+     * but it dies after about four hours and cannot be renewed — the refresh
+     * token is what makes this run unattended.
+     */
+    accessToken: process.env.DROPBOX_ACCESS_TOKEN || '',
+
+    /** Destination folder; '' means the root of the app folder / Dropbox. */
+    folder: process.env.DROPBOX_FOLDER || '',
+
+    // Overridable so the upload path can be pointed at a stub in tests.
+    apiBase: process.env.DROPBOX_API_BASE || 'https://api.dropboxapi.com',
+    contentBase: process.env.DROPBOX_CONTENT_BASE || 'https://content.dropboxapi.com',
+  },
 
   firebase: {
     /** Set FIREBASE_ENABLED=false to run the server without credentials (logs instead of writing). */

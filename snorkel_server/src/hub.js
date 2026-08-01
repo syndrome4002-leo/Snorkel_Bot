@@ -1,11 +1,9 @@
 /*
  * hub.js — the WebSocket side of the server.
  *
- * Two extensions connect to the same /extension path and identify themselves by
- * role, either as ?role=<role> on the URL or in their "hello" frame:
- *
- *   snorkel  — drives experts.snorkel-ai.com (start task, scrape, download)
- *   dropbox  — drives dropbox.com (upload the downloaded file)
+ * The Snorkel extension connects to /extension and identifies itself by role,
+ * either as ?role=snorkel on the URL or in its "hello" frame. Uploading to
+ * Dropbox is done by the server over HTTPS, so there is no browser role for it.
  *
  * Commands are request/response: each carries a requestId, and the promise
  * settles when a matching {type:"result"} frame comes back, or on timeout /
@@ -16,15 +14,12 @@ import { randomUUID } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { config } from './config.js';
 
-export const ROLES = ['snorkel', 'dropbox'];
+export const ROLES = ['snorkel'];
 
 /** Older builds of the Snorkel extension only sent a client name. */
 function roleFromHello(msg) {
   if (msg.role && ROLES.includes(msg.role)) return msg.role;
-  if (typeof msg.client === 'string') {
-    if (msg.client.includes('dropbox')) return 'dropbox';
-    if (msg.client.includes('snorkel')) return 'snorkel';
-  }
+  if (typeof msg.client === 'string' && msg.client.includes('snorkel')) return 'snorkel';
   return null;
 }
 
@@ -157,10 +152,6 @@ export class ExtensionHub {
 
   startSentinel(options = {}) {
     return this.command('snorkel', { type: 'start_sentinel', options });
-  }
-
-  uploadToDropbox(payload) {
-    return this.command('dropbox', { type: 'upload_to_dropbox', ...payload }, config.uploadTimeoutMs);
   }
 
   #send(role, payload) {

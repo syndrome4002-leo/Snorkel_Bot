@@ -9,7 +9,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "seed": "node scripts/seed-sample.mjs",
-    "seed:delete": "node scripts/seed-sample.mjs --delete"
+    "seed:delete": "node scripts/seed-sample.mjs --delete",
+    "dropbox:auth": "node scripts/dropbox-auth.mjs"
   },
   "engines": {
     "node": ">=18"

@@ -7,14 +7,14 @@
  *   POST /api/run               same pipeline, but blocking unless {"async":true}
  *   POST /api/start             Snorkel step only: start a task, scrape, download, save
  *   POST /api/upload            Dropbox step only: upload, delete, flip the flags
- *   GET  /api/status            extensions connected? Firebase ready? queue depth?
+ *   GET  /api/status            extension connected? Firebase ready? queue depth?
  *   GET  /api/tasks             recent Tasks documents
  *   GET  /api/tasks/:uid        one Tasks document
- *   GET  /api/tasks/:uid/file   the downloaded zip (fetched by the Dropbox extension)
  *   POST /api/flush             replay tasks that could not reach Firestore
  *   GET  /api/events            server-sent events stream of live progress
  *
- * Both extensions connect to ws://<host>:<port>/extension?role=snorkel|dropbox.
+ * The Snorkel extension connects to ws://<host>:<port>/extension?role=snorkel.
+ * Dropbox uploads go straight from this server over HTTPS.
  */
 
 import http from 'node:http';
@@ -25,6 +25,15 @@ import cors from 'cors';
 import { config } from './config.js';
 import { ExtensionHub } from './hub.js';
 import { locateTaskFile, deleteTaskFile } from './localfile.js';
+import {
+  uploadFile,
+  dropboxConfigured,
+  checkAccount,
+  buildAuthUrl,
+  exchangeCode,
+  applyRefreshToken,
+} from './dropbox.js';
+import { updateEnvFile, ENV_PATH } from './envfile.js';
 import {
   initFirebase,
   saveTask,
@@ -49,12 +58,96 @@ app.get('/api/status', async (_req, res) => {
   const pending = await pendingCount().catch(() => 0);
   res.json({
     ok: true,
-    extensions: hub.status(),
+    extension: hub.status(),
     firebase: firebaseStatus(),
+    dropbox: {
+      configured: dropboxConfigured(),
+      folder: config.dropbox.folder || '/',
+    },
     downloads_dir: config.downloadsDir,
     // Tasks scraped successfully but not yet in Firestore, waiting on a flush.
     pending_tasks: pending,
   });
+});
+
+/*
+ * Dropbox connect flow, hosted by the server.
+ *
+ *   open  http://localhost:<port>/api/dropbox/connect
+ *   -> Dropbox asks you to approve the app (the one step that needs a human)
+ *   -> Dropbox redirects back to /api/dropbox/callback with a code
+ *   -> the server exchanges it, writes DROPBOX_REFRESH_TOKEN into .env, and
+ *      starts using it straight away
+ *
+ * The redirect URI has to be registered on the app's Settings page first, or
+ * Dropbox refuses the request.
+ */
+const pendingStates = new Set();
+
+function callbackUrl(req) {
+  return `${req.protocol}://${req.get('host')}/api/dropbox/callback`;
+}
+
+app.get('/api/dropbox/connect', (req, res) => {
+  if (!config.dropbox.appKey || !config.dropbox.appSecret) {
+    return res
+      .status(400)
+      .type('text/plain')
+      .send('Set DROPBOX_APP_KEY and DROPBOX_APP_SECRET in .env first, then reload this page.');
+  }
+  const state = randomUUID();
+  pendingStates.add(state);
+  // Nothing to gain from remembering these forever.
+  setTimeout(() => pendingStates.delete(state), 10 * 60 * 1000).unref();
+  res.redirect(buildAuthUrl(callbackUrl(req), state));
+});
+
+app.get('/api/dropbox/callback', async (req, res) => {
+  const page = (title, body) =>
+    res.type('html').send(
+      `<!doctype html><meta charset="utf-8"><title>${title}</title>` +
+        `<body style="font:15px/1.6 system-ui;max-width:40em;margin:3em auto;padding:0 1em">` +
+        `<h2>${title}</h2>${body}</body>`
+    );
+
+  if (req.query.error) {
+    return page('Dropbox connection cancelled', `<p><code>${req.query.error_description || req.query.error}</code></p>`);
+  }
+  // Guards against a stray callback being used to plant someone else's token.
+  if (!req.query.state || !pendingStates.delete(req.query.state)) {
+    return res.status(400).type('text/plain').send('Unknown or expired state — start again at /api/dropbox/connect.');
+  }
+
+  try {
+    const token = await exchangeCode(req.query.code, callbackUrl(req));
+    applyRefreshToken(token.refresh_token);
+    await updateEnvFile({
+      DROPBOX_APP_KEY: config.dropbox.appKey,
+      DROPBOX_APP_SECRET: config.dropbox.appSecret,
+      DROPBOX_REFRESH_TOKEN: token.refresh_token,
+    });
+
+    const account = await checkAccount().catch(() => null);
+    console.log(`[dropbox] connected${account ? ` as ${account.email}` : ''}; refresh token saved to ${ENV_PATH}`);
+    page(
+      'Dropbox connected',
+      `<p>${account ? `Connected as <strong>${account.name}</strong> &lt;${account.email}&gt;.` : 'Refresh token stored.'}</p>` +
+        `<p>Saved to <code>${ENV_PATH}</code>. No restart needed — the server is already using it.</p>` +
+        `<p>You can close this tab.</p>`
+    );
+  } catch (err) {
+    console.error('[dropbox] connect failed:', err.message);
+    page('Dropbox connection failed', `<p><code>${err.message}</code></p><p><a href="/api/dropbox/connect">Try again</a></p>`);
+  }
+});
+
+/** Confirms the Dropbox credentials without uploading anything. */
+app.get('/api/dropbox/check', async (_req, res) => {
+  try {
+    res.json({ ok: true, account: await checkAccount() });
+  } catch (err) {
+    res.status(503).json({ ok: false, error: err.message });
+  }
 });
 
 app.post('/api/flush', async (_req, res) => {
@@ -97,29 +190,8 @@ app.post('/api/start', async (req, res) => {
 // -------------------------------------------------------- dropbox step ----
 
 /**
- * Serves the downloaded zip to the Dropbox extension. The extension's service
- * worker fetches this (it has host permission for localhost), turns it into a
- * File, and injects it into Dropbox's hidden upload input.
- */
-app.get('/api/tasks/:uid/file', async (req, res) => {
-  try {
-    const task = await getTask(req.params.uid);
-    if (!task) return res.status(404).json({ ok: false, error: 'Task not found.' });
-
-    const file = await locateTaskFile(task);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Length', file.size);
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(file.path)}"`);
-    res.sendFile(file.path);
-  } catch (err) {
-    const status = err.code === 'FILE_NOT_FOUND' ? 404 : 500;
-    res.status(status).json({ ok: false, error: err.message });
-  }
-});
-
-/**
- * The Dropbox half: hand the file to the extension, and once it confirms the
- * upload, delete the local copy and flip file_uploaded / task_status.
+ * The Dropbox half: upload the file, then delete the local copy and flip
+ * file_uploaded / task_status.
  */
 async function runDropboxStep(uid, options = {}) {
   const task = uid ? await getTask(uid) : await findPendingUpload();
@@ -132,16 +204,17 @@ async function runDropboxStep(uid, options = {}) {
     return { task, skipped: true, reason: 'Already uploaded (pass {"force":true} to redo it).' };
   }
 
-  // Fail fast with a clear message rather than sending the extension on an
-  // errand for a file that is not there.
+  // Fail fast with a clear message rather than starting an upload for a file
+  // that is not there.
   const file = await locateTaskFile(task);
+  const fileName = path.basename(file.path);
 
-  const fileUrl = `http://127.0.0.1:${config.port}/api/tasks/${encodeURIComponent(task.UID)}/file`;
-  const result = await hub.uploadToDropbox({
-    task: { uid: task.UID, file_name: path.basename(file.path) },
-    fileUrl,
-    token: config.botToken || undefined,
-    options: { folder: options.folder || '' },
+  // Straight to Dropbox over HTTPS: no browser involved, real status codes, and
+  // Dropbox's own autorename handles name clashes.
+  const result = await uploadFile(file.path, {
+    folder: options.folder || config.dropbox.folder,
+    fileName,
+    size: file.size,
   });
 
   const cleanup = await deleteTaskFile(file.path);
@@ -153,19 +226,32 @@ async function runDropboxStep(uid, options = {}) {
   return {
     task: { ...task, ...patch },
     uploaded: true,
-    file: { name: path.basename(file.path), size: file.size, deleted: cleanup.deleted },
+    file: {
+      name: fileName,
+      size: file.size,
+      deleted: cleanup.deleted,
+      dropbox_name: result.dropbox_name,
+      renamed: !!result.renamed,
+    },
     ...(cleanup.deleted ? {} : { warning: `Uploaded, but the local file could not be deleted: ${cleanup.error}` }),
     progress: result.progress,
   };
 }
 
+/** The server uploads to Dropbox itself, so only the Snorkel extension is needed. */
+function requiredRoles() {
+  return ['snorkel'];
+}
+
+function uploadUnavailable() {
+  return dropboxConfigured()
+    ? null
+    : 'Dropbox credentials are missing. Open /api/dropbox/connect, or run "npm run dropbox:auth".';
+}
+
 app.post('/api/upload', async (req, res) => {
-  if (!hub.isConnected('dropbox')) {
-    return res.status(503).json({
-      ok: false,
-      error: 'No "dropbox" extension is connected. Load dropbox_extension/ in Chrome.',
-    });
-  }
+  const unavailable = uploadUnavailable();
+  if (unavailable) return res.status(503).json({ ok: false, error: unavailable });
   try {
     const { uid, ...options } = req.body || {};
     res.json({ ok: true, ...(await runDropboxStep(uid, options)) });
@@ -280,7 +366,7 @@ function summarise(job) {
 }
 
 app.post('/api/run', async (req, res) => {
-  const missing = ['snorkel', 'dropbox'].filter((role) => !hub.isConnected(role));
+  const missing = requiredRoles().filter((role) => !hub.isConnected(role));
   if (missing.length) {
     return res
       .status(503)
@@ -320,7 +406,7 @@ app.post('/api/run', async (req, res) => {
  * line without having to spell out a POST.
  */
 async function startNewTask(req, res) {
-  const missing = ['snorkel', 'dropbox'].filter((role) => !hub.isConnected(role));
+  const missing = requiredRoles().filter((role) => !hub.isConnected(role));
   if (missing.length) {
     return res
       .status(503)
