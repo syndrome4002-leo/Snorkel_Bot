@@ -396,10 +396,18 @@ panels, these files are the only places to update.
   permission and sidesteps the page's CORS and private-network rules, which a
   content script does not), and hands it to the page as base64. This is why the
   server must run on the same machine as the browser.
-- **Uploads are confirmed, not assumed.** After injecting, the content script
-  watches the file grid until the new `data-filename` row appears. If a file of
+- **Uploads are confirmed, not assumed.** After injecting, the service worker
+  polls the file grid until the new `data-filename` row appears. If a file of
   the same name already existed, it accepts Dropbox's renamed version
   (`… (1).zip`) and reports `renamed: true`.
+- **No message channel is held open across the upload.** Every message the
+  Dropbox page handles answers promptly; the worker polls with short calls it
+  can retry. An earlier version kept one channel open for the whole upload and
+  died with *"the message channel closed before a response was received"* —
+  Dropbox is an SPA and `dropbox.com/home` redirects, and a navigation destroys
+  the content script mid-await. `CHECK_UPLOAD` is stateless (the worker holds
+  the before-snapshot and passes it in), so a freshly re-injected content script
+  answers just as well as the one that did the injecting.
 - **The local file is deleted only after the extension confirms.** A failed
   delete does not undo the upload — it comes back as a `warning` alongside
   `ok: true`.

@@ -50,16 +50,27 @@
     return names;
   }
 
+  /**
+   * The heading renders its name twice (a visually hidden copy). In saved,
+   * pretty-printed HTML the two copies are separated by formatting whitespace;
+   * in the live DOM they are not, so textContent reads "All filesAll files".
+   * Handle both: take the first non-empty line, then undouble it.
+   */
   function currentFolder() {
     const el = document.querySelector('[data-testid="browse-renamable-title"]');
     if (!el) return null;
-    // The heading renders the name twice (a visually hidden copy), so a plain
-    // .trim() yields "All files\n   \n  All files". Take the first real line.
+
     const [first] = el.textContent
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean);
-    return first || null;
+    if (!first) return null;
+
+    const half = first.length / 2;
+    if (Number.isInteger(half) && first.slice(0, half) === first.slice(half)) {
+      return first.slice(0, half);
+    }
+    return first;
   }
 
   function base64ToBytes(b64) {
@@ -84,6 +95,18 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  /*
+   * Injection and completion-checking are deliberately SEPARATE messages.
+   *
+   * An earlier version held one message channel open for the whole upload and
+   * failed with "the message channel closed before a response was received":
+   * Dropbox is a single-page app that navigates (dropbox.com/home redirects),
+   * and a navigation destroys the content script mid-await, killing the
+   * channel. Every handler here now answers immediately, and the service worker
+   * polls with short calls it can retry — re-injecting this script if the page
+   * replaced it. Nothing is remembered between calls, so a fresh copy of this
+   * script can answer just as well as the one that did the injecting.
+   */
   async function handleUpload(msg) {
     if (/\/login/i.test(location.pathname)) {
       throw new Error('Not signed in to Dropbox.');
@@ -102,39 +125,38 @@
       lastModified: Date.now(),
     });
 
-    // Snapshot first: if a file of the same name is already here, Dropbox will
-    // save ours under a suffixed name and waiting for the exact name would hang.
-    const before = listedNames();
-    const existed = before.has(msg.fileName);
-
     injectFile(input, file);
 
-    const stem = msg.fileName.replace(/\.[^.]+$/, '');
-    const landed = await waitFor(
-      () => {
-        const now = listedNames();
-        if (!existed && now.has(msg.fileName)) return msg.fileName;
-        for (const name of now) {
-          if (!before.has(name) && (name === msg.fileName || name.startsWith(stem))) return name;
-        }
-        return null;
-      },
-      {
-        timeout: msg.uploadTimeout || 240000,
-        interval: 1000,
-        label: `"${msg.fileName}" to appear in the Dropbox file list`,
-      }
-    );
-
-    return {
-      uploaded: true,
-      file_name: msg.fileName,
-      dropbox_name: landed,
-      renamed: landed !== msg.fileName,
-      folder: currentFolder(),
-      bytes: bytes.length,
-    };
+    return { injected: true, file_name: msg.fileName, bytes: bytes.length, folder: currentFolder() };
   }
+
+  /**
+   * Has the upload landed? `before` is the caller's snapshot of the listing
+   * taken before injection, passed in each time so this stays stateless.
+   */
+  function checkUpload(msg) {
+    const before = new Set(msg.before || []);
+    const now = listedNames();
+    const stem = String(msg.fileName).replace(/\.[^.]+$/, '');
+
+    // A file of the same name already present means Dropbox will store ours
+    // suffixed ("… (1).zip"), so an exact-name match would never arrive.
+    if (!before.has(msg.fileName) && now.has(msg.fileName)) {
+      return { landed: msg.fileName, folder: currentFolder() };
+    }
+    for (const name of now) {
+      if (!before.has(name) && (name === msg.fileName || name.startsWith(stem))) {
+        return { landed: name, folder: currentFolder() };
+      }
+    }
+    return { landed: null, listed: now.size, folder: currentFolder() };
+  }
+
+  // The service worker re-injects this file whenever a PING goes unanswered.
+  // Without this guard a race could leave two listeners on the same page, both
+  // answering the same message.
+  if (window.__snorkelDropboxBotLoaded) return;
+  window.__snorkelDropboxBotLoaded = true;
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg || typeof msg.type !== 'string') return false;
@@ -150,7 +172,25 @@
       return false;
     }
 
+    if (msg.type === 'SNAPSHOT_FILES') {
+      sendResponse({ ok: true, url: location.href, names: [...listedNames()], folder: currentFolder() });
+      return false;
+    }
+
+    if (msg.type === 'CHECK_UPLOAD') {
+      // Synchronous: answers now, so the channel is never left open across a
+      // navigation.
+      try {
+        sendResponse({ ok: true, url: location.href, ...checkUpload(msg) });
+      } catch (err) {
+        sendResponse({ ok: false, url: location.href, error: String(err.message || err) });
+      }
+      return false;
+    }
+
     if (msg.type === 'UPLOAD_FILE') {
+      // Async only long enough to find the input and decode the bytes — seconds,
+      // not the length of the upload.
       handleUpload(msg)
         .then((data) => sendResponse({ ok: true, url: location.href, ...data }))
         .catch((err) => sendResponse({ ok: false, url: location.href, error: String(err.message || err) }));

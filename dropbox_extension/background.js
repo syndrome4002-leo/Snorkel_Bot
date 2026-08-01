@@ -187,6 +187,19 @@ async function ensureContentScript(tabId) {
   throw new Error('Could not reach the content script in the Dropbox tab.');
 }
 
+/**
+ * One short round-trip to the page, re-injecting the content script first if a
+ * navigation has replaced it. Every message the page handles answers promptly,
+ * so no channel is ever left open across a page change.
+ */
+async function askTab(tabId, message) {
+  await ensureContentScript(tabId);
+  const res = await chrome.tabs.sendMessage(tabId, message);
+  if (!res) throw new Error(`No response from the Dropbox page for ${message.type}.`);
+  if (!res.ok) throw new Error(res.error || `${message.type} failed.`);
+  return res;
+}
+
 async function openDropbox(url) {
   const [existing] = await chrome.tabs.query({ url: 'https://www.dropbox.com/*' });
   const tab = existing
@@ -244,28 +257,69 @@ async function runUpload(requestId, msg) {
     throw new Error(`No Dropbox upload input on ${ping.url} — is this a file browser page?`);
   }
 
-  // 3 — inject and wait for it to land
+  // 3 — snapshot the listing, inject, then poll
+  //
+  // Each call is short and retryable. Holding one channel open for the whole
+  // upload used to fail with "the message channel closed before a response was
+  // received": Dropbox navigates (dropbox.com/home redirects), which destroys
+  // the content script and takes the channel with it.
+  const snapshot = await askTab(tab.id, { type: 'SNAPSHOT_FILES' });
+  const before = snapshot.names || [];
+
   progress(requestId, 'upload', `${fileName} -> ${ping.folder || 'Dropbox'}`);
-  const res = await chrome.tabs.sendMessage(tab.id, {
+  const injected = await askTab(tab.id, {
     type: 'UPLOAD_FILE',
     fileName,
     base64,
     mime: 'application/zip',
-    uploadTimeout: msg.uploadTimeout || 240000,
   });
-  if (!res) throw new Error('No response from the Dropbox page.');
-  if (!res.ok) throw new Error(res.error || 'The upload failed.');
+  progress(requestId, 'injected', `${injected.bytes} bytes handed to Dropbox`);
 
-  progress(requestId, 'uploaded', res.dropbox_name || fileName);
+  const landed = await pollForUpload(tab.id, fileName, before, msg.uploadTimeout || 240000, requestId);
+
+  progress(requestId, 'uploaded', landed.name);
 
   return {
     uploaded: true,
     file_name: fileName,
-    dropbox_name: res.dropbox_name,
-    dropbox_path: `${res.folder || 'Dropbox'}/${res.dropbox_name}`,
-    renamed: !!res.renamed,
+    dropbox_name: landed.name,
+    dropbox_path: `${landed.folder || 'Dropbox'}/${landed.name}`,
+    renamed: landed.name !== fileName,
     bytes: buffer.byteLength,
   };
+}
+
+/**
+ * Polls the page until the file shows up in the listing. Tolerates the content
+ * script being torn down by a navigation: askTab re-injects it, and because
+ * CHECK_UPLOAD is stateless the fresh copy can answer just as well.
+ */
+async function pollForUpload(tabId, fileName, before, timeoutMs, requestId) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  let announced = false;
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await askTab(tabId, { type: 'CHECK_UPLOAD', fileName, before });
+      if (res.landed) return { name: res.landed, folder: res.folder };
+      lastError = null;
+      if (!announced) {
+        announced = true;
+        progress(requestId, 'waiting', 'Dropbox is still uploading');
+      }
+    } catch (err) {
+      // A navigation mid-poll is expected, not fatal — try again next tick.
+      lastError = err;
+    }
+    await sleep(1500);
+  }
+
+  throw new Error(
+    `Dropbox did not show "${fileName}" in the file list within ${Math.round(timeoutMs / 1000)}s` +
+      (lastError ? ` (last error: ${lastError.message})` : '') +
+      '. The upload may still be in progress — check Dropbox before retrying.'
+  );
 }
 
 // --------------------------------------------------- popup / lifecycle ----
