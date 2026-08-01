@@ -37,7 +37,7 @@ that the server hosts, so it shares an origin with the API.
   └────────┬────────┘
            │ delete the local file
            ▼ markUploaded()
-  Tasks/<UID>  file_uploaded: true, task_status: "new"
+  Tasks/<UID>  file_uploaded: true  (task_status stays "in build")
 ```
 
 **Step 1 — Snorkel** (`POST /api/start`)
@@ -61,8 +61,8 @@ that the server hosts, so it shares an origin with the API.
    `https://content.dropboxapi.com/2/files/upload`, using an access token minted
    from the stored refresh token. Files over 150 MB go via an upload session.
    No browser is involved.
-6. The server **deletes the local file** and sets `file_uploaded: true` and
-   `task_status: "new"`.
+6. The server **deletes the local file** and sets `file_uploaded: true`.
+   `task_status` stays `"in build"`.
 
 `POST /api/run` does both steps back to back.
 
@@ -80,7 +80,7 @@ the same task updates the record instead of duplicating it):
 | `file_name` | the filename Chrome actually saved, falling back to the name shown on the page |
 | `initial_infos` | `innerText` of the whole left panel, as plain text |
 | `file_uploaded` | `false` on download, `true` once Dropbox has the file |
-| `task_status` | `"in build"` when the task is started, `"new"` once uploaded |
+| `task_status` | `"in build"` from the moment the task is started; the upload does not change it |
 | `source_url` | the review page URL (extra context) |
 | `local_path` | where the zip sits until it is uploaded, then `null` |
 | `dropbox_path` | where it landed in Dropbox |
@@ -88,6 +88,9 @@ the same task updates the record instead of duplicating it):
 
 `file_uploaded` and `task_status` are written up front rather than only after the
 upload, so the fields always exist and can be queried.
+
+Nothing in the server ever moves `task_status` off `"in build"` — see the note
+under **One task at a time** below.
 
 Example `initial_infos`:
 
@@ -292,7 +295,7 @@ curl -s localhost:8787/api/jobs/<id> | python3 -m json.tool
 ```json
 { "status": "succeeded", "step": "done",
   "uid": "9e399c85-…", "file_name": "…_submission.zip",
-  "file_uploaded": true, "task_status": "new" }
+  "file_uploaded": true, "task_status": "in build" }
 ```
 
 `step` moves `queued → snorkel → dropbox → done`; `status` ends `succeeded` or
@@ -345,9 +348,14 @@ made to carry a header — it is protected by its own one-time `state` value.
 
 **One task at a time.** Starting a task while another is `"in build"` on that
 machine is refused with **409** — by the server, so it holds however the task was
-started (dashboard, curl, or a Realtime Database command). Pass
-`{"force": true}` to override, which is the escape hatch when a task is stuck in
-build and would otherwise wedge the machine.
+started (dashboard, curl, or a Realtime Database command). A run that is under
+way but has not written its task document yet is covered too, by an in-memory
+lock.
+
+> Nothing currently moves a task off `"in build"`. Uploading to Dropbox no longer
+> does it, and there is no "mark done" action yet, so after one task that machine
+> stays blocked. Until there is one, clear it with `{"force": true}` on the next
+> start, or edit `task_status` on the row in the Firebase console.
 
 `POST /api/upload` with no `uid` picks the most recently updated task that has
 not been uploaded yet. An already-uploaded task is skipped unless you pass

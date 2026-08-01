@@ -135,7 +135,6 @@ pre {
   border-radius: 999px;
   border: 1px solid var(--line);
 }
-.badge.new { border-color: var(--ok); color: var(--ok); }
 .badge.in-build { border-color: var(--warn); color: var(--warn); }
 
 .gate {

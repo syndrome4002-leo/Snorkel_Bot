@@ -22,13 +22,20 @@ import { machineId } from './machine.js';
 export const PENDING_FILE = path.join(serverRoot, 'pending-tasks.jsonl');
 
 /*
- * The two values task_status ever takes.
+ * A task is "in build" from the moment it is started, and stays that way.
  *
- *   "in build"  the task has been started and downloaded; it is yours to work on
- *   "new"       the file is in Dropbox and the task is ready to be picked up
+ * The upload to Dropbox does NOT change it: getting the file into Dropbox is
+ * part of setting the task up, not finishing it — the work itself still has to
+ * be done. Only file_uploaded moves, so the two facts stay separate:
+ *
+ *   task_status = "in build"   this task is not finished
+ *   file_uploaded = true       its zip has reached Dropbox
+ *
+ * This is what makes the one-task-at-a-time guard mean what it says: an earlier
+ * "new" status released the guard as soon as the upload landed, which let a
+ * second task start while the first had not been worked on at all.
  */
 export const TASK_STATUS_STARTED = 'in build';
-export const TASK_STATUS_UPLOADED = 'new';
 
 let db = null;
 let initError = null;
@@ -275,9 +282,8 @@ export async function saveTask(task, meta = {}) {
     // Where Chrome put the zip, so the Dropbox step can find it later even
     // across a server restart.
     local_path: meta.download_path || null,
-    // Set up front so the fields always exist and can be queried. "in build" is
-    // the task as it stands right after being started and downloaded — the
-    // Dropbox step flips these to true / "new" once the upload lands.
+    // Set up front so the fields always exist and can be queried. The Dropbox
+    // step flips file_uploaded to true and leaves task_status alone.
     file_uploaded: false,
     task_status: TASK_STATUS_STARTED,
     updated_at: new Date().toISOString(),
@@ -320,13 +326,13 @@ export async function markUploaded(uid, extra = {}) {
   if (!db) throw new Error(describe(initError));
   const patch = {
     file_uploaded: true,
-    task_status: TASK_STATUS_UPLOADED,
+    // Deliberately does not touch task_status: the task stays "in build".
     uploaded_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...extra,
   };
   await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
-  console.log(`[firebase] ${config.firebase.collection}/${uid} -> file_uploaded=true, task_status="new"`);
+  console.log(`[firebase] ${config.firebase.collection}/${uid} -> file_uploaded=true (still "in build")`);
   return patch;
 }
 
