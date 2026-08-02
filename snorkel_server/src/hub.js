@@ -202,6 +202,7 @@ export class ExtensionHub {
 
       case 'revisions':
         // Not a reply to anything — the extension raises this on its own timer.
+        console.log(`[hub]    (${role}) revisions: ${(msg.uids || []).length} uid(s)`);
         this.#emit({ ...msg, role });
         if (this.onRevisions) this.onRevisions(msg);
         break;

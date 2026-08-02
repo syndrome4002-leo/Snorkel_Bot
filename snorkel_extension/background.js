@@ -258,12 +258,12 @@ async function askTab(tabId, message) {
   return res;
 }
 
-async function openHome(homeUrl) {
+async function openHome(homeUrl, timeout = 120000) {
   const [existing] = await chrome.tabs.query({ url: 'https://experts.snorkel-ai.com/*' });
   const tab = existing
     ? await chrome.tabs.update(existing.id, { url: homeUrl, active: true })
     : await chrome.tabs.create({ url: homeUrl, active: true });
-  await waitForTabComplete(tab.id);
+  await waitForTabComplete(tab.id, timeout);
   return tab;
 }
 
@@ -427,9 +427,20 @@ async function runSentinelFlow(requestId, options) {
  */
 async function listRevisions() {
   const cfg = await getConfig();
+  // Logged before the navigation, not after: this is the moment the tab jumps
+  // to the home page, and without a line here there is nothing to explain it.
+  log(`revision check: reloading ${cfg.homeUrl}`);
   const tab = await openHome(cfg.homeUrl);
   const res = await askTab(tab.id, { type: 'LIST_REVISIONS', projectKey: cfg.projectKey });
-  log(`revision check: ${res.count} awaiting revision`);
+
+  if (!res.rendered) {
+    log('revision check: the home page never rendered any cards — treating as nothing to do');
+  } else {
+    log(
+      `revision check: ${res.count} awaiting revision of ${res.cards} card(s)` +
+        (res.count ? ' — ' + res.revisions.map((r) => r.uid).join(', ') : '')
+    );
+  }
   return { revisions: res.revisions, count: res.count, checked_at: new Date().toISOString() };
 }
 
@@ -469,9 +480,9 @@ async function collectFeedback(requestId, uids, options) {
       // Back to the list each time: after reading one task the tab is on that
       // task's page, and the next Revise button only exists on the home page.
       const tab = await openHome(options.homeUrl || cfg.homeUrl);
-      await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey: cfg.projectKey });
-      await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 60000);
-      await askTab(tab.id, { type: 'WAIT_READY', timeout: 60000 });
+      await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey: cfg.projectKey, timeout: 90000 });
+      await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
+      await askTab(tab.id, { type: 'WAIT_READY', timeout: 120000 });
 
       const res = await askTab(tab.id, { type: 'COPY_FEEDBACK' });
       collected.push({

@@ -25,6 +25,7 @@
 
 (function () {
   const PROJECT_CARD = '[data-testid="project-card"]';
+  const ASSIGNMENTS_LIST = '[data-testid="assignments-list"]';
 
   function anchorsForProject(projectKey) {
     const suffix = `-${projectKey}`;
@@ -83,7 +84,7 @@
     }
 
     const anchor = await SnorkelBot.waitFor(() => pickAnchor(projectKey), {
-      timeout: msg.timeout || 30000,
+      timeout: msg.timeout || 90000,
       label: `a Start card for project "${projectKey}"`,
     });
 
@@ -109,8 +110,44 @@
    * checked so a future card type with a UUID title but a different action is
    * not mistaken for one of these.
    */
-  SnorkelBot.on('LIST_REVISIONS', (msg) => {
+  SnorkelBot.on('LIST_REVISIONS', async (msg) => {
     const projectKey = msg.projectKey || 'CDG_Sentinel_Ultra_00000';
+
+    if (/\/login/i.test(location.pathname)) {
+      throw new Error('Not signed in — the browser is on the Snorkel login page.');
+    }
+
+    /*
+     * The tab reports "complete" as soon as the document has loaded, which on a
+     * single-page app is well before React has drawn the assignments list.
+     * Reading straight away found an empty page and reported zero revisions
+     * every time.
+     *
+     * Waiting on the CARDS, not on the list container: the container is
+     * rendered first and sits empty for a moment, so waiting for it would have
+     * left the same hole a little narrower.
+     *
+     * A timeout here is not an error. A home page with no cards at all is a
+     * legitimate state, and throwing would make every check fail rather than
+     * report an honest zero.
+     */
+    const appeared = await SnorkelBot.waitFor(
+      () => document.querySelectorAll(PROJECT_CARD).length || null,
+      { timeout: msg.timeout || 90000, interval: 400, label: 'the assignment cards to render' }
+    ).catch(() => 0);
+
+    // Cards arrive in batches; the revise ones are not necessarily in the first
+    // paint. Let the list stop growing before counting it.
+    if (appeared) {
+      let seen = -1;
+      const settleDeadline = Date.now() + (msg.settle || 8000);
+      while (Date.now() < settleDeadline) {
+        const now = document.querySelectorAll(PROJECT_CARD).length;
+        if (now === seen) break;
+        seen = now;
+        await SnorkelBot.sleep(700);
+      }
+    }
 
     const revisions = anchorsForProject(projectKey)
       .filter(isReviseAnchor)
@@ -122,7 +159,14 @@
       }))
       .filter((entry) => entry.uid);
 
-    return { revisions, count: revisions.length };
+    const cards = document.querySelectorAll(PROJECT_CARD).length;
+    return {
+      revisions,
+      count: revisions.length,
+      // `cards` tells "nothing to revise" apart from "the page never rendered".
+      cards,
+      rendered: Boolean(appeared),
+    };
   });
 
   /** Opens one submission's review page by clicking its Revise button. */
@@ -135,7 +179,7 @@
         anchorsForProject(projectKey)
           .filter(isReviseAnchor)
           .find((a) => (uidOf(a) || '').toLowerCase() === wanted),
-      { timeout: msg.timeout || 30000, label: `a Revise card for ${msg.uid}` }
+      { timeout: msg.timeout || 90000, label: `a Revise card for ${msg.uid}` }
     );
 
     const href = anchor.getAttribute('href') || '';

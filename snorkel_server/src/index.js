@@ -391,6 +391,9 @@ app.post('/api/upload', async (req, res) => {
  * revision, so there is nothing new to fetch.
  */
 async function handleRevisionReport(uids) {
+  // Always says something. An empty report used to return in silence, which
+  // looked identical to the report never arriving.
+  console.log(`[revisions] extension reported ${uids.length} awaiting revision`);
   if (!uids.length) return { considered: 0, collected: 0 };
 
   const [sent, unknown] = await Promise.all([findSentTasks(uids), findUnknownUids(uids)]);

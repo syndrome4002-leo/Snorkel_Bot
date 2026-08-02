@@ -230,7 +230,7 @@
     // Wait for the sidebar rather than for one particular card: which notes are
     // present depends on how far the review got.
     await SnorkelBot.waitFor(() => noteHeaders().length > 0, {
-      timeout: msg.timeout || 30000,
+      timeout: msg.timeout || 90000,
       label: 'the Task Notes sidebar',
     });
 
@@ -280,7 +280,7 @@
         return null;
       },
       {
-        timeout: msg.timeout || 60000,
+        timeout: msg.timeout || 120000,
         label: 'the Sentinel review page to finish rendering (UID + left panel + download field)',
       }
     );
@@ -331,7 +331,7 @@
     assertOnReviewPage();
 
     const field = await SnorkelBot.waitFor(findDownloadField, {
-      timeout: msg.timeout || 30000,
+      timeout: msg.timeout || 90000,
       label: 'the Sentinel task download field',
     });
 
