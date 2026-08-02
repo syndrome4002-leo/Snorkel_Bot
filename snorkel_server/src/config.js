@@ -32,6 +32,13 @@ export const config = {
   commandTimeoutMs: Number(process.env.COMMAND_TIMEOUT_MS || 240000),
 
   /**
+   * How long to wait for a zip to be uploaded and both platform checks to run.
+   * Much longer than a normal command: the upload is a couple of hundred
+   * megabytes and each check queues a real build on their side.
+   */
+  submitTimeoutMs: Number(process.env.SUBMIT_TIMEOUT_MS || 1_500_000),
+
+  /**
    * Where Chrome saves downloads. The server reads the task zip from here to
    * upload it, and deletes it once Dropbox has it, so the server must run on the
    * same machine as the browser.

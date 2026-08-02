@@ -1,0 +1,380 @@
+file upload component ( when a file uploaded already ):
+
+<div class="rounded-md border-2 p-16 border-error bg-error-subtle">
+    <div class="flex items-center gap-8">
+        <div dir="auto" class="text-base-semibold text-color-error-emphasis">AutoEval Execution Summary</div>
+        <div class="ml-auto flex items-center gap-8">
+            <div dir="auto" class="text-sm-medium rounded py-4 px-8 bg-diff-removed text-color-error-emphasis">FAIL
+            </div>
+            <div dir="auto" class="text-xl-normal text-color-error">✗</div>
+        </div>
+    </div>
+    <div dir="auto" class="text-base-normal text-color-secondary mt-8 mb-12">AutoEval execution failed. Build status:
+        FAILED. Build ID: CodeExecutionEnvironment:c4d2ade5-8f6d-401d-acdb-a59eb7661fc9.</div>
+    <div class="mt-8">
+        <div class="" data-orientation="vertical">
+            <div data-state="closed" data-orientation="vertical">
+                <h3 data-orientation="vertical" data-state="closed" class="flex w-full"><button type="button"
+                        aria-expanded="false" data-state="closed" data-orientation="vertical" id="radix-_r_38_"
+                        class="group flex w-full items-center transition-all duration-200 flex-row-reverse justify-end gap-8 text-sm-normal"
+                        data-radix-collection-item="">Show Build Logs<span
+                            class="inline-flex items-center justify-center flex-none transition-all duration-300 ease-[cubic-bezier(0.87,_0,_0.13,_1)] group-data-[state=open]:rotate-90"><svg
+                                xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                viewBox="0 0 256 256" class="" aria-hidden="true">
+                                <path
+                                    d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z">
+                                </path>
+                            </svg></span></button></h3>
+                <div data-state="closed" id="radix-_r_39_" hidden="" role="region" aria-labelledby="radix-_r_38_"
+                    data-orientation="vertical"
+                    class="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown"
+                    style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width);">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="space-y-8">
+        <div class="gap-sm flex justify-end pt-8"><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give positive feedback" aria-label="Give positive feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M234,80.12A24,24,0,0,0,216,72H160V56a40,40,0,0,0-40-40,8,8,0,0,0-7.16,4.42L75.06,96H32a16,16,0,0,0-16,16v88a16,16,0,0,0,16,16H204a24,24,0,0,0,23.82-21l12-96A24,24,0,0,0,234,80.12ZM32,112H72v88H32ZM223.94,97l-12,96a8,8,0,0,1-7.94,7H88V105.89l36.71-73.43A24,24,0,0,1,144,56V80a8,8,0,0,0,8,8h64a8,8,0,0,1,7.94,9Z">
+                            </path>
+                        </svg></span></span></button><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give negative feedback" aria-label="Give negative feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M239.82,157l-12-96A24,24,0,0,0,204,40H32A16,16,0,0,0,16,56v88a16,16,0,0,0,16,16H75.06l37.78,75.58A8,8,0,0,0,120,240a40,40,0,0,0,40-40V184h56a24,24,0,0,0,23.82-27ZM72,144H32V56H72Zm150,21.29a7.88,7.88,0,0,1-6,2.71H152a8,8,0,0,0-8,8v24a24,24,0,0,1-19.29,23.54L88,150.11V56H204a8,8,0,0,1,7.94,7l12,96A7.87,7.87,0,0,1,222,165.29Z">
+                            </path>
+                        </svg></span></span></button></div>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+file upload component ( when no file uploaded):
+<div class="rounded-md border-2 p-16 border-error bg-error-subtle">
+    <div class="flex items-center gap-8">
+        <div dir="auto" class="text-base-semibold text-color-error-emphasis">AutoEval Execution Summary</div>
+        <div class="ml-auto flex items-center gap-8">
+            <div dir="auto" class="text-sm-medium rounded py-4 px-8 bg-diff-removed text-color-error-emphasis">FAIL
+            </div>
+            <div dir="auto" class="text-xl-normal text-color-error">✗</div>
+        </div>
+    </div>
+    <div dir="auto" class="text-base-normal text-color-secondary mt-8 mb-12">AutoEval execution failed. Build status:
+        FAILED. Build ID: CodeExecutionEnvironment:e6cf1261-b3fa-481f-9852-f396bf198f35.</div>
+    <div class="mt-8">
+        <div class="" data-orientation="vertical">
+            <div data-state="closed" data-orientation="vertical">
+                <h3 data-orientation="vertical" data-state="closed" class="flex w-full"><button type="button"
+                        aria-expanded="false" data-state="closed" data-orientation="vertical" id="radix-_r_3a_"
+                        class="group flex w-full items-center transition-all duration-200 flex-row-reverse justify-end gap-8 text-sm-normal"
+                        data-radix-collection-item="">Show Build Logs<span
+                            class="inline-flex items-center justify-center flex-none transition-all duration-300 ease-[cubic-bezier(0.87,_0,_0.13,_1)] group-data-[state=open]:rotate-90"><svg
+                                xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                viewBox="0 0 256 256" class="" aria-hidden="true">
+                                <path
+                                    d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z">
+                                </path>
+                            </svg></span></button></h3>
+                <div data-state="closed" id="radix-_r_3b_" hidden="" role="region" aria-labelledby="radix-_r_3a_"
+                    data-orientation="vertical"
+                    class="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown"
+                    style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width);">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="space-y-8">
+        <div class="gap-sm flex justify-end pt-8"><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give positive feedback" aria-label="Give positive feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M234,80.12A24,24,0,0,0,216,72H160V56a40,40,0,0,0-40-40,8,8,0,0,0-7.16,4.42L75.06,96H32a16,16,0,0,0-16,16v88a16,16,0,0,0,16,16H204a24,24,0,0,0,23.82-21l12-96A24,24,0,0,0,234,80.12ZM32,112H72v88H32ZM223.94,97l-12,96a8,8,0,0,1-7.94,7H88V105.89l36.71-73.43A24,24,0,0,1,144,56V80a8,8,0,0,0,8,8h64a8,8,0,0,1,7.94,9Z">
+                            </path>
+                        </svg></span></span></button><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give negative feedback" aria-label="Give negative feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M239.82,157l-12-96A24,24,0,0,0,204,40H32A16,16,0,0,0,16,56v88a16,16,0,0,0,16,16H75.06l37.78,75.58A8,8,0,0,0,120,240a40,40,0,0,0,40-40V184h56a24,24,0,0,0,23.82-27ZM72,144H32V56H72Zm150,21.29a7.88,7.88,0,0,1-6,2.71H152a8,8,0,0,0-8,8v24a24,24,0,0,1-19.29,23.54L88,150.11V56H204a8,8,0,0,1,7.94,7l12,96A7.87,7.87,0,0,1,222,165.29Z">
+                            </path>
+                        </svg></span></span></button></div>
+    </div>
+</div>
+
+
+
+
+
+
+check feedback success component:
+
+<div class="rounded-md border-2 p-16 border-success bg-success-subtle">
+    <div class="flex items-center gap-8">
+        <div dir="auto" class="text-base-semibold text-color-success-emphasis">AutoEval Execution Summary</div>
+        <div class="ml-auto flex items-center gap-8">
+            <div dir="auto" class="text-sm-medium rounded py-4 px-8 bg-success text-color-success-emphasis">PASS</div>
+            <div dir="auto" class="text-xl-normal text-color-success">✓</div>
+        </div>
+    </div>
+    <div dir="auto" class="text-base-normal text-color-secondary mt-8 mb-12">AutoEval execution succeeded. Build status:
+        SUCCEEDED. Build ID: CodeExecutionEnvironment:86e349b5-70d8-493b-8552-ac883d607695.</div>
+    <div class="mt-8">
+        <div class="" data-orientation="vertical">
+            <div data-state="closed" data-orientation="vertical">
+                <h3 data-orientation="vertical" data-state="closed" class="flex w-full"><button type="button"
+                        aria-expanded="false" data-state="closed" data-orientation="vertical" id="radix-_r_31_"
+                        class="group flex w-full items-center transition-all duration-200 flex-row-reverse justify-end gap-8 text-sm-normal"
+                        data-radix-collection-item="">Show Build Logs<span
+                            class="inline-flex items-center justify-center flex-none transition-all duration-300 ease-[cubic-bezier(0.87,_0,_0.13,_1)] group-data-[state=open]:rotate-90"><svg
+                                xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                viewBox="0 0 256 256" class="" aria-hidden="true">
+                                <path
+                                    d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z">
+                                </path>
+                            </svg></span></button></h3>
+                <div data-state="closed" id="radix-_r_32_" hidden="" role="region" aria-labelledby="radix-_r_31_"
+                    data-orientation="vertical"
+                    class="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown"
+                    style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width);">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="space-y-8">
+        <div class="gap-sm flex justify-end pt-8"><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give positive feedback" aria-label="Give positive feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M234,80.12A24,24,0,0,0,216,72H160V56a40,40,0,0,0-40-40,8,8,0,0,0-7.16,4.42L75.06,96H32a16,16,0,0,0-16,16v88a16,16,0,0,0,16,16H204a24,24,0,0,0,23.82-21l12-96A24,24,0,0,0,234,80.12ZM32,112H72v88H32ZM223.94,97l-12,96a8,8,0,0,1-7.94,7H88V105.89l36.71-73.43A24,24,0,0,1,144,56V80a8,8,0,0,0,8,8h64a8,8,0,0,1,7.94,9Z">
+                            </path>
+                        </svg></span></span></button><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give negative feedback" aria-label="Give negative feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M239.82,157l-12-96A24,24,0,0,0,204,40H32A16,16,0,0,0,16,56v88a16,16,0,0,0,16,16H75.06l37.78,75.58A8,8,0,0,0,120,240a40,40,0,0,0,40-40V184h56a24,24,0,0,0,23.82-27ZM72,144H32V56H72Zm150,21.29a7.88,7.88,0,0,1-6,2.71H152a8,8,0,0,0-8,8v24a24,24,0,0,1-19.29,23.54L88,150.11V56H204a8,8,0,0,1,7.94,7l12,96A7.87,7.87,0,0,1,222,165.29Z">
+                            </path>
+                        </svg></span></span></button></div>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+check prescriptiveness success component:
+
+<div class="rounded-md border-2 p-16 border-success bg-success-subtle">
+    <div class="flex items-center gap-8">
+        <div dir="auto" class="text-base-semibold text-color-success-emphasis">AutoEval Execution Summary</div>
+        <div class="ml-auto flex items-center gap-8">
+            <div dir="auto" class="text-sm-medium rounded py-4 px-8 bg-success text-color-success-emphasis">PASS</div>
+            <div dir="auto" class="text-xl-normal text-color-success">✓</div>
+        </div>
+    </div>
+    <div dir="auto" class="text-base-normal text-color-secondary mt-8 mb-12">AutoEval execution succeeded. Build status:
+        SUCCEEDED. Build ID: CodeExecutionEnvironment:bb330b21-9f9f-48db-a41e-85502174d9f3.</div>
+    <div class="mt-8">
+        <div class="" data-orientation="vertical">
+            <div data-state="closed" data-orientation="vertical">
+                <h3 data-orientation="vertical" data-state="closed" class="flex w-full"><button type="button"
+                        aria-expanded="false" data-state="closed" data-orientation="vertical" id="radix-_r_33_"
+                        class="group flex w-full items-center transition-all duration-200 flex-row-reverse justify-end gap-8 text-sm-normal"
+                        data-radix-collection-item="">Show Build Logs<span
+                            class="inline-flex items-center justify-center flex-none transition-all duration-300 ease-[cubic-bezier(0.87,_0,_0.13,_1)] group-data-[state=open]:rotate-90"><svg
+                                xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                viewBox="0 0 256 256" class="" aria-hidden="true">
+                                <path
+                                    d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z">
+                                </path>
+                            </svg></span></button></h3>
+                <div data-state="closed" id="radix-_r_34_" hidden="" role="region" aria-labelledby="radix-_r_33_"
+                    data-orientation="vertical"
+                    class="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown"
+                    style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width);">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="space-y-8">
+        <div class="gap-sm flex justify-end pt-8"><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give positive feedback" aria-label="Give positive feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M234,80.12A24,24,0,0,0,216,72H160V56a40,40,0,0,0-40-40,8,8,0,0,0-7.16,4.42L75.06,96H32a16,16,0,0,0-16,16v88a16,16,0,0,0,16,16H204a24,24,0,0,0,23.82-21l12-96A24,24,0,0,0,234,80.12ZM32,112H72v88H32ZM223.94,97l-12,96a8,8,0,0,1-7.94,7H88V105.89l36.71-73.43A24,24,0,0,1,144,56V80a8,8,0,0,0,8,8h64a8,8,0,0,1,7.94,9Z">
+                            </path>
+                        </svg></span></span></button><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give negative feedback" aria-label="Give negative feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M239.82,157l-12-96A24,24,0,0,0,204,40H32A16,16,0,0,0,16,56v88a16,16,0,0,0,16,16H75.06l37.78,75.58A8,8,0,0,0,120,240a40,40,0,0,0,40-40V184h56a24,24,0,0,0,23.82-27ZM72,144H32V56H72Zm150,21.29a7.88,7.88,0,0,1-6,2.71H152a8,8,0,0,0-8,8v24a24,24,0,0,1-19.29,23.54L88,150.11V56H204a8,8,0,0,1,7.94,7l12,96A7.87,7.87,0,0,1,222,165.29Z">
+                            </path>
+                        </svg></span></span></button></div>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+check feedback fail component:
+<div class="rounded-md border-2 p-16 border-error bg-error-subtle">
+    <div class="flex items-center gap-8">
+        <div dir="auto" class="text-base-semibold text-color-error-emphasis">AutoEval Execution Summary</div>
+        <div class="ml-auto flex items-center gap-8">
+            <div dir="auto" class="text-sm-medium rounded py-4 px-8 bg-diff-removed text-color-error-emphasis">FAIL
+            </div>
+            <div dir="auto" class="text-xl-normal text-color-error">✗</div>
+        </div>
+    </div>
+    <div dir="auto" class="text-base-normal text-color-secondary mt-8 mb-12">AutoEval execution failed. Build status:
+        FAILED. Build ID: CodeExecutionEnvironment:c4d2ade5-8f6d-401d-acdb-a59eb7661fc9.</div>
+    <div class="mt-8">
+        <div class="" data-orientation="vertical">
+            <div data-state="closed" data-orientation="vertical">
+                <h3 data-orientation="vertical" data-state="closed" class="flex w-full"><button type="button"
+                        aria-expanded="false" data-state="closed" data-orientation="vertical" id="radix-_r_38_"
+                        class="group flex w-full items-center transition-all duration-200 flex-row-reverse justify-end gap-8 text-sm-normal"
+                        data-radix-collection-item="">Show Build Logs<span
+                            class="inline-flex items-center justify-center flex-none transition-all duration-300 ease-[cubic-bezier(0.87,_0,_0.13,_1)] group-data-[state=open]:rotate-90"><svg
+                                xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                viewBox="0 0 256 256" class="" aria-hidden="true">
+                                <path
+                                    d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z">
+                                </path>
+                            </svg></span></button></h3>
+                <div data-state="closed" id="radix-_r_39_" hidden="" role="region" aria-labelledby="radix-_r_38_"
+                    data-orientation="vertical"
+                    class="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown"
+                    style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width);">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="space-y-8">
+        <div class="gap-sm flex justify-end pt-8"><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give positive feedback" aria-label="Give positive feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M234,80.12A24,24,0,0,0,216,72H160V56a40,40,0,0,0-40-40,8,8,0,0,0-7.16,4.42L75.06,96H32a16,16,0,0,0-16,16v88a16,16,0,0,0,16,16H204a24,24,0,0,0,23.82-21l12-96A24,24,0,0,0,234,80.12ZM32,112H72v88H32ZM223.94,97l-12,96a8,8,0,0,1-7.94,7H88V105.89l36.71-73.43A24,24,0,0,1,144,56V80a8,8,0,0,0,8,8h64a8,8,0,0,1,7.94,9Z">
+                            </path>
+                        </svg></span></span></button><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give negative feedback" aria-label="Give negative feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M239.82,157l-12-96A24,24,0,0,0,204,40H32A16,16,0,0,0,16,56v88a16,16,0,0,0,16,16H75.06l37.78,75.58A8,8,0,0,0,120,240a40,40,0,0,0,40-40V184h56a24,24,0,0,0,23.82-27ZM72,144H32V56H72Zm150,21.29a7.88,7.88,0,0,1-6,2.71H152a8,8,0,0,0-8,8v24a24,24,0,0,1-19.29,23.54L88,150.11V56H204a8,8,0,0,1,7.94,7l12,96A7.87,7.87,0,0,1,222,165.29Z">
+                            </path>
+                        </svg></span></span></button></div>
+    </div>
+</div>
+
+
+
+
+
+
+
+
+
+check prescriptiveness fail component:
+<div class="rounded-md border-2 p-16 border-error bg-error-subtle">
+    <div class="flex items-center gap-8">
+        <div dir="auto" class="text-base-semibold text-color-error-emphasis">AutoEval Execution Summary</div>
+        <div class="ml-auto flex items-center gap-8">
+            <div dir="auto" class="text-sm-medium rounded py-4 px-8 bg-diff-removed text-color-error-emphasis">FAIL
+            </div>
+            <div dir="auto" class="text-xl-normal text-color-error">✗</div>
+        </div>
+    </div>
+    <div dir="auto" class="text-base-normal text-color-secondary mt-8 mb-12">AutoEval execution failed. Build status:
+        FAILED. Build ID: CodeExecutionEnvironment:e6cf1261-b3fa-481f-9852-f396bf198f35.</div>
+    <div class="mt-8">
+        <div class="" data-orientation="vertical">
+            <div data-state="closed" data-orientation="vertical">
+                <h3 data-orientation="vertical" data-state="closed" class="flex w-full"><button type="button"
+                        aria-expanded="false" data-state="closed" data-orientation="vertical" id="radix-_r_3a_"
+                        class="group flex w-full items-center transition-all duration-200 flex-row-reverse justify-end gap-8 text-sm-normal"
+                        data-radix-collection-item="">Show Build Logs<span
+                            class="inline-flex items-center justify-center flex-none transition-all duration-300 ease-[cubic-bezier(0.87,_0,_0.13,_1)] group-data-[state=open]:rotate-90"><svg
+                                xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                viewBox="0 0 256 256" class="" aria-hidden="true">
+                                <path
+                                    d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z">
+                                </path>
+                            </svg></span></button></h3>
+                <div data-state="closed" id="radix-_r_3b_" hidden="" role="region" aria-labelledby="radix-_r_3a_"
+                    data-orientation="vertical"
+                    class="overflow-hidden data-[state=closed]:animate-slideUp data-[state=open]:animate-slideDown"
+                    style="--radix-accordion-content-height: var(--radix-collapsible-content-height); --radix-accordion-content-width: var(--radix-collapsible-content-width);">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="space-y-8">
+        <div class="gap-sm flex justify-end pt-8"><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give positive feedback" aria-label="Give positive feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M234,80.12A24,24,0,0,0,216,72H160V56a40,40,0,0,0-40-40,8,8,0,0,0-7.16,4.42L75.06,96H32a16,16,0,0,0-16,16v88a16,16,0,0,0,16,16H204a24,24,0,0,0,23.82-21l12-96A24,24,0,0,0,234,80.12ZM32,112H72v88H32ZM223.94,97l-12,96a8,8,0,0,1-7.94,7H88V105.89l36.71-73.43A24,24,0,0,1,144,56V80a8,8,0,0,0,8,8h64a8,8,0,0,1,7.94,9Z">
+                            </path>
+                        </svg></span></span></button><button type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-md h-icon-btn-md rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                title="Give negative feedback" aria-label="Give negative feedback"><span
+                    class="flex shrink-0 items-center justify-center"><span class=""><svg
+                            xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                            viewBox="0 0 256 256" class="" aria-hidden="true">
+                            <path
+                                d="M239.82,157l-12-96A24,24,0,0,0,204,40H32A16,16,0,0,0,16,56v88a16,16,0,0,0,16,16H75.06l37.78,75.58A8,8,0,0,0,120,240a40,40,0,0,0,40-40V184h56a24,24,0,0,0,23.82-27ZM72,144H32V56H72Zm150,21.29a7.88,7.88,0,0,1-6,2.71H152a8,8,0,0,0-8,8v24a24,24,0,0,1-19.29,23.54L88,150.11V56H204a8,8,0,0,1,7.94,7l12,96A7.87,7.87,0,0,1,222,165.29Z">
+                            </path>
+                        </svg></span></span></button></div>
+    </div>
+</div>

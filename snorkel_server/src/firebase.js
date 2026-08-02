@@ -43,6 +43,12 @@ export const TASK_STATUS_SENT = 'sent';
 /** The reviewer sent it back; `feedbacks` holds what they said. */
 export const TASK_STATUS_NEEDS_REVISION = 'needs revision';
 
+/** Set by snorkel_worker when Claude is done and the zip is back on Dropbox. */
+export const TASK_STATUS_READY = 'ready to submit';
+
+/** One of the platform's own checks came back FAIL. Needs a person. */
+export const TASK_STATUS_STATIC_FAIL = 'static check fail';
+
 let db = null;
 let initError = null;
 let credentialSource = 'none';
@@ -481,6 +487,75 @@ export async function findInBuildTask(machine) {
     .limit(1)
     .get();
   return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+/**
+ * The next task waiting to have its zip put back into the platform.
+ *
+ * Only tasks whose file actually reached Dropbox are eligible: `file_uploaded`
+ * false means the worker has the folder but nothing was uploaded, so there is
+ * nothing to fetch and nothing to attach. Those are skipped rather than failed —
+ * they are mid-flight, not broken.
+ */
+export async function findReadyToSubmit(machine) {
+  if (!db) return null;
+
+  const snap = await db
+    .collection(config.firebase.collection)
+    .where('machine_id', '==', machine)
+    .where('task_status', '==', TASK_STATUS_READY)
+    .limit(10)
+    .get();
+
+  const rows = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  // Filtered here rather than in the query: a third equality would still be
+  // index-free, but keeping it in memory lets the caller see how many were
+  // skipped and why, which is the difference between "nothing to do" and
+  // "three tasks are stuck waiting on an upload".
+  const eligible = rows.filter((t) => t.file_uploaded === true);
+  const waiting = rows.length - eligible.length;
+
+  eligible.sort((a, b) => String(a.updated_at || '').localeCompare(String(b.updated_at || '')));
+  return { task: eligible[0] || null, eligible: eligible.length, waiting };
+}
+
+/**
+ * Records what the platform's checks said.
+ *
+ * A failure is a state a person has to look at, so it gets its own status. A
+ * pass deliberately does not change `task_status`: the bot never submits, and
+ * moving the task on would suggest it had.
+ */
+export async function saveStaticCheck(uid, result) {
+  if (!db) throw new Error(describe(initError));
+
+  const now = new Date().toISOString();
+  const passed = result.passed === true;
+
+  const patch = {
+    static_check_result: {
+      passed,
+      checked_at: result.checked_at || now,
+      page_url: result.page_url || null,
+      results: (result.results || []).map((r) => ({
+        key: r.key,
+        label: r.label,
+        verdict: r.verdict || null,
+        summary: r.summary || '',
+        logs: String(r.logs || '').slice(0, 60000),
+      })),
+    },
+    static_checked_at: now,
+    updated_at: now,
+  };
+
+  if (!passed) patch.task_status = TASK_STATUS_STATIC_FAIL;
+
+  await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
+  console.log(
+    `[firebase] ${uid} -> static checks ${passed ? 'PASSED' : `FAILED, task_status="${TASK_STATUS_STATIC_FAIL}"`}`
+  );
+  return patch;
 }
 
 /**

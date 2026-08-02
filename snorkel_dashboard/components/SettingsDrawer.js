@@ -35,6 +35,14 @@ const FIELDS = [
     placeholder: '5',
   },
   {
+    group: 'Auto-start',
+    key: 'submit_check_every_min',
+    label: 'Look for tasks to upload in (minutes)',
+    help: 'How often the machine looks for a finished task, puts its zip back into the platform and runs the two checks. Defaults to 3.',
+    min: 1,
+    placeholder: '3',
+  },
+  {
     group: 'Worker',
     key: 'worker_max_concurrent',
     label: 'Max tasks at once',

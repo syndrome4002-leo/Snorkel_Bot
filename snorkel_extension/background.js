@@ -191,12 +191,48 @@ async function handleServerMessage(msg) {
 
   if (msg.type === 'check_revisions') {
     const requestId = msg.requestId || String(Date.now());
+    // Reading the revise list navigates the tab, which would walk out from under
+    // an upload in progress.
+    if (busy) {
+      return void send({ type: 'result', requestId, ok: false, error: 'Extension is busy.' });
+    }
     try {
       const result = await listRevisions();
       send({ type: 'result', requestId, ok: true, ...result });
     } catch (err) {
       send({ type: 'result', requestId, ok: false, error: String((err && err.message) || err) });
     }
+  }
+
+  /*
+   * Upload a finished task and run the platform's checks on it.
+   *
+   * Holds `busy` for the whole run, which is what keeps the revision sweep and
+   * any attempt to start a new task off the tab while a file is going up. Both
+   * of those navigate, and either would abandon the upload halfway with no sign
+   * that anything went wrong.
+   */
+  if (msg.type === 'submit_check') {
+    const requestId = msg.requestId || String(Date.now());
+    if (busy) {
+      return void send({ type: 'result', requestId, ok: false, error: 'Extension is busy.' });
+    }
+    busy = true;
+    try {
+      const result = await submitCheck(requestId, msg.options || msg || {});
+      send({ type: 'result', requestId, ok: true, ...result });
+    } catch (err) {
+      send({
+        type: 'result',
+        requestId,
+        ok: false,
+        error: String((err && err.message) || err),
+        code: err && err.code,
+      });
+    } finally {
+      busy = false;
+    }
+    return;
   }
 
   if (msg.type === 'start_sentinel') {
@@ -531,6 +567,81 @@ async function reportRevisions() {
  * Opens each submission's task page through its Revise button and reads the
  * reviewer feedback. One at a time, because they all share the one tab.
  */
+/**
+ * Puts a finished task's zip into the form and runs the platform's two checks.
+ *
+ * Getting to the page differs by what kind of task it is. A new one is still the
+ * assignment this account is holding, so the Sentinel card's Start button leads
+ * back into it; one that has been through review is reached by its own Revise
+ * button in the list. There is no third way in.
+ */
+async function submitCheck(requestId, options) {
+  const cfg = await getConfig();
+  const uid = String(options.uid || '');
+  if (!uid) throw new Error('submit_check needs a uid.');
+  if (!options.file_url) throw new Error('submit_check needs a file_url to fetch the zip from.');
+
+  const projectKey = options.projectKey || cfg.projectKey;
+
+  progress(requestId, 'open_home', options.homeUrl || cfg.homeUrl);
+  const tab = await openHome(options.homeUrl || cfg.homeUrl);
+  await sleep(options.paceAfterLoadMs ?? cfg.paceAfterLoadMs);
+
+  if (options.is_new_task) {
+    progress(requestId, 'click_start', `${uid} is a new task — taking the Start button`);
+    await askTab(tab.id, { type: 'CLICK_START', projectKey, mode: options.mode || cfg.mode });
+  } else {
+    progress(requestId, 'click_revise', uid);
+    await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey, timeout: 90000 });
+  }
+
+  await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
+  await askTab(tab.id, { type: 'WAIT_READY', timeout: 120000 });
+  await sleep(options.paceBeforeCopyMs ?? cfg.paceBeforeCopyMs);
+
+  /*
+   * Confirm the page is the task we were asked about before touching anything.
+   *
+   * Start hands out whatever assignment the account currently holds. Nearly
+   * always that is the task we mean, but if it has already been submitted or
+   * taken away, Start quietly produces a different one — and uploading this
+   * task's zip onto somebody else's task is not something you could undo.
+   */
+  const page = await askTab(tab.id, { type: 'SUBMIT_PAGE_UID' }).catch(() => ({ uid: null }));
+  if (page.uid && page.uid !== uid) {
+    const err = new Error(
+      `Expected task ${uid} but the page is showing ${page.uid}. Nothing was uploaded.`
+    );
+    err.code = 'WRONG_TASK';
+    throw err;
+  }
+  if (!page.uid) log(`could not read a UID from ${page.page_url || 'the page'} — continuing`);
+
+  progress(requestId, 'attach', options.file_name || 'the task zip');
+  const attached = await askTab(tab.id, {
+    type: 'SUBMIT_ATTACH',
+    file_url: options.file_url,
+    file_name: options.file_name || `${uid}.zip`,
+    uploadTimeout: options.uploadTimeout || 300000,
+  });
+  progress(requestId, 'attached', `${attached.bytes} bytes — ${attached.steps.join('; ')}`);
+
+  progress(requestId, 'checks', 'running Check feedback and Check prescriptiveness');
+  const checks = await askTab(tab.id, {
+    type: 'SUBMIT_RUN_CHECKS',
+    checkTimeout: options.checkTimeout || 600000,
+    betweenChecksMs: options.betweenChecksMs || 2000,
+  });
+
+  progress(
+    requestId,
+    'checked',
+    checks.results.map((r) => `${r.label}: ${r.verdict}`).join(', ')
+  );
+
+  return { uid, page_uid: page.uid || null, attached, ...checks };
+}
+
 async function collectFeedback(requestId, uids, options) {
   const cfg = await getConfig();
   const collected = [];

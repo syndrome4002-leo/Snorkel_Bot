@@ -101,6 +101,25 @@ it through Dropbox, so it never needs to see machine A's disk.
 
 Three tasks at once by default, settable from the dashboard.
 
+**Step 4 — the platform's own checks** (server, on a timer)
+
+11. The server looks for a task at `"ready to submit"` whose `file_uploaded` is
+    true. One whose file has not reached Dropbox is skipped, not failed.
+12. It streams that zip from Dropbox at `/api/task-file/<uid>` and asks the
+    extension to put it back into the platform: **Start** for a new task,
+    **Revise** for one that has been through review.
+13. The extension attaches the zip to the re-upload field, then clicks
+    **Check feedback** and **Check prescriptiveness** and reads both verdicts and
+    their build logs.
+14. Both pass → recorded in `static_check_result`, status untouched, you submit.
+    Either fails → `static_check_result` keeps both panels' logs and the status
+    becomes `"static check fail"`.
+
+The bot never clicks Submit. Nothing reaches a reviewer without you.
+
+While an upload is running the extension refuses everything else, so the revise
+sweep and auto-start cannot navigate the tab out from under it.
+
 ---
 
 ## What gets stored
@@ -132,7 +151,8 @@ upload, so the fields always exist and can be queried.
 | --- | --- | --- |
 | `in build` | server | downloaded from Snorkel, not worked yet |
 | `Working..` | worker | Claude has the folder open |
-| `ready to submit` | worker | Claude is done; a human submits it |
+| `ready to submit` | worker | Claude is done; checks run, then a human submits it |
+| `static check fail` | server | the platform's own checks said no; needs a person |
 | `sent` | you | submitted, waiting on a reviewer |
 | `needs revision` | server | the reviewer sent it back, with feedback attached |
 

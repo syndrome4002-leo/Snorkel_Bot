@@ -22,6 +22,8 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
@@ -36,6 +38,7 @@ import {
   buildAuthUrl,
   exchangeCode,
   applyRefreshToken,
+  downloadStream,
 } from './dropbox.js';
 import { updateEnvFile, ENV_PATH } from './envfile.js';
 import {
@@ -58,6 +61,10 @@ import {
   findPendingUpload,
   findInBuildTask,
   findNewTaskInProgress,
+  TASK_STATUS_STATIC_FAIL,
+  TASK_STATUS_READY,
+  saveStaticCheck,
+  findReadyToSubmit,
   markSent,
   addFeedback,
   findFeedbackCandidates,
@@ -73,6 +80,23 @@ const hub = new ExtensionHub();
 // request arrives from 127.0.0.1, which would make the auth throttle treat all
 // callers as one client. TRUST_PROXY=1 makes Express read X-Forwarded-For.
 if (config.trustProxy) app.set('trust proxy', true);
+
+/*
+ * Chrome's Private Network Access check.
+ *
+ * The page doing the fetch is https://experts.snorkel-ai.com and this server is
+ * on a private address, which Chrome treats as a step down in trust: it sends a
+ * preflight first and refuses unless the server says it is expecting requests
+ * from a public site. Without this header the upload fetch fails with a CORS
+ * error that says nothing about the real reason.
+ *
+ * Ahead of cors(), which answers preflights itself and ends the request there.
+ * Registered after it, this never ran for the OPTIONS that actually matters.
+ */
+app.use('/api/task-file', (_req, res, next) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  next();
+});
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
@@ -339,6 +363,48 @@ async function runSnorkelStep(options) {
   };
 }
 
+/*
+ * Hands a task's zip to the browser.
+ *
+ * Streamed straight from Dropbox rather than saved and served: these run to a
+ * couple of hundred megabytes, and the only consumer is a fetch happening a few
+ * milliseconds away on the same machine. Nothing is written to disk, so there is
+ * nothing to clean up and no half-written file to serve after a crash.
+ */
+app.get('/api/task-file/:uid', async (req, res) => {
+  const uid = String(req.params.uid || '');
+
+  try {
+    const task = await getTask(uid);
+    if (!task) return res.status(404).json({ ok: false, error: `No task ${uid}.` });
+    if (!task.dropbox_path) {
+      return res.status(409).json({
+        ok: false,
+        error: `Task ${uid} has no dropbox_path — its file is not in Dropbox.`,
+      });
+    }
+
+    const { body, size, path: remote } = await downloadStream(task.dropbox_path);
+    const name = task.file_name || `${uid}.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(name)}"`);
+    if (size) res.setHeader('Content-Length', String(size));
+
+    console.log(`[server] streaming ${remote} to the browser for ${uid}`);
+    // Node's Readable.fromWeb, via the pipeline helper, so a client that goes
+    // away mid-download tears the Dropbox request down with it.
+    await pipeline(Readable.fromWeb(body), res);
+  } catch (err) {
+    console.error(`[server] could not serve ${uid}:`, err.message);
+    if (!res.headersSent) {
+      res.status(err.code === 'DROPBOX_NOT_FOUND' ? 404 : 502).json({ ok: false, error: err.message });
+    } else {
+      res.destroy(err);
+    }
+  }
+});
+
 app.post('/api/start', async (req, res) => {
   if (!hub.isConnected('snorkel')) {
     return res.status(503).json({
@@ -495,6 +561,13 @@ function updateTicker() {
     setTicker('tries', { emoji: '🔨', message: `${inBuildUid} is in build — not starting anything` });
     return;
   }
+  if (submitInFlight) {
+    setTicker('tries', {
+      emoji: '📤',
+      message: `uploading ${submitInFlight.uid} — not starting anything until it finishes`,
+    });
+    return;
+  }
 
   const countText = lastReviseCount === null ? 'count unknown yet' : `${lastReviseCount} awaiting, limit ${limit}`;
   const when = humanIn(nextAutoTryAt);
@@ -520,6 +593,13 @@ let settings = {};
 async function maybeAutoStart(reviseCount) {
   const limit = Number(settings.revise_limit);
   if (!Number.isFinite(limit) || limit <= 0) return;
+
+  // Starting a task navigates the tab an upload is using. The upload is the
+  // longer and less repeatable of the two, so it wins.
+  if (submitInFlight) {
+    logEvent('⏸️', 'auto_skip', `uploading ${submitInFlight.uid} — not starting a task meanwhile`);
+    return;
+  }
 
   if (reviseCount >= limit) {
     logEvent('⏸️', 'auto_skip', `${reviseCount} awaiting revision, limit is ${limit} — not starting`);
@@ -966,6 +1046,112 @@ function scheduleAutoTry() {
   updateTicker();
 }
 
+// --------------------------------------------------- static check sweep ----
+
+/**
+ * True while a zip is being put into the platform.
+ *
+ * Held here as well as in the extension because the two halves decide different
+ * things: the extension refuses commands that would navigate the tab, and this
+ * stops the server issuing them in the first place. Either alone would leave the
+ * other doing pointless work and logging failures for it.
+ */
+let submitInFlight = null;
+
+const DEFAULT_SUBMIT_EVERY = 3;
+let submitTimer = null;
+
+/**
+ * Finds a finished task and asks the extension to upload it and run the checks.
+ *
+ * Deliberately one at a time. Each check queues a build on the platform and the
+ * whole thing owns the browser tab for minutes, so a queue of them would just be
+ * a slower way to do the same work with more ways to interleave badly.
+ */
+async function maybeSubmitCheck() {
+  if (submitInFlight) return;
+  if (!hub.isConnected('snorkel')) return;
+  // A task being started or read is using the same tab.
+  if (currentRun()) return;
+
+  const found = await findReadyToSubmit(machineId()).catch((err) => {
+    console.warn('[server] could not look for tasks to check:', err.message);
+    return null;
+  });
+  if (!found) return;
+
+  if (!found.task) {
+    if (found.waiting) {
+      setTicker('submits', {
+        emoji: '⏸️',
+        message: `${found.waiting} task(s) ready to submit but their file is not in Dropbox yet`,
+      });
+    }
+    return;
+  }
+
+  const task = found.task;
+  const uid = String(task.UID);
+  submitInFlight = { uid, started_at: new Date().toISOString() };
+  updateTicker();
+  publishNow();
+
+  const fileUrl =
+    `http://127.0.0.1:${config.port}/api/task-file/${encodeURIComponent(uid)}` +
+    (config.botToken ? `?token=${encodeURIComponent(config.botToken)}` : '');
+
+  logEvent('📤', 'submit_start', `${uid} — uploading ${task.file_name || 'the task zip'} and running the checks`, {
+    uid,
+  });
+
+  try {
+    const result = await hub.command(
+      'snorkel',
+      {
+        type: 'submit_check',
+        options: {
+          uid,
+          is_new_task: task.is_new_task === true,
+          file_url: fileUrl,
+          file_name: task.file_name || `${uid}.zip`,
+        },
+      },
+      // Two platform builds back to back, on a zip this size.
+      config.submitTimeoutMs
+    );
+
+    await saveStaticCheck(uid, result);
+
+    if (result.passed) {
+      logEvent('✅', 'submit_pass', `${uid} passed both checks — ready for you to submit`, { uid });
+    } else {
+      const failed = (result.results || []).filter((r) => r.verdict !== 'pass').map((r) => r.label);
+      logEvent('🚫', 'submit_fail', `${uid} failed ${failed.join(' and ')} — "${TASK_STATUS_STATIC_FAIL}"`, {
+        uid,
+        level: 'warn',
+      });
+    }
+  } catch (err) {
+    // Left as "ready to submit" so the next sweep tries again. A failure to run
+    // the checks is not a failed check, and recording it as one would put a task
+    // in front of a person for no reason.
+    logEvent('❌', 'submit_error', `${uid}: ${err.message}`, { uid, level: 'error' });
+  } finally {
+    submitInFlight = null;
+    updateTicker();
+    publishNow();
+  }
+}
+
+function scheduleSubmitSweep() {
+  const every = minutes(settings.submit_check_every_min, DEFAULT_SUBMIT_EVERY);
+  if (submitTimer) clearInterval(submitTimer);
+  submitTimer = setInterval(() => {
+    maybeSubmitCheck().catch((err) => console.warn('[server] submit sweep failed:', err.message));
+  }, every * 60000);
+  submitTimer.unref?.();
+}
+
 /** Tells the extension how often to re-read the revise list. */
 function pushCheckInterval() {
   if (!hub.isConnected('snorkel')) return;
@@ -990,10 +1176,16 @@ watchSettings((value) => {
   if (before.check_revise_every_min !== settings.check_revise_every_min) {
     pushCheckInterval();
   }
+  if (before.submit_check_every_min !== settings.submit_check_every_min) {
+    logEvent('⚙️', 'settings',
+      `look for tasks to upload every ${minutes(settings.submit_check_every_min, DEFAULT_SUBMIT_EVERY)} min`);
+    scheduleSubmitSweep();
+  }
   updateTicker();
 });
 
 scheduleAutoTry();
+scheduleSubmitSweep();
 
 watchCommands(async (command, report) => {
   // Marks a task submitted, which is what later makes it eligible for feedback

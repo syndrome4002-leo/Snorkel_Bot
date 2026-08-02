@@ -234,6 +234,43 @@ export async function uploadFile(filePath, { folder = '', fileName = null, size 
   };
 }
 
+/**
+ * Opens a download without reading it into memory.
+ *
+ * Returns the raw response so the caller can pipe it straight on. A task zip is
+ * a couple of hundred megabytes, and buffering one per request would make the
+ * server's memory use a function of how many uploads happen to overlap.
+ */
+export async function downloadStream(remotePath) {
+  const token = await getAccessToken();
+  const target = remotePath.startsWith('/') ? remotePath : dropboxPath(config.dropbox.folder, remotePath);
+
+  const res = await fetch(`${config.dropbox.contentBase}/2/files/download`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': apiArg({ path: target }) },
+  });
+
+  if (!res.ok) {
+    const detail = await readError(res);
+    const hint = /not_found/.test(detail)
+      ? ` Nothing is stored at ${target} — the worker deletes the zip when it takes it, so this is expected while a task is being built.`
+      : '';
+    const err = new Error(`Dropbox download failed (HTTP ${res.status}): ${detail}.${hint}`);
+    err.code = res.status === 409 ? 'DROPBOX_NOT_FOUND' : 'DROPBOX_ERROR';
+    throw err;
+  }
+
+  // Dropbox reports the real size in this header; content-length is not always set.
+  let size = null;
+  try {
+    size = JSON.parse(res.headers.get('dropbox-api-result') || '{}').size ?? null;
+  } catch {
+    // not fatal, it is only used for a Content-Length
+  }
+
+  return { body: res.body, size, path: target };
+}
+
 // ------------------------------------------------------- OAuth handshake ----
 
 /*

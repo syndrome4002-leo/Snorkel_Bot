@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import FeedbackModal from './FeedbackModal';
 import TaskLogsDrawer from './TaskLogsDrawer';
+import StaticCheckDrawer from './StaticCheckDrawer';
 
 function when(iso) {
   if (!iso) return '';
@@ -13,10 +14,11 @@ function when(iso) {
 /** "in build" would otherwise become two class names. */
 const statusClass = (status) => String(status).trim().toLowerCase().replace(/\s+/g, '-');
 
-function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs }) {
+function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs, onOpenCheck }) {
   const [open, setOpen] = useState(false);
   const status = task.task_status || '—';
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
+  const check = task.static_check_result || null;
   // Tasks written before this field existed have neither true nor false, and
   // guessing would be worse than saying nothing.
   const known = typeof task.is_new_task === 'boolean';
@@ -49,6 +51,20 @@ function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs }) {
         <td>{task.file_uploaded ? 'yes' : 'no'}</td>
         <td>{when(task.updated_at)}</td>
         <td className="row-actions">
+          {check ? (
+            <button
+              className={`link${check.passed ? '' : ' danger'}`}
+              title={
+                check.passed
+                  ? 'Both platform checks passed'
+                  : 'A platform check failed — open for the build logs'
+              }
+              onClick={() => onOpenCheck(task)}
+            >
+              {check.passed ? 'checks ✓' : 'checks ✗'}
+            </button>
+          ) : null}
+
           <button
             className="link"
             title="What happened to this task, from download to submission"
@@ -95,6 +111,7 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false 
   const [kind, setKind] = useState('');
   const [feedbackTask, setFeedbackTask] = useState(null);
   const [logsTask, setLogsTask] = useState(null);
+  const [checkTask, setCheckTask] = useState(null);
 
   const rows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -177,6 +194,7 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false 
                   showMachine={showMachine}
                   onOpenFeedback={setFeedbackTask}
                   onOpenLogs={setLogsTask}
+                  onOpenCheck={setCheckTask}
                 />
               ))
             ) : (
@@ -202,6 +220,13 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false 
         <TaskLogsDrawer
           task={tasks.find((t) => t.UID === logsTask.UID) || logsTask}
           onClose={() => setLogsTask(null)}
+        />
+      ) : null}
+
+      {checkTask ? (
+        <StaticCheckDrawer
+          task={tasks.find((t) => t.UID === checkTask.UID) || checkTask}
+          onClose={() => setCheckTask(null)}
         />
       ) : null}
     </section>

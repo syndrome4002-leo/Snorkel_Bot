@@ -436,3 +436,21 @@ button.machine {
 }
 .ticker + .ticker { border-top: 1px solid var(--line); }
 .logs { border-radius: 8px 8px 0 0; }
+
+/* A failed platform check is the one thing in a row you want to notice. */
+.link.danger { color: var(--bad); font-weight: 600; }
+
+.check-result { margin-bottom: 18px; }
+.check-logs {
+  max-height: 340px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: rgba(128, 128, 128, 0.08);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.badge.static-check-fail { border-color: var(--bad); color: var(--bad); }
