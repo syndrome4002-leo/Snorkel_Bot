@@ -137,6 +137,29 @@ pre {
 }
 .badge.in-build { border-color: var(--warn); color: var(--warn); }
 
+/* New tasks sit at the top of the table. A left edge marks where the pinned
+   block ends, so it is clear they are pinned rather than merely first. */
+tr.pinned > td {
+  background: rgba(47, 133, 90, 0.06);
+}
+tr.pinned > td:first-child {
+  box-shadow: inset 3px 0 0 var(--ok, #2f855a);
+}
+
+/* Whether a task was started fresh or came back from a reviewer. Filled rather
+   than outlined, so it does not compete with the status badge beside it. */
+.badge.kind-new {
+  border-color: transparent;
+  background: rgba(47, 133, 90, 0.16);
+  color: var(--ok, #2f855a);
+  font-weight: 600;
+}
+.badge.kind-revision {
+  border-color: transparent;
+  background: rgba(128, 128, 128, 0.14);
+  color: var(--muted);
+}
+
 .gate {
   position: fixed;
   inset: 0;
@@ -328,6 +351,35 @@ button.machine {
 .log-warn { background: rgba(183, 121, 31, 0.12); }
 .log-error { background: rgba(197, 56, 47, 0.14); }
 .log-error .log-msg { color: var(--bad); }
+
+/* A task's own history: two processes write into it, usually from two different
+   computers, so each line carries the one it came from. */
+.task-logs { max-height: min(70vh, 640px); }
+.task-logs .log {
+  grid-template-columns: 9.5rem 1.6rem 4.2rem 9rem 1fr auto;
+}
+.log-source {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  text-align: center;
+  padding: 1px 0;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.src-server { background: rgba(58, 110, 165, 0.16); color: #3a6ea5; }
+.src-worker { background: rgba(126, 87, 194, 0.16); color: #7e57c2; }
+/* Only rendered when a step actually took a while, so it reads as a signal. */
+.log-gap {
+  color: var(--warn);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 700px) {
+  .task-logs .log { grid-template-columns: 1.6rem 1fr; }
+  .task-logs .log-source, .task-logs .log-gap { display: none; }
+}
 
 @media (max-width: 700px) {
   .log { grid-template-columns: 1.6rem 1fr; }

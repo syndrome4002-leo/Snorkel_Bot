@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import FeedbackModal from './FeedbackModal';
+import TaskLogsDrawer from './TaskLogsDrawer';
 
 function when(iso) {
   if (!iso) return '';
@@ -12,23 +13,50 @@ function when(iso) {
 /** "in build" would otherwise become two class names. */
 const statusClass = (status) => String(status).trim().toLowerCase().replace(/\s+/g, '-');
 
-function TaskRow({ task, showMachine, onOpenFeedback }) {
+function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs }) {
   const [open, setOpen] = useState(false);
   const status = task.task_status || '—';
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
+  // Tasks written before this field existed have neither true nor false, and
+  // guessing would be worse than saying nothing.
+  const known = typeof task.is_new_task === 'boolean';
 
   return (
     <>
-      <tr>
+      <tr className={task.is_new_task === true ? 'pinned' : undefined}>
         <td className="mono">{task.UID}</td>
         {showMachine ? <td className="mono">{task.machine_id || '—'}</td> : null}
         <td className="mono">{task.file_name || '—'}</td>
         <td>
           <span className={`badge ${statusClass(status)}`}>{status}</span>
         </td>
+        <td>
+          {known ? (
+            <span
+              className={`badge ${task.is_new_task ? 'kind-new' : 'kind-revision'}`}
+              title={
+                task.is_new_task
+                  ? 'Started fresh by the bot and never reviewed'
+                  : 'A reviewer has sent this back at least once'
+              }
+            >
+              {task.is_new_task ? 'new' : 'revision'}
+            </span>
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </td>
         <td>{task.file_uploaded ? 'yes' : 'no'}</td>
         <td>{when(task.updated_at)}</td>
         <td className="row-actions">
+          <button
+            className="link"
+            title="What happened to this task, from download to submission"
+            onClick={() => onOpenLogs(task)}
+          >
+            build log
+          </button>
+
           <button
             className="link"
             disabled={!rounds}
@@ -45,7 +73,7 @@ function TaskRow({ task, showMachine, onOpenFeedback }) {
       </tr>
       {open ? (
         <tr className="details">
-          <td colSpan={showMachine ? 7 : 6}>
+          <td colSpan={showMachine ? 8 : 7}>
             {/* The task's own info, and nothing else — every other field is
                 already a column, and the feedback has its own drawer. */}
             <pre>{task.initial_infos || '(no infos captured)'}</pre>
@@ -56,25 +84,62 @@ function TaskRow({ task, showMachine, onOpenFeedback }) {
   );
 }
 
+const KINDS = [
+  { key: '', label: 'All' },
+  { key: 'new', label: 'New' },
+  { key: 'revision', label: 'Revisions' },
+];
+
 export default function TaskTable({ tasks, note, onRefresh, showMachine = false }) {
   const [filter, setFilter] = useState('');
+  const [kind, setKind] = useState('');
   const [feedbackTask, setFeedbackTask] = useState(null);
+  const [logsTask, setLogsTask] = useState(null);
 
   const rows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    if (!needle) return tasks;
-    return tasks.filter((task) =>
-      [task.UID, task.file_name, task.task_status, task.dropbox_path, task.machine_id].some((value) =>
-        String(value || '').toLowerCase().includes(needle)
-      )
-    );
-  }, [tasks, filter]);
+    const matched = tasks.filter((task) => {
+      if (kind === 'new' && task.is_new_task !== true) return false;
+      if (kind === 'revision' && task.is_new_task !== false) return false;
+      if (!needle) return true;
+      return [task.UID, task.file_name, task.task_status, task.dropbox_path, task.machine_id].some(
+        (value) => String(value || '').toLowerCase().includes(needle)
+      );
+    });
+
+    /*
+     * New tasks first, everything else in the order it arrived (newest updated).
+     * A new task is the one being worked right now and the one you are waiting
+     * on; a long tail of finished revisions should not push it off the screen.
+     *
+     * Two passes rather than a comparator so the existing order is preserved
+     * exactly within each group.
+     */
+    return [
+      ...matched.filter((task) => task.is_new_task === true),
+      ...matched.filter((task) => task.is_new_task !== true),
+    ];
+  }, [tasks, filter, kind]);
+
+  const newCount = useMemo(() => tasks.filter((t) => t.is_new_task === true).length, [tasks]);
 
   return (
     <section className="card">
       <div className="row space">
-        <h2>Tasks</h2>
+        <h2>
+          Tasks{' '}
+          {newCount ? <span className="muted">{newCount} new</span> : null}
+        </h2>
         <div className="row">
+          {KINDS.map((k) => (
+            <button
+              key={k.key}
+              className={`chip${kind === k.key ? ' active' : ''}`}
+              onClick={() => setKind(k.key)}
+            >
+              {k.label}
+            </button>
+          ))}
           <input
             type="search"
             placeholder="filter by UID, file, status…"
@@ -97,6 +162,7 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false 
               {showMachine ? <th>Machine</th> : null}
               <th>File</th>
               <th>Status</th>
+              <th>Kind</th>
               <th>Uploaded</th>
               <th>Updated</th>
               <th />
@@ -110,11 +176,12 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false 
                   task={task}
                   showMachine={showMachine}
                   onOpenFeedback={setFeedbackTask}
+                  onOpenLogs={setLogsTask}
                 />
               ))
             ) : (
               <tr>
-                <td colSpan={showMachine ? 7 : 6} className="muted">
+                <td colSpan={showMachine ? 8 : 7} className="muted">
                   {tasks.length ? 'Nothing matches that filter.' : 'No tasks yet.'}
                 </td>
               </tr>
@@ -128,6 +195,13 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false 
         <FeedbackModal
           task={tasks.find((t) => t.UID === feedbackTask.UID) || feedbackTask}
           onClose={() => setFeedbackTask(null)}
+        />
+      ) : null}
+
+      {logsTask ? (
+        <TaskLogsDrawer
+          task={tasks.find((t) => t.UID === logsTask.UID) || logsTask}
+          onClose={() => setLogsTask(null)}
         />
       ) : null}
     </section>

@@ -1,0 +1,51 @@
+# Runs the worker as a service, so it survives logout and comes back after a
+# reboot. One unit per machine, which is the same rule the lock enforces.
+#
+#   cp snorkel-worker.service ~/.config/systemd/user/
+#   # edit WorkingDirectory below if this checkout is somewhere else
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now snorkel-worker
+#   systemctl --user status snorkel-worker
+#   journalctl --user -u snorkel-worker -f
+#
+# A *user* unit rather than a system one on purpose: the worker runs Claude Code,
+# which reads your login and settings from your home directory. As a system
+# service it would run as root with none of that.
+#
+# Keep the machine awake if it is a laptop — a suspended machine is a worker that
+# has quietly stopped:
+#   sudo systemctl mask sleep.target suspend.target
+
+[Unit]
+Description=Snorkel Bot worker (Claude agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Music/Snorkel_Bot/snorkel_worker
+ExecStart=/usr/bin/env node src/index.js
+
+# SIGTERM lets the worker release its lock and mark itself offline. The timeout
+# is generous because a task in flight is left to be reclaimed on restart, not
+# waited for.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+Restart=on-failure
+RestartSec=15
+
+# A second instance is refused by the lock anyway; this stops systemd from
+# trying, so the journal does not fill with the refusal message.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# nvm installs node outside the default PATH, so name the directory it is in.
+# Check yours with: dirname "$(which node)"
+Environment=PATH=%h/.nvm/versions/node/v24.5.0/bin:/usr/local/bin:/usr/bin:/bin
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

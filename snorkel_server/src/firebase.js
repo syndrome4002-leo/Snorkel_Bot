@@ -292,6 +292,17 @@ export async function saveTask(task, meta = {}) {
     // step flips file_uploaded to true and leaves task_status alone.
     file_uploaded: false,
     task_status: TASK_STATUS_STARTED,
+    /*
+     * A task the bot started from scratch, as opposed to one that turned up in
+     * the revise list already needing work. It stays true through the first
+     * build and the first submission, and is cleared the moment a reviewer sends
+     * feedback back — from then on every round is a revision.
+     *
+     * Worth its own field rather than being inferred from `feedbacks.length`:
+     * "has never been reviewed" and "we have not collected the feedback yet" are
+     * different things, and only one of them means the task is new.
+     */
+    is_new_task: true,
     updated_at: new Date().toISOString(),
   };
 
@@ -389,6 +400,9 @@ export async function addFeedback(uid, entry, extra = {}) {
     UID: String(uid),
     machine_id: existing?.machine_id || machineId(),
     task_status: TASK_STATUS_NEEDS_REVISION,
+    // A reviewer has now looked at it, so whatever it was before, it is a
+    // revision from here on.
+    is_new_task: false,
     feedbacks: next,
     // Stamped even when the feedback was unchanged, so an unchanged task is not
     // reopened on every single sweep.
@@ -467,6 +481,34 @@ export async function findInBuildTask(machine) {
     .limit(1)
     .get();
   return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+/**
+ * A brand-new task that is still being worked, anywhere in the system.
+ *
+ * Deliberately not scoped to a machine. `findInBuildTask` answers "is this
+ * computer busy", which is about not driving one browser into two tasks at once.
+ * This answers a different question — "is the bot already building something
+ * new" — and that one is about the account, not the hardware. Two machines each
+ * starting a fresh task means two unfinished submissions against the same
+ * Snorkel account.
+ *
+ * "Working.." counts: the task is still being built, it just moved from the
+ * browser to Claude.
+ */
+export async function findNewTaskInProgress() {
+  if (!db) return null;
+
+  for (const status of [TASK_STATUS_STARTED, 'Working..']) {
+    const snap = await db
+      .collection(config.firebase.collection)
+      .where('is_new_task', '==', true)
+      .where('task_status', '==', status)
+      .limit(1)
+      .get();
+    if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+  }
+  return null;
 }
 
 /**

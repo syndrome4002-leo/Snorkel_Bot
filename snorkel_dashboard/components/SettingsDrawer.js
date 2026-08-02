@@ -11,24 +11,41 @@ import { saveSettings, watchSettings } from '@/lib/commands';
  */
 const FIELDS = [
   {
+    group: 'Auto-start',
     key: 'revise_limit',
     label: 'Revise tasks limit',
     help: 'While fewer than this many tasks are awaiting revision, this machine starts new ones on its own. Empty or 0 turns auto-start off.',
     min: 0,
+    placeholder: 'off',
   },
   {
+    group: 'Auto-start',
     key: 'try_new_task_every_min',
     label: 'Try new task in (minutes)',
     help: 'How often the machine checks the limit and, if it is under, starts a task. Defaults to 5.',
     min: 1,
+    placeholder: '5',
   },
   {
+    group: 'Auto-start',
     key: 'check_revise_every_min',
     label: 'Check revise list in (minutes)',
     help: 'How often the extension reloads the home page and re-counts the tasks awaiting revision. Defaults to 5.',
     min: 1,
+    placeholder: '5',
+  },
+  {
+    group: 'Worker',
+    key: 'worker_max_concurrent',
+    label: 'Max tasks at once',
+    help: 'How many tasks Claude works on at the same time. Each one builds a repo and runs its tests, so more is not always faster. Defaults to 3.',
+    min: 1,
+    placeholder: '3',
   },
 ];
+
+/** Field order is fixed, so the groups render in the order they first appear. */
+const GROUPS = [...new Set(FIELDS.map((f) => f.group))];
 
 export default function SettingsDrawer({ machine, onClose }) {
   const [values, setValues] = useState({});
@@ -106,25 +123,28 @@ export default function SettingsDrawer({ machine, onClose }) {
         </header>
 
         <div className="modal-body">
-          <h4 className="group-title">Auto-start</h4>
-
           <form onSubmit={save}>
-            {FIELDS.map((field) => (
-              <div key={field.key} className="setting">
-                <label htmlFor={field.key}>{field.label}</label>
-                <p className="muted">{field.help}</p>
-                <input
-                  id={field.key}
-                  type="number"
-                  min={field.min}
-                  step="1"
-                  style={{ width: '8rem' }}
-                  value={values[field.key] ?? ''}
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, [field.key]: event.target.value }))
-                  }
-                  placeholder={field.key === 'revise_limit' ? 'off' : '5'}
-                />
+            {GROUPS.map((group) => (
+              <div key={group}>
+                <h4 className="group-title">{group}</h4>
+                {FIELDS.filter((field) => field.group === group).map((field) => (
+                  <div key={field.key} className="setting">
+                    <label htmlFor={field.key}>{field.label}</label>
+                    <p className="muted">{field.help}</p>
+                    <input
+                      id={field.key}
+                      type="number"
+                      min={field.min}
+                      step="1"
+                      style={{ width: '8rem' }}
+                      value={values[field.key] ?? ''}
+                      onChange={(event) =>
+                        setValues((current) => ({ ...current, [field.key]: event.target.value }))
+                      }
+                      placeholder={field.placeholder}
+                    />
+                  </div>
+                ))}
               </div>
             ))}
 
@@ -143,6 +163,12 @@ export default function SettingsDrawer({ machine, onClose }) {
             ) : (
               <>Auto-start is <strong>off</strong>. Set a revise tasks limit to turn it on.</>
             )}
+          </p>
+
+          <p className="muted">
+            Claude works up to <strong>{saved.worker_max_concurrent ?? 3}</strong> task
+            {(saved.worker_max_concurrent ?? 3) === 1 ? '' : 's'} at once. Takes effect on the
+            worker straight away — a task already running is never interrupted.
           </p>
 
           {error ? <p className="error">{error}</p> : null}

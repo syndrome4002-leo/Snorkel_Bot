@@ -57,6 +57,7 @@ import {
   markUploaded,
   findPendingUpload,
   findInBuildTask,
+  findNewTaskInProgress,
   markSent,
   addFeedback,
   findFeedbackCandidates,
@@ -263,7 +264,31 @@ async function assertNoTaskInBuild(options = {}) {
     console.warn('[server] could not check for a task in build:', err.message);
     return null;
   });
-  if (!existing) return;
+
+  if (!existing) {
+    /*
+     * Nothing on this machine — but a new task being built anywhere counts.
+     * The per-machine check above stops one browser being driven into two tasks
+     * at once; this stops the account collecting several unfinished new
+     * submissions because a second machine also decided it was free.
+     *
+     * Only new tasks block. A machine working through revisions is not a reason
+     * to refuse a fresh one.
+     */
+    const elsewhere = await findNewTaskInProgress().catch((err) => {
+      console.warn('[server] could not check for a new task elsewhere:', err.message);
+      return null;
+    });
+    if (!elsewhere) return;
+
+    const error = new Error(
+      `A new task is already being built on ${elsewhere.machine_id || 'another machine'} ` +
+        `(${elsewhere.UID}, "${elsewhere.task_status}"). Finish it first, ` +
+        `or pass {"force": true} to start another anyway.`
+    );
+    error.code = 'TASK_IN_BUILD';
+    throw error;
+  }
 
   const error = new Error(
     `A task is in building (${existing.UID}). Finish and upload it first, ` +

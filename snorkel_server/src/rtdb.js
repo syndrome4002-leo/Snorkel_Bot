@@ -26,8 +26,24 @@ const SETTINGS = () => `machines/${machineId()}/settings`;
 const LOGS = () => `machines/${machineId()}/logs`;
 const TICKER = () => `machines/${machineId()}/ticker`;
 
+/**
+ * One stream per task, keyed by UID rather than by machine.
+ *
+ * The machine stream answers "what is this computer doing"; this answers "what
+ * happened to this task". Both this server and snorkel_worker write here, so a
+ * task's history reads as one sequence even though two processes on two
+ * different computers produced it.
+ */
+const TASK_LOGS = (uid) => `task_logs/${uid}`;
+
 /** Log lines kept per machine. Old ones are trimmed rather than kept forever. */
 const LOG_CAP = 300;
+
+/** Per task. Lower than the machine stream: one task should not need 300 lines. */
+const TASK_LOG_CAP = 200;
+
+/** Realtime Database keys cannot contain these; a UID never should either. */
+const safeKey = (value) => String(value).replace(/[.$#[\]/]/g, '_');
 
 /** Older than this when we first see it and it is not worth running. */
 const STALE_MS = 10 * 60 * 1000;
@@ -177,6 +193,55 @@ export function pushLog(entry) {
       return trimLogs();
     })
     .catch((err) => console.warn('[rtdb] could not push a log line:', err.message));
+
+  // A line about a task goes to that task's own history as well. Written from
+  // the same call so no caller has to remember to do both.
+  if (line.uid) pushTaskLog(line.uid, line);
+}
+
+const taskLogsSinceTrim = new Map();
+
+/** Appends to one task's history. `source` says which process wrote the line. */
+export function pushTaskLog(uid, entry) {
+  if (!db || !uid) return;
+
+  const key = safeKey(uid);
+  db.ref(TASK_LOGS(key))
+    .push({
+      at: entry.at || new Date().toISOString(),
+      level: entry.level || 'info',
+      emoji: entry.emoji || 'ℹ️',
+      event: entry.event || 'log',
+      message: String(entry.message == null ? '' : entry.message),
+      source: entry.source || 'server',
+      machine_id: machineId(),
+    })
+    .then(() => {
+      const count = (taskLogsSinceTrim.get(key) || 0) + 1;
+      if (count < 25) {
+        taskLogsSinceTrim.set(key, count);
+        return;
+      }
+      taskLogsSinceTrim.set(key, 0);
+      return trimTaskLog(key);
+    })
+    .catch((err) => console.warn('[rtdb] could not push a task log line:', err.message));
+}
+
+async function trimTaskLog(key) {
+  try {
+    const snapshot = await db.ref(TASK_LOGS(key)).orderByKey().once('value');
+    const keys = [];
+    snapshot.forEach((child) => {
+      keys.push(child.key);
+    });
+    if (keys.length <= TASK_LOG_CAP) return;
+    const updates = {};
+    for (const k of keys.slice(0, keys.length - TASK_LOG_CAP)) updates[k] = null;
+    await db.ref(TASK_LOGS(key)).update(updates);
+  } catch (err) {
+    console.warn('[rtdb] could not trim a task log:', err.message);
+  }
 }
 
 /**

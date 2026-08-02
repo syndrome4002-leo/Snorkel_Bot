@@ -6,8 +6,13 @@ import { useState } from 'react';
  * Chooses which machine the page is looking at. "All machines" is a read-only
  * view: tasks from everywhere, but nothing to start, because a command has to
  * go to one specific machine.
+ *
+ * This list is more than a filter — snorkel_worker reads it to decide whose
+ * tasks to work on. Removing a machine here stops the worker picking up its
+ * tasks, which is why the button says "Stop working this machine" rather than
+ * something that sounds cosmetic.
  */
-export default function MachinePicker({ machines, selected, statuses, onSelect, onAdd, onRemove }) {
+export default function MachinePicker({ machines, selected, statuses, note, onSelect, onAdd, onRemove }) {
   const [value, setValue] = useState('');
 
   function submit(event) {
@@ -34,9 +39,11 @@ export default function MachinePicker({ machines, selected, statuses, onSelect, 
         </form>
       </div>
 
+      {note ? <p className="error">{note}</p> : null}
+
       {machines.length === 0 ? (
         <p className="muted">
-          No machines yet. Start the server and it prints its id:
+          No machines yet — the worker has nothing to work on. Start the server and it prints its id:
           <br />
           <code>[server] machine id: …</code> — paste that above.
         </p>
@@ -63,7 +70,7 @@ export default function MachinePicker({ machines, selected, statuses, onSelect, 
                 </button>
                 <button
                   className="link"
-                  title="Forget this machine"
+                  title="Stop working this machine — the worker will no longer pick up its tasks"
                   onClick={() => onRemove(id)}
                 >
                   ×

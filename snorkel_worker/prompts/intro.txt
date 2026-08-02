@@ -1,0 +1,3 @@
+Please check these attached documents and memorize important things then I will give you a sentinel task details that you will need to work with.
+
+{{docs}}

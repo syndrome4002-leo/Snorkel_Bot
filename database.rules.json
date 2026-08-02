@@ -46,6 +46,33 @@
       ".write": false
     },
 
+    "task_logs": {
+      "//": [
+        "One log stream per task UID, written by both snorkel_server and",
+        "snorkel_worker so a task's history reads as one sequence even though",
+        "two processes on two machines produced it. Browsers only read it."
+      ],
+      ".read": true,
+      ".write": false
+    },
+
+    "machines_index": {
+      "//": [
+        "The machines being worked, added from the dashboard.",
+        "",
+        "Read by snorkel_worker to decide whose tasks to pick up, so it is",
+        "shared rather than per-browser. Removing an entry stops the worker",
+        "taking that machine's tasks."
+      ],
+      ".read": true,
+      ".write": true,
+      "$machineId": {
+        ".validate": "newData.hasChild('added_at') || !newData.exists()",
+        "added_at": { ".validate": "newData.isString()" },
+        "$other": { ".validate": true }
+      }
+    },
+
     "machines": {
       "$machineId": {
         "commands": {
@@ -77,6 +104,7 @@
           "revise_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
           "try_new_task_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "check_revise_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
+          "worker_max_concurrent": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "$other": { ".validate": true }
         },
 
@@ -88,6 +116,12 @@
 
         "ticker": {
           "//": "One line, overwritten in place — the countdown to the next check.",
+          ".read": true,
+          ".write": false
+        },
+
+        "worker": {
+          "//": "Published by snorkel_worker: how many tasks Claude has open.",
           ".read": true,
           ".write": false
         }

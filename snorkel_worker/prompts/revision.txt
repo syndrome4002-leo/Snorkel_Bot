@@ -1,0 +1,6 @@
+The task folder is your current working directory: {{task_dir}}
+Task UID: {{uid}}
+
+Got following feedbacks, pls fix these all and write here full answer only for updated answers in this round ( It does not mean append, Just combine. but each answer should be not long.(just like written by human)). write full answer ( Not all fields answers ) for updated answer fields, so I can replace.
+
+{{feedbacks}}

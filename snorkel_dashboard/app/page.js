@@ -4,7 +4,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { firebaseConfigured, missingConfigKeys } from '@/lib/firebase';
 import { watchServerStatus } from '@/lib/commands';
 import { findInBuild, watchTasks } from '@/lib/tasks';
-import { addMachine, getSelected, listMachines, removeMachine, setSelected } from '@/lib/machines';
+import {
+  addMachine,
+  getSelected,
+  migrateLocalMachines,
+  removeMachine,
+  setSelected,
+  watchMachines,
+} from '@/lib/machines';
 import MachinePicker from '@/components/MachinePicker';
 import StatusPills from '@/components/StatusPills';
 import StartTask from '@/components/StartTask';
@@ -37,13 +44,21 @@ export default function Page() {
   const [tasks, setTasks] = useState([]);
   const [tasksNote, setTasksNote] = useState('Loading…');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [machineNote, setMachineNote] = useState('');
 
   // localStorage and Firebase are both browser-only.
   useEffect(() => {
-    setMachines(listMachines());
     setSelectedState(getSelected());
     setReady(true);
   }, []);
+
+  // The list is shared now: the worker reads it to decide whose tasks to pick
+  // up, so it has to come from the database rather than this browser.
+  useEffect(() => {
+    if (!ready || !firebaseConfigured) return undefined;
+    migrateLocalMachines().catch((err) => setMachineNote(`Could not migrate the old list: ${err.message}`));
+    return watchMachines(setMachines);
+  }, [ready]);
 
   // One status subscription per known machine, so the picker can show which
   // ones are up without you having to select each in turn.
@@ -83,17 +98,30 @@ export default function Page() {
   }, []);
 
   const add = useCallback(
-    (id) => {
-      setMachines(addMachine(id));
-      select(id);
+    async (id) => {
+      setMachineNote('');
+      try {
+        // watchMachines updates the list; no need to set it here.
+        select(await addMachine(id));
+      } catch (err) {
+        setMachineNote(err.message);
+      }
     },
     [select]
   );
 
-  const remove = useCallback((id) => {
-    setMachines(removeMachine(id));
-    setSelectedState(getSelected());
-  }, []);
+  const remove = useCallback(
+    async (id) => {
+      setMachineNote('');
+      try {
+        await removeMachine(id);
+        if (getSelected() === id) select('');
+      } catch (err) {
+        setMachineNote(err.message);
+      }
+    },
+    [select]
+  );
 
   if (!ready) return null;
   if (!firebaseConfigured) return <NotConfigured />;
@@ -114,6 +142,7 @@ export default function Page() {
         machines={machines}
         selected={selected}
         statuses={statuses}
+        note={machineNote}
         onSelect={select}
         onAdd={add}
         onRemove={remove}

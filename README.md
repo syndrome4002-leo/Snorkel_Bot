@@ -1,16 +1,37 @@
 # Snorkel Bot
 
-Three pieces that work together:
+Four pieces that work together:
 
 | Folder | What it is |
 | --- | --- |
 | [snorkel_extension/](snorkel_extension/) | Chrome MV3 extension that drives `experts.snorkel-ai.com` |
 | [snorkel_server/](snorkel_server/) | Node server that commands it, uploads to Dropbox, and writes to Firebase |
 | [snorkel_dashboard/](snorkel_dashboard/) | Next.js dashboard — see tasks, start new ones, from any machine |
+| [snorkel_worker/](snorkel_worker/) | Node server that works those tasks with the Claude Code agent |
 
 The extension never touches Firebase or Dropbox, and the server never touches the
 browser. They talk over a WebSocket. The dashboard is a static Next.js export
 that the server hosts, so it shares an origin with the API.
+
+The worker talks to none of them. `snorkel_server` produces tasks and the worker
+consumes them, with Firestore as the queue between — so either can be restarted,
+moved, or switched off without the other noticing. See
+[snorkel_worker/README.md](snorkel_worker/README.md).
+
+They do not have to be on the same computer. The usual arrangement is the server
+and the browser on one machine, the dashboard and the worker on another:
+
+```
+  machine A                          machine B
+  ─────────                          ─────────
+  snorkel_extension                  snorkel_dashboard
+  snorkel_server   ──► Dropbox ──►   snorkel_worker ──► Claude
+                   ──► Firestore ◄──
+```
+
+The worker is told **which machines to work for** — the list you add on the
+dashboard, shared through `/machines_index` in the Realtime Database. Files reach
+it through Dropbox, so it never needs to see machine A's disk.
 
 ---
 
@@ -66,6 +87,20 @@ that the server hosts, so it shares an origin with the API.
 
 `POST /api/run` does both steps back to back.
 
+**Step 3 — Claude** ([snorkel_worker/](snorkel_worker/), no endpoint)
+
+7. The worker polls Firestore for tasks in `"in build"` or `"needs revision"`,
+   claims one with a transaction, and sets `task_status: "Working.."`.
+8. For `"in build"` it takes the zip back off Dropbox, **deletes it there**, sets
+   `file_uploaded: false` and unpacks it. For `"needs revision"` the folder is
+   already on disk and nothing is downloaded.
+9. Two turns with the Claude Code agent — the reference documents, then the task
+   or the feedback — running in the task folder with its own tools.
+10. The answer is appended to `answers`, the folder is repacked and uploaded, and
+    `task_status` becomes `"ready to submit"`.
+
+Three tasks at once by default, settable from the dashboard.
+
 ---
 
 ## What gets stored
@@ -85,12 +120,24 @@ the same task updates the record instead of duplicating it):
 | `local_path` | where the zip sits until it is uploaded, then `null` |
 | `dropbox_path` | where it landed in Dropbox |
 | `created_at` / `updated_at` / `uploaded_at` | ISO timestamps written by the server |
+| `feedbacks` | append-only, one entry per review round, written by the extension's sweep |
+| `answers` | append-only, one entry per round, written by the worker |
 
 `file_uploaded` and `task_status` are written up front rather than only after the
 upload, so the fields always exist and can be queried.
 
-Nothing in the server ever moves `task_status` off `"in build"` — see the note
-under **One task at a time** below.
+### The statuses
+
+| Status | Set by | Meaning |
+| --- | --- | --- |
+| `in build` | server | downloaded from Snorkel, not worked yet |
+| `Working..` | worker | Claude has the folder open |
+| `ready to submit` | worker | Claude is done; a human submits it |
+| `sent` | you | submitted, waiting on a reviewer |
+| `needs revision` | server | the reviewer sent it back, with feedback attached |
+
+The server never moves a task off `"in build"` — see the note under **One task at
+a time** below. Only the worker advances a task from there.
 
 Example `initial_infos`:
 
