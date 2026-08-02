@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Snorkel Bot',
+  title: 'Bot',
   description: 'Start Sentinel tasks and see what has been collected.',
 };
 

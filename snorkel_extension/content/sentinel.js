@@ -131,383 +131,85 @@
   // ---------------------------------------------------------- feedback ----
 
   /*
-   * Reviewer feedback, read from the Task Notes sidebar.
+   * Reviewer feedback and the four automated check panes.
    *
-   * Ported from stn_ext/src/notes.js, which gets three things right that a
-   * document-wide search for a "Reviewer Feedback" button does not:
+   * All the actual work happens in feedback-main.js, which runs in the page's
+   * MAIN world and is a port of stn_ext's F button. It has to be there: reading
+   * a Monaco pane needs window.monaco and the React fibers, and an isolated
+   * world sees neither. Earlier versions kept the logic here and reached across
+   * for the awkward parts, which is why the panes kept coming back empty.
    *
-   *   1. A COLLAPSED CARD KEEPS NO BODY IN THE DOM. The form is a Radix
-   *      accordion and unmounts closed content, so a card that happens to be
-   *      shut reads as empty. Every wanted card is opened first, with a pause
-   *      between clicks and a settle afterwards.
-   *   2. There are TWO notes worth having — "Reviewer Feedback" and
-   *      "Automated feedback" — not one.
-   *   3. The prose sits in .whitespace-pre-line OR .whitespace-pre-wrap. Taking
-   *      only the former misses the other kind entirely.
-   *
-   * Everything is scoped to the sidebar panel so a collapsible elsewhere on the
-   * form cannot be mistaken for a note.
+   * This side only asks and waits.
    */
-  const NOTES_PANEL = '[data-testid="collapsible-sidebar-panel"]';
-  const WANTED_NOTES = ['Reviewer Feedback', 'Automated feedback'];
+  const FEEDBACK_REQUEST_ATTR = 'data-snorkelbot-feedback-request';
+  const FEEDBACK_RESULT_ID = '__snorkelbot_feedback_result';
 
-  function isNoteHeader(el) {
-    return (
-      el.tagName === 'BUTTON' &&
-      !!el.getAttribute('aria-controls') &&
-      el.getAttribute('aria-expanded') != null &&
-      !!el.querySelector(':scope > div')
-    );
-  }
-
-  function noteHeaders() {
-    // The panel is the right scope. Falling back to the whole document keeps
-    // this working if the sidebar is ever restructured — a wanted title is
-    // still required, so nothing unrelated gets swept in.
-    const panel = document.querySelector(NOTES_PANEL) || document;
-    return Array.from(panel.querySelectorAll('button[aria-controls]')).filter(isNoteHeader);
-  }
-
-  function noteTitle(header) {
-    const first = header.querySelector(':scope > div');
-    return first ? SnorkelBot.normText(SnorkelBot.text(first)) : '';
-  }
-
-  function isWantedNote(title) {
-    const t = SnorkelBot.normLabel(title);
-    return WANTED_NOTES.some((w) => SnorkelBot.normLabel(w) === t);
-  }
-
-  function noteBody(header) {
-    const id = header.getAttribute('aria-controls');
-    const region = id ? document.getElementById(id) : null;
-    if (!region) return '';
-
-    // The prose only — the controls beneath it are not part of the note.
-    const prose = region.querySelectorAll('.whitespace-pre-line, .whitespace-pre-wrap');
-    if (prose.length) {
-      return Array.from(prose)
-        .map((node) => SnorkelBot.cleanBlock(SnorkelBot.text(node)))
-        .filter(Boolean)
-        .join('\n\n');
-    }
-    const grouped = region.querySelector('.space-y-12');
-    return SnorkelBot.cleanBlock(SnorkelBot.text(grouped || region));
-  }
-
-  /** Opens the wanted cards that are shut, so their bodies exist to be read. */
-  async function expandNotes() {
-    let opened = 0;
-    for (const header of noteHeaders()) {
-      if (header.getAttribute('aria-expanded') !== 'false') continue;
-      if (!isWantedNote(noteTitle(header))) continue;
-      SnorkelBot.click(header);
-      opened++;
-      await SnorkelBot.sleep(120);
-    }
-    if (opened) await SnorkelBot.sleep(200);
-    return opened;
-  }
-
-  /** [{ title, body }] for the notes actually present, in WANTED_NOTES order. */
-  function noteSections() {
-    const headers = noteHeaders();
-    const out = [];
-    for (const wanted of WANTED_NOTES) {
-      for (const header of headers) {
-        if (SnorkelBot.normLabel(noteTitle(header)) !== SnorkelBot.normLabel(wanted)) continue;
-        const body = noteBody(header);
-        if (!body) continue;
-        out.push({ title: SnorkelBot.normText(noteTitle(header)), body });
-      }
-    }
-    return out;
-  }
-
-
-  // ------------------------------------------------------- check panes ----
-
-  /*
-   * The four automated check panes.
-   *
-   * These are Monaco editors, which only render the lines currently scrolled
-   * into view — so reading their DOM gives whatever fits the viewport, cut off
-   * without saying so. Three ways of getting the text, best first:
-   *
-   *   monaco-model   the editor's own value, via the page-world bridge
-   *   react-props    the string React was handed, same bridge
-   *   viewport       scroll the pane and stitch the rendered lines together
-   *
-   * Which one produced each pane is recorded, because only the first two are
-   * guaranteed complete. A pane read by "viewport" that ends mid-sentence is
-   * then identifiable rather than quietly wrong.
-   */
-  const CHECK_PANES = [
-    { title: 'Difficulty Check', testid: 'field-difficulty_check_summary' },
-    { title: 'Agentic Judge Quality Report', testid: 'field-code-rubric_panel_judge' },
-    { title: 'Oracle Check', testid: 'field-oracle_check_summary' },
-    { title: 'Quality Check', testid: 'field-quality_check_summary' },
-  ];
-
-  const MONACO_REQUEST_ATTR = 'data-snorkelbot-monaco-request';
-  const MONACO_RESULT_ID = '__snorkelbot_monaco_result';
-
-  /** Asks the MAIN-world bridge for a pane's true value. */
-  function askBridge(testid, timeout = 2000) {
-    return new Promise((resolve) => {
+  function requestFeedback(timeout = 90000) {
+    return new Promise((resolve, reject) => {
+      // A fresh token per request, so a leftover result node from an earlier
+      // page cannot be mistaken for this answer.
+      const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       let done = false;
-      const finish = (value) => {
+
+      const finish = (fn, value) => {
         if (done) return;
         done = true;
-        window.removeEventListener('snorkelbot:monaco-ready', onReady);
+        window.removeEventListener('snorkelbot:feedback-ready', onReady);
         clearTimeout(timer);
-        resolve(value);
+        fn(value);
       };
 
       const onReady = () => {
-        const node = document.getElementById(MONACO_RESULT_ID);
-        if (!node) return finish(null);
+        const node = document.getElementById(FEEDBACK_RESULT_ID);
+        if (!node) return;
+        let payload;
         try {
-          const payload = JSON.parse(node.textContent || '{}');
-          finish(payload.testid === testid ? payload : null);
+          payload = JSON.parse(node.textContent || '{}');
         } catch {
-          finish(null);
+          return finish(reject, new Error('The page returned unreadable feedback data.'));
         }
+        if (payload.token !== token) return; // someone else's answer
+        if (!payload.ok) return finish(reject, new Error(payload.error || 'Reading the feedback failed.'));
+        finish(resolve, payload);
       };
 
-      const timer = setTimeout(() => finish(null), timeout);
-      window.addEventListener('snorkelbot:monaco-ready', onReady);
-
-      document.documentElement.setAttribute(MONACO_REQUEST_ATTR, testid);
-      window.dispatchEvent(new Event('snorkelbot:read-monaco'));
-    });
-  }
-
-  /*
-   * Last resort: scroll the pane and stitch the rendered lines together.
-   *
-   * Ported from stn_ext/src/extract.js. Two things in it are not optional:
-   *
-   *   MONACO DOES NOT SCROLL VIA scrollTop. It virtualises scrolling itself and
-   *   reacts only to wheel events, so setting scrollTop on the container — the
-   *   obvious implementation, and the one I had — moves nothing and stitches
-   *   the same visible lines over and over.
-   *
-   *   LINES ARE KEYED BY LINE NUMBER, not pixel offset: top / lineHeight.
-   *   Monaco reuses the same .view-line elements at new offsets while
-   *   scrolling, so keying on raw `top` merges unrelated lines together.
-   */
-  function editorLineHeight(edEl) {
-    const line = edEl.querySelector('.view-lines .view-line');
-    const height = line ? parseFloat(line.style.height) : 0;
-    return height && height > 0 ? height : 19;
-  }
-
-  function collectLines(host, lineHeight, map) {
-    for (const line of host.querySelectorAll('.view-line')) {
-      const top = parseFloat(line.style.top || '0') || 0;
-      const index = Math.round(top / lineHeight);
-      map.set(index, String(line.textContent == null ? '' : line.textContent).replace(/ /g, ' '));
-    }
-  }
-
-  function assembleLines(map) {
-    if (!map.size) return '';
-    const max = Math.max(...map.keys());
-    const out = [];
-    for (let i = 0; i <= max; i++) out.push(map.has(i) ? map.get(i) : '');
-    return out.join('\n').replace(/\s+$/, '');
-  }
-
-  /** A pane whose scrollbar slider fills the track is fully visible already. */
-  function isScrollable(edEl) {
-    const bar = edEl.querySelector('.monaco-scrollable-element > .scrollbar.vertical');
-    if (!bar) return false;
-    const slider = bar.querySelector('.slider');
-    if (!slider) return false;
-    const barH = parseFloat(bar.style.height) || bar.getBoundingClientRect().height;
-    const sliderH = parseFloat(slider.style.height) || slider.getBoundingClientRect().height;
-    return barH > 4 && sliderH > 0 && sliderH < barH - 2;
-  }
-
-  async function stitchViewport(edEl, budgetMs = 4000) {
-    const host = edEl.querySelector('.view-lines');
-    if (!host) return { text: '', truncated: false };
-
-    const lineHeight = editorLineHeight(edEl);
-    const map = new Map();
-    collectLines(host, lineHeight, map);
-
-    if (!isScrollable(edEl)) return { text: assembleLines(map), truncated: false };
-
-    const target =
-      edEl.querySelector('.monaco-scrollable-element') || edEl.querySelector('.overflow-guard') || edEl;
-    const viewH = parseFloat(host.style.height) || edEl.getBoundingClientRect().height || 150;
-    const step = Math.max(lineHeight, viewH - lineHeight * 2);
-
-    const wheel = (deltaY) =>
-      target.dispatchEvent(
-        new WheelEvent('wheel', { deltaY, deltaX: 0, deltaMode: 0, bubbles: true, cancelable: true })
+      const timer = setTimeout(
+        () =>
+          finish(
+            reject,
+            new Error(
+              'No answer from the page-world reader. If the extension was reloaded, the tab needs ' +
+                'reloading too — MAIN-world scripts only attach on a fresh page load.'
+            )
+          ),
+        timeout
       );
 
-    // Start from the top, wherever the pane happened to be left.
-    for (let i = 0; i < 80; i++) wheel(-4000);
-    await SnorkelBot.sleep(20);
-
-    const deadline = Date.now() + budgetMs;
-    let lastMax = -1;
-    let stagnant = 0;
-    let ranOut = false;
-
-    for (let i = 0; i < 400 && stagnant < 3; i++) {
-      if (Date.now() > deadline) {
-        ranOut = true;
-        break;
-      }
-      collectLines(host, lineHeight, map);
-      const max = map.size ? Math.max(...map.keys()) : -1;
-      if (max <= lastMax) stagnant++;
-      else {
-        stagnant = 0;
-        lastMax = max;
-      }
-      wheel(step);
-      await SnorkelBot.sleep(10);
-    }
-    collectLines(host, lineHeight, map);
-
-    // Leave the pane roughly where it was found.
-    for (let i = 0; i < 200; i++) wheel(-4000);
-
-    return { text: assembleLines(map), truncated: ranOut };
-  }
-
-  /**
-   * Opens collapsed sections until the panes exist.
-   *
-   * The panes live inside the "Submission Feedback" accordion section, which
-   * unmounts its contents while shut — so a closed section means the fields are
-   * not merely hidden, they are absent. Opening is retried because a section can
-   * itself contain a nested collapsible, and because the fields mount a beat
-   * after the click.
-   */
-  async function ensurePanesPresent() {
-    const present = () => CHECK_PANES.filter((p) => document.querySelector(`[data-testid="${p.testid}"]`)).length;
-    if (present()) return { opened: 0, rounds: 0 };
-
-    let opened = 0;
-    let rounds = 0;
-    for (; rounds < 3; rounds++) {
-      const collapsed = document.querySelectorAll('button[aria-controls][aria-expanded="false"]');
-      if (!collapsed.length) break;
-      for (const button of collapsed) {
-        SnorkelBot.click(button);
-        opened++;
-        await SnorkelBot.sleep(150);
-      }
-      await SnorkelBot.sleep(700);
-      if (present()) break;
-    }
-    return { opened, rounds };
-  }
-
-  async function readCheckPanes() {
-    const expansion = await ensurePanesPresent();
-
-    const out = [];
-    const missing = [];
-    for (const pane of CHECK_PANES) {
-      const host = document.querySelector(`[data-testid="${pane.testid}"]`);
-      if (!host) {
-        // Recorded rather than skipped in silence: "the pane is not on this
-        // page" and "the pane is here but empty" are different problems and
-        // used to look identical from the outside.
-        missing.push(pane.testid);
-        continue;
-      }
-
-      let text = null;
-      let via = 'unavailable';
-
-      const bridged = await askBridge(pane.testid);
-      if (bridged && bridged.text) {
-        text = bridged.text;
-        via = bridged.via;
-      } else {
-        // Anchor on the editor, not the field wrapper — everything below keys
-        // off Monaco's own structure.
-        const edEl =
-          host.querySelector('.monaco-editor[data-uri]') || host.querySelector('.monaco-editor');
-        if (edEl) {
-          const stitched = await stitchViewport(edEl);
-          text = stitched.text;
-          via = stitched.truncated ? 'viewport-truncated' : 'viewport';
-        } else if (bridged && bridged.via) {
-          via = bridged.via; // not-found / no-editor / textarea / pre
-        }
-      }
-
-      const cleaned = SnorkelBot.cleanBlock(text || '');
-      out.push({
-        title: pane.title,
-        testid: pane.testid,
-        // An empty pane is reported rather than dropped: "has not run yet" is
-        // itself worth knowing.
-        text: cleaned,
-        via: cleaned ? via : 'empty',
-        chars: cleaned.length,
-      });
-    }
-
-    return {
-      checks: out,
-      diagnostics: {
-        found: out.length,
-        missing,
-        expanded: expansion.opened,
-        expand_rounds: expansion.rounds,
-        monaco_bridge: Boolean(document.getElementById(MONACO_RESULT_ID)),
-        via: out.map((c) => `${c.testid}=${c.via}(${c.chars})`),
-      },
-    };
+      window.addEventListener('snorkelbot:feedback-ready', onReady);
+      document.documentElement.setAttribute(FEEDBACK_REQUEST_ATTR, token);
+      window.dispatchEvent(new Event('snorkelbot:read-feedback'));
+    });
   }
 
   SnorkelBot.on('COPY_FEEDBACK', async (msg) => {
     assertOnReviewPage();
 
-    // Wait for the sidebar rather than for one particular card: which notes are
-    // present depends on how far the review got.
-    await SnorkelBot.waitFor(() => noteHeaders().length > 0, {
-      timeout: msg.timeout || 90000,
-      label: 'the Task Notes sidebar',
-    });
+    const result = await requestFeedback(msg.timeout || 90000);
 
-    const opened = await expandNotes();
-    const sections = noteSections();
-    const paneResult = await readCheckPanes();
-    const checks = paneResult.checks;
-
-    if (!sections.length && !checks.some((c) => c.text)) {
+    if (!result.notes.length && !result.checks.some((c) => c.text)) {
       throw new Error(
-        'Nothing to read here: no Reviewer Feedback or Automated feedback in the sidebar, ' +
-          'and none of the four check panes have any content.'
+        'Nothing to read here: no Reviewer Feedback or Automated feedback in the sidebar, and ' +
+          `none of the check panes have content (${JSON.stringify(result.diagnostics)})`
       );
     }
 
-    // Each note under its own heading, so the two are still tellable apart
-    // after they have been joined into one stored string.
-    const text = sections.map((n) => `${n.title}\n\n${n.body}`).join('\n\n');
-
     return {
       uid: findUid(),
-      feedback: text,
-      notes: sections,
+      feedback: result.text,
+      notes: result.notes,
       // Kept apart from the reviewer's prose: these are automated output.
-      checks,
-      // Why the panes came back as they did — the only way to tell a page
-      // without panes from panes that could not be read.
-      check_diagnostics: paneResult.diagnostics,
-      expanded: opened,
+      checks: result.checks,
+      check_diagnostics: result.diagnostics,
       page_url: location.href,
       collected_at: new Date().toISOString(),
     };

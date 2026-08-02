@@ -15,7 +15,7 @@ function NotConfigured() {
   return (
     <div className="gate">
       <div className="card">
-        <h1>🤿 Snorkel Bot</h1>
+        <h1>🤿 Bot</h1>
         <p className="muted">This dashboard is not connected to Firebase yet.</p>
         <p className="error">Missing: {missingConfigKeys().join(', ')}</p>
         <p className="muted">
@@ -103,7 +103,7 @@ export default function Page() {
   return (
     <>
       <header>
-        <h1>🤿 Snorkel Bot</h1>
+        <h1>🤿 Bot</h1>
         {selected ? <StatusPills status={status} /> : <span className="muted">All machines</span>}
       </header>
 

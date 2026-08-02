@@ -518,9 +518,10 @@ async function collectFeedback(requestId, uids, options) {
       // Printed in full so a pane that came back empty can be told apart from
       // one that was never on the page.
       log(
-        `check panes for ${uid}: found ${d.found}, missing [${(d.missing || []).join(', ') || 'none'}], ` +
-          `expanded ${d.expanded} section(s) over ${d.expand_rounds} round(s), ` +
-          `bridge ${d.monaco_bridge ? 'answered' : 'NOT PRESENT'} — ${(d.via || []).join(' ')}`
+        `check panes for ${uid}: ${d.panes_with_text}/${d.panes_found} with text, ` +
+          `missing [${(d.missing || []).join(', ') || 'none'}], ` +
+          `opened ${d.sections_opened} section(s) + ${d.notes_opened} note(s), ` +
+          `monaco ${d.monaco ? 'found' : 'NOT FOUND'} — ${(d.via || []).join(' ')}`
       );
     } catch (err) {
       log(`feedback for ${uid} failed:`, err.message);

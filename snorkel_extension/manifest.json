@@ -27,7 +27,7 @@
       ],
       "js": [
         "content/unload-guard.js",
-        "content/monaco-bridge.js"
+        "content/feedback-main.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",
