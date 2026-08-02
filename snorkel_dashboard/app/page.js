@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { firebaseConfigured, missingConfigKeys } from '@/lib/firebase';
-import { markSent, watchServerStatus } from '@/lib/commands';
+import { watchServerStatus } from '@/lib/commands';
 import { findInBuild, watchTasks } from '@/lib/tasks';
 import { addMachine, getSelected, listMachines, removeMachine, setSelected } from '@/lib/machines';
 import MachinePicker from '@/components/MachinePicker';
 import StatusPills from '@/components/StatusPills';
 import StartTask from '@/components/StartTask';
+import AutoStart from '@/components/AutoStart';
+import SystemLogs from '@/components/SystemLogs';
 import TaskTable from '@/components/TaskTable';
 
 /** Shown only when .env.local has not been filled in — a setup problem, not a login. */
@@ -133,12 +135,11 @@ export default function Page() {
         </section>
       )}
 
-      <TaskTable
-        tasks={tasks}
-        note={tasksNote}
-        showMachine={!selected}
-        onMarkSent={selected ? (uid) => markSent(selected, uid) : null}
-      />
+      {selected ? <AutoStart machine={selected} /> : null}
+
+      <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} />
+
+      {selected ? <SystemLogs machine={selected} /> : null}
     </>
   );
 }

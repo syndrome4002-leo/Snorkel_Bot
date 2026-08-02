@@ -380,6 +380,9 @@ export async function addFeedback(uid, entry, extra = {}) {
     machine_id: existing?.machine_id || machineId(),
     task_status: TASK_STATUS_NEEDS_REVISION,
     feedbacks: next,
+    // Stamped even when the feedback was unchanged, so an unchanged task is not
+    // reopened on every single sweep.
+    feedback_checked_at: now,
     updated_at: now,
     ...extra,
   };
@@ -399,30 +402,61 @@ export async function addFeedback(uid, entry, extra = {}) {
   return { record, created: !snapshot.exists, duplicate, rounds: next.length };
 }
 
-/** The subset of `uids` that are marked as sent, i.e. awaiting a reviewer. */
-export async function findSentTasks(uids) {
-  if (!db || !uids.length) return [];
-  const found = [];
+/** How long before a task already carrying feedback is looked at again. */
+export const RECOLLECT_AFTER_MS = Number(process.env.RECOLLECT_AFTER_MINUTES || 60) * 60 * 1000;
+
+/**
+ * Which of `uids` are worth opening to read feedback from.
+ *
+ * A task is a candidate when:
+ *   - this database has never seen it,
+ *   - it is marked "sent" and so is waiting on a reviewer, or
+ *   - it already has feedback but has not been looked at for a while.
+ *
+ * That last case is the one that matters for a task sent back MORE THAN ONCE.
+ * The rule used to be "sent or unknown" only, which meant that the moment a
+ * task's first feedback was stored its status became "needs revision" and it
+ * was skipped by every later sweep — so a second round could never arrive, and
+ * the first round looked like the only one there would ever be.
+ *
+ * Re-reading is safe because addFeedback ignores feedback whose text it has
+ * already stored; an unchanged reviewer message does not pile up.
+ */
+export async function findFeedbackCandidates(uids, recollectAfterMs = RECOLLECT_AFTER_MS) {
+  if (!db || !uids.length) return { wanted: [], reasons: {} };
+
+  const wanted = [];
+  const reasons = {};
+  const now = Date.now();
+
   // Read one at a time by document id: an "in" query is capped at 30 values and
   // these lists are short.
   for (const uid of uids) {
     const snap = await db.collection(config.firebase.collection).doc(String(uid)).get();
-    if (snap.exists && snap.data().task_status === TASK_STATUS_SENT) {
-      found.push({ id: snap.id, ...snap.data() });
+
+    if (!snap.exists) {
+      wanted.push(String(uid));
+      reasons[uid] = 'not seen before';
+      continue;
+    }
+
+    const task = snap.data();
+    if (task.task_status === TASK_STATUS_SENT) {
+      wanted.push(String(uid));
+      reasons[uid] = 'sent, awaiting a reviewer';
+      continue;
+    }
+
+    const last = task.feedback_checked_at ? new Date(task.feedback_checked_at).getTime() : 0;
+    if (!last || now - last > recollectAfterMs) {
+      wanted.push(String(uid));
+      reasons[uid] = last
+        ? `last read ${Math.round((now - last) / 60000)} min ago`
+        : 'never read';
     }
   }
-  return found;
-}
 
-/** Which of `uids` this database has never heard of. */
-export async function findUnknownUids(uids) {
-  if (!db || !uids.length) return [];
-  const unknown = [];
-  for (const uid of uids) {
-    const snap = await db.collection(config.firebase.collection).doc(String(uid)).get();
-    if (!snap.exists) unknown.push(String(uid));
-  }
-  return unknown;
+  return { wanted, reasons };
 }
 
 /**

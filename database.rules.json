@@ -44,6 +44,46 @@
       "//": "Published by the server; browsers only read it.",
       ".read": true,
       ".write": false
+    },
+
+    "machines": {
+      "$machineId": {
+        "commands": {
+          ".read": true,
+          "$commandId": {
+            ".write": "!data.exists() || data.child('status').val() == 'pending'",
+            ".validate": "newData.hasChildren(['type', 'status', 'requested_at'])",
+            "type": {
+              ".validate": "newData.val() == 'start_new_task' || newData.val() == 'mark_sent' || newData.val() == 'check_revisions'"
+            },
+            "status": {
+              ".validate": "newData.val() == 'pending' || newData.val() == 'running' || newData.val() == 'succeeded' || newData.val() == 'failed' || newData.val() == 'expired'"
+            },
+            "requested_at": { ".validate": "newData.isString()" },
+            "$other": { ".validate": true }
+          }
+        },
+
+        "status": {
+          "//": "Published by the server.",
+          ".read": true,
+          ".write": false
+        },
+
+        "settings": {
+          "//": "Written from the dashboard, read by the server.",
+          ".read": true,
+          ".write": true,
+          "revise_limit": { ".validate": "newData.isNumber() && newData.val() >= 0 || !newData.exists()" },
+          "$other": { ".validate": true }
+        },
+
+        "logs": {
+          "//": "Written by the server only; the dashboard reads the tail.",
+          ".read": true,
+          ".write": false
+        }
+      }
     }
   }
 }

@@ -7,12 +7,14 @@
  * nothing needs to be able to reach the server directly.
  */
 
-import { push, ref, onValue, serverTimestamp, set } from 'firebase/database';
+import { limitToLast, onValue, push, query, ref, serverTimestamp, set, update } from 'firebase/database';
 import { rtdb } from './firebase';
 
 // Everything is scoped by machine so several machines can share one project.
 export const commandsPath = (machine) => `machines/${machine}/commands`;
 export const statusPath = (machine) => `machines/${machine}/status`;
+export const settingsPath = (machine) => `machines/${machine}/settings`;
+export const logsPath = (machine) => `machines/${machine}/logs`;
 
 /** Queues a command for one machine. Returns its id so the caller can watch it. */
 async function queue(machine, type, extra = {}) {
@@ -36,20 +38,36 @@ export function startNewTask(machine, options = {}) {
   return queue(machine, 'start_new_task', { options });
 }
 
-/**
- * Marks a task as submitted and awaiting a reviewer.
- *
- * Goes through the server rather than writing to Firestore directly: the
- * dashboard has read-only access there, and it is the "sent" status that later
- * makes a task eligible for feedback collection.
- */
-export function markSent(machine, uid) {
-  return queue(machine, 'mark_sent', { uid });
-}
-
 /** Asks the machine to check for tasks needing revision now, not in 30 minutes. */
 export function checkRevisions(machine) {
   return queue(machine, 'check_revisions');
+}
+
+/** Per-machine settings the server reads — currently just the revise limit. */
+export function watchSettings(machine, onUpdate) {
+  return onValue(ref(rtdb(), settingsPath(machine)), (snapshot) => onUpdate(snapshot.val() || {}));
+}
+
+export function saveSettings(machine, patch) {
+  return update(ref(rtdb(), settingsPath(machine)), patch);
+}
+
+/**
+ * The machine's log stream, newest last.
+ *
+ * limitToLast keeps this bounded on the client as well as the server: a machine
+ * that has been running for days should not send its whole history to a browser
+ * that only wants the recent lines.
+ */
+export function watchLogs(machine, onUpdate, max = 200) {
+  const q = query(ref(rtdb(), logsPath(machine)), limitToLast(max));
+  return onValue(q, (snapshot) => {
+    const rows = [];
+    snapshot.forEach((child) => {
+      rows.push({ id: child.key, ...child.val() });
+    });
+    onUpdate(rows);
+  });
 }
 
 /** Live updates for one command. Returns an unsubscribe function. */

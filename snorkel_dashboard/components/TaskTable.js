@@ -12,9 +12,8 @@ function when(iso) {
 /** "in build" would otherwise become two class names. */
 const statusClass = (status) => String(status).trim().toLowerCase().replace(/\s+/g, '-');
 
-function TaskRow({ task, showMachine, onMarkSent, onOpenFeedback }) {
+function TaskRow({ task, showMachine, onOpenFeedback }) {
   const [open, setOpen] = useState(false);
-  const [sending, setSending] = useState(false);
   const status = task.task_status || '—';
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
 
@@ -30,24 +29,6 @@ function TaskRow({ task, showMachine, onMarkSent, onOpenFeedback }) {
         <td>{task.file_uploaded ? 'yes' : 'no'}</td>
         <td>{when(task.updated_at)}</td>
         <td className="row-actions">
-          {onMarkSent && status === 'in build' ? (
-            <button
-              className="link"
-              disabled={sending}
-              title="You have submitted this on Snorkel — makes it eligible for feedback"
-              onClick={async () => {
-                setSending(true);
-                try {
-                  await onMarkSent(task.UID);
-                } finally {
-                  setSending(false);
-                }
-              }}
-            >
-              {sending ? 'sending…' : 'mark as sent'}
-            </button>
-          ) : null}
-
           <button
             className="link"
             disabled={!rounds}
@@ -75,7 +56,7 @@ function TaskRow({ task, showMachine, onMarkSent, onOpenFeedback }) {
   );
 }
 
-export default function TaskTable({ tasks, note, onRefresh, onMarkSent, showMachine = false }) {
+export default function TaskTable({ tasks, note, onRefresh, showMachine = false }) {
   const [filter, setFilter] = useState('');
   const [feedbackTask, setFeedbackTask] = useState(null);
 
@@ -128,7 +109,6 @@ export default function TaskTable({ tasks, note, onRefresh, onMarkSent, showMach
                   key={task.UID}
                   task={task}
                   showMachine={showMachine}
-                  onMarkSent={onMarkSent}
                   onOpenFeedback={setFeedbackTask}
                 />
               ))

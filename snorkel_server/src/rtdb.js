@@ -22,6 +22,11 @@ import { machineId, machineInfo } from './machine.js';
 
 const COMMANDS = () => `machines/${machineId()}/commands`;
 const STATUS = () => `machines/${machineId()}/status`;
+const SETTINGS = () => `machines/${machineId()}/settings`;
+const LOGS = () => `machines/${machineId()}/logs`;
+
+/** Log lines kept per machine. Old ones are trimmed rather than kept forever. */
+const LOG_CAP = 300;
 
 /** Older than this when we first see it and it is not worth running. */
 const STALE_MS = 10 * 60 * 1000;
@@ -126,6 +131,69 @@ export async function publishNow() {
 export function stopStatusHeartbeat() {
   if (statusTimer) clearInterval(statusTimer);
   statusTimer = null;
+}
+
+// ------------------------------------------------------------ settings ----
+
+/**
+ * Per-machine settings the dashboard writes and this server reads.
+ * Called once with whatever is there, then again on every change.
+ */
+export function watchSettings(onChange) {
+  if (!db) return () => {};
+  const ref = db.ref(SETTINGS());
+  const handler = (snapshot) => onChange(snapshot.val() || {});
+  ref.on('value', handler);
+  return () => ref.off('value', handler);
+}
+
+// ---------------------------------------------------------------- logs ----
+
+let logsSinceTrim = 0;
+
+/**
+ * Publishes one line to the machine's log stream.
+ *
+ * Deliberately fire-and-forget: logging must never be able to fail the thing it
+ * is reporting on, and must never make the caller wait.
+ */
+export function pushLog(entry) {
+  if (!db) return;
+  const line = {
+    at: new Date().toISOString(),
+    level: entry.level || 'info',
+    emoji: entry.emoji || 'ℹ️',
+    event: entry.event || 'log',
+    message: String(entry.message == null ? '' : entry.message),
+    ...(entry.uid ? { uid: entry.uid } : {}),
+  };
+
+  db.ref(LOGS())
+    .push(line)
+    .then(() => {
+      if (++logsSinceTrim < 50) return;
+      logsSinceTrim = 0;
+      return trimLogs();
+    })
+    .catch((err) => console.warn('[rtdb] could not push a log line:', err.message));
+}
+
+/** Drops the oldest lines once the stream grows past the cap. */
+async function trimLogs() {
+  try {
+    const snapshot = await db.ref(LOGS()).orderByKey().once('value');
+    const keys = [];
+    snapshot.forEach((child) => {
+      keys.push(child.key);
+    });
+    if (keys.length <= LOG_CAP) return;
+    // Push keys sort chronologically, so the excess is at the front.
+    const updates = {};
+    for (const key of keys.slice(0, keys.length - LOG_CAP)) updates[key] = null;
+    await db.ref(LOGS()).update(updates);
+  } catch (err) {
+    console.warn('[rtdb] could not trim logs:', err.message);
+  }
 }
 
 // ------------------------------------------------------------ commands ----

@@ -38,7 +38,15 @@ import {
   applyRefreshToken,
 } from './dropbox.js';
 import { updateEnvFile, ENV_PATH } from './envfile.js';
-import { initRtdb, rtdbStatus, startStatusHeartbeat, publishNow, watchCommands } from './rtdb.js';
+import {
+  initRtdb,
+  rtdbStatus,
+  startStatusHeartbeat,
+  publishNow,
+  watchCommands,
+  watchSettings,
+  pushLog,
+} from './rtdb.js';
 import { machineId, machineInfo } from './machine.js';
 import {
   initFirebase,
@@ -50,8 +58,7 @@ import {
   findInBuildTask,
   markSent,
   addFeedback,
-  findSentTasks,
-  findUnknownUids,
+  findFeedbackCandidates,
   firebaseStatus,
   flushPending,
   pendingCount,
@@ -395,6 +402,70 @@ app.post('/api/upload', async (req, res) => {
   }
 });
 
+// -------------------------------------------------------------- logs ----
+
+/*
+ * One line to the console and one to the machine's log stream, so the dashboard
+ * shows the same story the terminal does. The emoji is what makes a long stream
+ * skimmable — you can find the failures without reading every line.
+ */
+function logEvent(emoji, event, message, extra = {}) {
+  const text = `${emoji} ${message}`;
+  if (extra.level === 'error') console.error(`[log] ${text}`);
+  else if (extra.level === 'warn') console.warn(`[log] ${text}`);
+  else console.log(`[log] ${text}`);
+  pushLog({ emoji, event, message, ...extra });
+}
+
+// ------------------------------------------------------------ settings ----
+
+/** Whatever the dashboard has set for this machine. */
+let settings = {};
+
+/**
+ * Keeps starting tasks so long as fewer than `revise_limit` are waiting to be
+ * revised.
+ *
+ * The count comes from the extension's own five-minute sweep, which reloads the
+ * home page and counts the Revise cards — so it is what the site actually says,
+ * not a number this server has inferred from its own records.
+ */
+async function maybeAutoStart(reviseCount) {
+  const limit = Number(settings.revise_limit);
+  if (!Number.isFinite(limit) || limit <= 0) return;
+
+  if (reviseCount >= limit) {
+    logEvent('⏸️', 'auto_skip', `${reviseCount} awaiting revision, limit is ${limit} — not starting`);
+    return;
+  }
+
+  if (currentRun()) {
+    logEvent('⏸️', 'auto_skip', 'a task is already running');
+    return;
+  }
+
+  logEvent('🤖', 'auto_start', `${reviseCount} awaiting revision, below the limit of ${limit} — starting one`);
+
+  try {
+    const result = await runFullPipeline({}, () => {});
+    if (result.snorkel.saved) {
+      logEvent('✅', 'auto_done', `started ${result.snorkel.task.UID}`, { uid: result.snorkel.task.UID });
+    } else {
+      logEvent('⚠️', 'auto_warn', result.snorkel.warning, { level: 'warn' });
+    }
+  } catch (err) {
+    // Both of these are ordinary outcomes, not faults: the site may hand out
+    // nothing, and a task may already be in build.
+    if (err.code === 'START_UNAVAILABLE') {
+      logEvent('🚫', 'auto_unavailable', 'Snorkel handed out no task this time');
+    } else if (err.code === 'TASK_IN_BUILD') {
+      logEvent('⏸️', 'auto_skip', err.message);
+    } else {
+      logEvent('❌', 'auto_failed', err.message, { level: 'error' });
+    }
+  }
+}
+
 // --------------------------------------------------------- revisions ----
 
 /*
@@ -415,19 +486,19 @@ async function handleRevisionReport(uids) {
   console.log(`[revisions] extension reported ${uids.length} awaiting revision`);
   if (!uids.length) return { considered: 0, collected: 0 };
 
-  const [sent, unknown] = await Promise.all([findSentTasks(uids), findUnknownUids(uids)]);
-  const wanted = [...new Set([...sent.map((t) => t.UID), ...unknown])];
+  const { wanted, reasons } = await findFeedbackCandidates(uids);
 
   if (!wanted.length) {
-    console.log(`[revisions] ${uids.length} awaiting revision, none of them new`);
+    console.log(`[revisions] ${uids.length} awaiting revision, all read recently`);
     return { considered: uids.length, collected: 0 };
   }
 
   console.log(
-    `[revisions] ${wanted.length} to collect feedback for ` +
-      `(${sent.length} previously sent, ${unknown.length} not seen before)`
+    `[revisions] ${wanted.length} to collect feedback for — ` +
+      wanted.map((uid) => `${uid} (${reasons[uid]})`).join(', ')
   );
 
+  logEvent('📥', 'feedback_start', `collecting feedback for ${wanted.length} task(s)`);
   const result = await hub.command('snorkel', { type: 'collect_feedback', uids: wanted });
 
   let stored = 0;
@@ -444,9 +515,10 @@ async function handleRevisionReport(uids) {
       { source_url: item.page_url || null }
     );
     stored++;
+    logEvent('📝', 'feedback_saved', `feedback stored for ${item.uid}`, { uid: item.uid });
   }
   for (const failure of result.failures || []) {
-    console.warn(`[revisions] could not read feedback for ${failure.uid}: ${failure.error}`);
+    logEvent('⚠️', 'feedback_failed', `${failure.uid}: ${failure.error}`, { level: 'warn', uid: failure.uid });
   }
 
   return { considered: uids.length, collected: stored, failed: (result.failures || []).length };
@@ -463,7 +535,13 @@ async function runFullPipeline(options, onStep = () => {}) {
 
 async function runPipelineSteps(options, onStep) {
   onStep('snorkel');
+  logEvent('🚀', 'task_start', 'starting a new task on Snorkel');
   const snorkel = await runSnorkelStep(options);
+  if (snorkel.saved) {
+    logEvent('⬇️', 'task_downloaded', `${snorkel.task.file_name} (${snorkel.task.UID})`, {
+      uid: snorkel.task.UID,
+    });
+  }
 
   if (!snorkel.saved) {
     // Without a Firestore record there is nothing to flip afterwards, and the
@@ -477,6 +555,11 @@ async function runPipelineSteps(options, onStep) {
 
   onStep('dropbox');
   const dropbox = await runDropboxStep(snorkel.task.UID, options);
+  if (dropbox.uploaded) {
+    logEvent('☁️', 'task_uploaded', `${dropbox.file.name} -> ${dropbox.task.dropbox_path}`, {
+      uid: snorkel.task.UID,
+    });
+  }
   onStep('done');
   return { snorkel, dropbox };
 }
@@ -722,13 +805,34 @@ startStatusHeartbeat(async () => ({
  * so it is handled here rather than as a command reply.
  */
 hub.onRevisions = async (msg) => {
-  if (msg.error) return console.warn('[revisions] extension check failed:', msg.error);
+  if (msg.error) {
+    return logEvent('⚠️', 'revision_check_failed', msg.error, { level: 'warn' });
+  }
+
+  const uids = msg.uids || [];
+  logEvent('🔍', 'revision_check', `${uids.length} task(s) awaiting revision`);
+
   try {
-    await handleRevisionReport(msg.uids || []);
+    await handleRevisionReport(uids);
   } catch (err) {
-    console.error('[revisions] handling failed:', err.message);
+    logEvent('❌', 'revision_failed', err.message, { level: 'error' });
+  }
+
+  // Same five-minute beat, and the count is already in hand.
+  try {
+    await maybeAutoStart(uids.length);
+  } catch (err) {
+    logEvent('❌', 'auto_failed', err.message, { level: 'error' });
   }
 };
+
+watchSettings((value) => {
+  const before = settings.revise_limit;
+  settings = value;
+  if (before !== settings.revise_limit) {
+    logEvent('⚙️', 'settings', `revise tasks limit is now ${settings.revise_limit ?? 'unset'}`);
+  }
+});
 
 watchCommands(async (command, report) => {
   // Marks a task submitted, which is what later makes it eligible for feedback

@@ -185,7 +185,6 @@ button.machine {
 
 /* --- feedback + row actions --- */
 .row-actions { display: flex; gap: 4px; white-space: nowrap; }
-.badge.sent { border-color: var(--accent); color: var(--accent); }
 .badge.needs-revision { border-color: var(--bad); color: var(--bad); }
 
 .group-title {
@@ -288,3 +287,49 @@ button.machine {
   white-space: nowrap;
 }
 .via-warn { color: var(--warn); border-color: var(--warn); }
+
+/* --- system logs --- */
+.chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+.chip.active { border-color: var(--accent); color: var(--accent); }
+.follow { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+
+.logs {
+  margin-top: 10px;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 4px;
+  background: rgba(128, 128, 128, 0.05);
+}
+.log {
+  display: grid;
+  grid-template-columns: 5.5rem 1.6rem 10rem 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 5px;
+}
+.log:hover { background: rgba(128, 128, 128, 0.1); }
+.log-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.log-emoji { font-size: 14px; text-align: center; }
+.log-event {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.log-msg { word-break: break-word; }
+.log-warn { background: rgba(183, 121, 31, 0.12); }
+.log-error { background: rgba(197, 56, 47, 0.14); }
+.log-error .log-msg { color: var(--bad); }
+
+@media (max-width: 700px) {
+  .log { grid-template-columns: 1.6rem 1fr; }
+  .log-time, .log-event { display: none; }
+}
