@@ -283,44 +283,103 @@
     });
   }
 
-  /**
-   * Last resort: scroll the pane and collect the rendered lines.
+  /*
+   * Last resort: scroll the pane and stitch the rendered lines together.
    *
-   * Monaco positions each .view-line absolutely, so the lines are keyed by
-   * their `top` and merged across scroll steps — that is what puts them back in
-   * order rather than in the order they happened to be rendered.
+   * Ported from stn_ext/src/extract.js. Two things in it are not optional:
+   *
+   *   MONACO DOES NOT SCROLL VIA scrollTop. It virtualises scrolling itself and
+   *   reacts only to wheel events, so setting scrollTop on the container — the
+   *   obvious implementation, and the one I had — moves nothing and stitches
+   *   the same visible lines over and over.
+   *
+   *   LINES ARE KEYED BY LINE NUMBER, not pixel offset: top / lineHeight.
+   *   Monaco reuses the same .view-line elements at new offsets while
+   *   scrolling, so keying on raw `top` merges unrelated lines together.
    */
-  async function stitchViewport(host) {
-    const lines = new Map();
-    const scroller =
-      host.querySelector('.monaco-scrollable-element') ||
-      host.querySelector('.overflow-guard') ||
-      host;
+  function editorLineHeight(edEl) {
+    const line = edEl.querySelector('.view-lines .view-line');
+    const height = line ? parseFloat(line.style.height) : 0;
+    return height && height > 0 ? height : 19;
+  }
 
-    const collect = () => {
-      for (const line of host.querySelectorAll('.view-line')) {
-        const top = parseFloat(line.style.top || '0');
-        if (!Number.isNaN(top)) lines.set(top, line.textContent || '');
-      }
-    };
-
-    collect();
-    let lastTop = -1;
-    let guard = 0;
-    // 200 steps is far more than any real report and stops a pane that refuses
-    // to scroll from spinning here forever.
-    while (scroller.scrollTop !== lastTop && guard++ < 200) {
-      lastTop = scroller.scrollTop;
-      scroller.scrollTop = lastTop + scroller.clientHeight;
-      await SnorkelBot.sleep(60);
-      collect();
-      if (scroller.scrollTop === lastTop) break;
+  function collectLines(host, lineHeight, map) {
+    for (const line of host.querySelectorAll('.view-line')) {
+      const top = parseFloat(line.style.top || '0') || 0;
+      const index = Math.round(top / lineHeight);
+      map.set(index, String(line.textContent == null ? '' : line.textContent).replace(/ /g, ' '));
     }
+  }
 
-    return [...lines.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([, value]) => value)
-      .join('\n');
+  function assembleLines(map) {
+    if (!map.size) return '';
+    const max = Math.max(...map.keys());
+    const out = [];
+    for (let i = 0; i <= max; i++) out.push(map.has(i) ? map.get(i) : '');
+    return out.join('\n').replace(/\s+$/, '');
+  }
+
+  /** A pane whose scrollbar slider fills the track is fully visible already. */
+  function isScrollable(edEl) {
+    const bar = edEl.querySelector('.monaco-scrollable-element > .scrollbar.vertical');
+    if (!bar) return false;
+    const slider = bar.querySelector('.slider');
+    if (!slider) return false;
+    const barH = parseFloat(bar.style.height) || bar.getBoundingClientRect().height;
+    const sliderH = parseFloat(slider.style.height) || slider.getBoundingClientRect().height;
+    return barH > 4 && sliderH > 0 && sliderH < barH - 2;
+  }
+
+  async function stitchViewport(edEl, budgetMs = 4000) {
+    const host = edEl.querySelector('.view-lines');
+    if (!host) return { text: '', truncated: false };
+
+    const lineHeight = editorLineHeight(edEl);
+    const map = new Map();
+    collectLines(host, lineHeight, map);
+
+    if (!isScrollable(edEl)) return { text: assembleLines(map), truncated: false };
+
+    const target =
+      edEl.querySelector('.monaco-scrollable-element') || edEl.querySelector('.overflow-guard') || edEl;
+    const viewH = parseFloat(host.style.height) || edEl.getBoundingClientRect().height || 150;
+    const step = Math.max(lineHeight, viewH - lineHeight * 2);
+
+    const wheel = (deltaY) =>
+      target.dispatchEvent(
+        new WheelEvent('wheel', { deltaY, deltaX: 0, deltaMode: 0, bubbles: true, cancelable: true })
+      );
+
+    // Start from the top, wherever the pane happened to be left.
+    for (let i = 0; i < 80; i++) wheel(-4000);
+    await SnorkelBot.sleep(20);
+
+    const deadline = Date.now() + budgetMs;
+    let lastMax = -1;
+    let stagnant = 0;
+    let ranOut = false;
+
+    for (let i = 0; i < 400 && stagnant < 3; i++) {
+      if (Date.now() > deadline) {
+        ranOut = true;
+        break;
+      }
+      collectLines(host, lineHeight, map);
+      const max = map.size ? Math.max(...map.keys()) : -1;
+      if (max <= lastMax) stagnant++;
+      else {
+        stagnant = 0;
+        lastMax = max;
+      }
+      wheel(step);
+      await SnorkelBot.sleep(10);
+    }
+    collectLines(host, lineHeight, map);
+
+    // Leave the pane roughly where it was found.
+    for (let i = 0; i < 200; i++) wheel(-4000);
+
+    return { text: assembleLines(map), truncated: ranOut };
   }
 
   /**
@@ -374,9 +433,18 @@
       if (bridged && bridged.text) {
         text = bridged.text;
         via = bridged.via;
-      } else if (host.querySelector('.view-line')) {
-        text = await stitchViewport(host);
-        via = 'viewport';
+      } else {
+        // Anchor on the editor, not the field wrapper — everything below keys
+        // off Monaco's own structure.
+        const edEl =
+          host.querySelector('.monaco-editor[data-uri]') || host.querySelector('.monaco-editor');
+        if (edEl) {
+          const stitched = await stitchViewport(edEl);
+          text = stitched.text;
+          via = stitched.truncated ? 'viewport-truncated' : 'viewport';
+        } else if (bridged && bridged.via) {
+          via = bridged.via; // not-found / no-editor / textarea / pre
+        }
       }
 
       const cleaned = SnorkelBot.cleanBlock(text || '');
