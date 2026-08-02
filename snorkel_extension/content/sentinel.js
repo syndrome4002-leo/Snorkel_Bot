@@ -323,28 +323,49 @@
       .join('\n');
   }
 
-  /** Opens collapsed sections, but only if a pane is actually missing. */
+  /**
+   * Opens collapsed sections until the panes exist.
+   *
+   * The panes live inside the "Submission Feedback" accordion section, which
+   * unmounts its contents while shut — so a closed section means the fields are
+   * not merely hidden, they are absent. Opening is retried because a section can
+   * itself contain a nested collapsible, and because the fields mount a beat
+   * after the click.
+   */
   async function ensurePanesPresent() {
-    const missing = CHECK_PANES.filter((p) => !document.querySelector(`[data-testid="${p.testid}"]`));
-    if (!missing.length) return 0;
+    const present = () => CHECK_PANES.filter((p) => document.querySelector(`[data-testid="${p.testid}"]`)).length;
+    if (present()) return { opened: 0, rounds: 0 };
 
     let opened = 0;
-    for (const button of document.querySelectorAll('button[aria-controls][aria-expanded="false"]')) {
-      SnorkelBot.click(button);
-      opened++;
-      await SnorkelBot.sleep(120);
+    let rounds = 0;
+    for (; rounds < 3; rounds++) {
+      const collapsed = document.querySelectorAll('button[aria-controls][aria-expanded="false"]');
+      if (!collapsed.length) break;
+      for (const button of collapsed) {
+        SnorkelBot.click(button);
+        opened++;
+        await SnorkelBot.sleep(150);
+      }
+      await SnorkelBot.sleep(700);
+      if (present()) break;
     }
-    if (opened) await SnorkelBot.sleep(500);
-    return opened;
+    return { opened, rounds };
   }
 
   async function readCheckPanes() {
-    await ensurePanesPresent();
+    const expansion = await ensurePanesPresent();
 
     const out = [];
+    const missing = [];
     for (const pane of CHECK_PANES) {
       const host = document.querySelector(`[data-testid="${pane.testid}"]`);
-      if (!host) continue; // the pane is not on this path at all
+      if (!host) {
+        // Recorded rather than skipped in silence: "the pane is not on this
+        // page" and "the pane is here but empty" are different problems and
+        // used to look identical from the outside.
+        missing.push(pane.testid);
+        continue;
+      }
 
       let text = null;
       let via = 'unavailable';
@@ -366,9 +387,21 @@
         // itself worth knowing.
         text: cleaned,
         via: cleaned ? via : 'empty',
+        chars: cleaned.length,
       });
     }
-    return out;
+
+    return {
+      checks: out,
+      diagnostics: {
+        found: out.length,
+        missing,
+        expanded: expansion.opened,
+        expand_rounds: expansion.rounds,
+        monaco_bridge: Boolean(document.getElementById(MONACO_RESULT_ID)),
+        via: out.map((c) => `${c.testid}=${c.via}(${c.chars})`),
+      },
+    };
   }
 
   SnorkelBot.on('COPY_FEEDBACK', async (msg) => {
@@ -383,7 +416,8 @@
 
     const opened = await expandNotes();
     const sections = noteSections();
-    const checks = await readCheckPanes();
+    const paneResult = await readCheckPanes();
+    const checks = paneResult.checks;
 
     if (!sections.length && !checks.some((c) => c.text)) {
       throw new Error(
@@ -402,6 +436,9 @@
       notes: sections,
       // Kept apart from the reviewer's prose: these are automated output.
       checks,
+      // Why the panes came back as they did — the only way to tell a page
+      // without panes from panes that could not be read.
+      check_diagnostics: paneResult.diagnostics,
       expanded: opened,
       page_url: location.href,
       collected_at: new Date().toISOString(),
@@ -472,11 +509,6 @@
   function restoreUnloadPrompt() {
     window.dispatchEvent(new CustomEvent('snorkelbot:restore-unload'));
   }
-
-  SnorkelBot.on('RESTORE_UNLOAD', () => {
-    restoreUnloadPrompt();
-    return { restored: true };
-  });
 
   SnorkelBot.on('CLICK_DOWNLOAD', async (msg) => {
     assertOnReviewPage();

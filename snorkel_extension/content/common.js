@@ -114,6 +114,28 @@ var SnorkelBot = {
   UUID_RE: /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
 };
 
+/*
+ * The review form guards against losing unsaved answers, so navigating away
+ * from it raises Chrome's "Leave site?" dialog — which is native, and which no
+ * extension can click. It has to be prevented instead.
+ *
+ * unload-guard.js does the preventing, in the page's own world. These two
+ * handlers are what reach it, and they live here rather than in sentinel.js so
+ * any page can be asked, not just the review page.
+ */
+SnorkelBot.on('SUPPRESS_UNLOAD', () => {
+  window.dispatchEvent(new CustomEvent('snorkelbot:suppress-unload'));
+  // If the navigation does not happen after all, the site's own guard comes
+  // back rather than staying off for the rest of the session.
+  setTimeout(() => window.dispatchEvent(new CustomEvent('snorkelbot:restore-unload')), 30000);
+  return { suppressed: true };
+});
+
+SnorkelBot.on('RESTORE_UNLOAD', () => {
+  window.dispatchEvent(new CustomEvent('snorkelbot:restore-unload'));
+  return { restored: true };
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || typeof msg.type !== 'string') return false;
 

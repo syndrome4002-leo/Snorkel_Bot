@@ -260,6 +260,16 @@ async function askTab(tabId, message) {
 
 async function openHome(homeUrl, timeout = 120000) {
   const [existing] = await chrome.tabs.query({ url: 'https://experts.snorkel-ai.com/*' });
+
+  // Leaving the review form raises Chrome's "Leave site?" dialog, which is
+  // native and cannot be clicked by an extension — a navigation that hits it
+  // just stops. Silencing the page's beforeunload first is what lets the
+  // feedback loop go back to the list between tasks. Best effort: a tab with
+  // no content script yet has nothing to silence, and needs nothing silenced.
+  if (existing) {
+    await askTab(existing.id, { type: 'SUPPRESS_UNLOAD' }).catch(() => {});
+  }
+
   const tab = existing
     ? await chrome.tabs.update(existing.id, { url: homeUrl, active: true })
     : await chrome.tabs.create({ url: homeUrl, active: true });
@@ -498,11 +508,19 @@ async function collectFeedback(requestId, uids, options) {
         page_url: res.page_url,
         collected_at: res.collected_at,
       });
+      const d = res.check_diagnostics || {};
       progress(
         requestId,
         'feedback_ok',
         `${uid} (${res.feedback.length} chars, ${(res.notes || []).length} note(s), ` +
           `${(res.checks || []).filter((c) => c.text).length}/${(res.checks || []).length} check pane(s))`
+      );
+      // Printed in full so a pane that came back empty can be told apart from
+      // one that was never on the page.
+      log(
+        `check panes for ${uid}: found ${d.found}, missing [${(d.missing || []).join(', ') || 'none'}], ` +
+          `expanded ${d.expanded} section(s) over ${d.expand_rounds} round(s), ` +
+          `bridge ${d.monaco_bridge ? 'answered' : 'NOT PRESENT'} — ${(d.via || []).join(' ')}`
       );
     } catch (err) {
       log(`feedback for ${uid} failed:`, err.message);
