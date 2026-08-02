@@ -379,8 +379,8 @@ app.post('/api/upload', async (req, res) => {
 // --------------------------------------------------------- revisions ----
 
 /*
- * The extension reports every submission the site wants revised, every 30
- * minutes. Two of those are worth acting on:
+ * The extension reports every submission the site wants revised, on its own
+ * timer. Two of those are worth acting on:
  *
  *   - one we already know about and marked as "sent" — the reviewer has come
  *     back with feedback
@@ -694,7 +694,7 @@ startStatusHeartbeat(async () => ({
 }));
 
 /*
- * The extension raises this by itself every 30 minutes; nothing asked for it,
+ * The extension raises this by itself on its own timer; nothing asked for it,
  * so it is handled here rather than as a command reply.
  */
 hub.onRevisions = async (msg) => {

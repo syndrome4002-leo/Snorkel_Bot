@@ -360,7 +360,7 @@ export async function markSent(uid) {
  *
  * `feedbacks` is an append-only array, so a task sent back several times keeps
  * every round rather than only the latest. A round already stored with the same
- * text is not added twice — the 30-minute check will see the same feedback
+ * text is not added twice — the periodic check will see the same feedback
  * again on every pass until the task is resubmitted.
  */
 export async function addFeedback(uid, entry, extra = {}) {

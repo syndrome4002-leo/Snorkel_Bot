@@ -27,7 +27,7 @@ const DEFAULT_CONFIG = {
 const REVIEW_URL_RE = /\/projects\/[^/]+\/submission-[^/]+\/review/i;
 const KEEPALIVE_ALARM = 'snorkel-bot-keepalive';
 const REVISION_ALARM = 'snorkel-bot-revision-check';
-const REVISION_EVERY_MINUTES = 30;
+const REVISION_EVERY_MINUTES = 5;
 
 let ws = null;
 let busy = false;
@@ -418,7 +418,7 @@ async function runSentinelFlow(requestId, options) {
 // --------------------------------------------------------- revisions ----
 
 /*
- * Every half hour, reload the home page and see which submissions the site is
+ * Every few minutes, reload the home page and see which submissions the site is
  * asking to have revised.
  *
  * The page is reloaded rather than read as-is because the assignments list is
