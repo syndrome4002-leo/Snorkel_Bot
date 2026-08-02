@@ -22,6 +22,19 @@ const DEFAULT_CONFIG = {
   projectKey: 'CDG_Sentinel_Ultra_00000',
   mode: 'new', // 'new' | 'resume' | 'any'
   autoConnect: true,
+
+  /*
+   * Deliberate pauses while collecting feedback.
+   *
+   * Every wait in the flow is a "wait until X exists" check, which fires the
+   * moment the element appears — before the app has finished settling around
+   * it. Clicking or reading at that instant is what makes the run look frantic
+   * and read half-drawn panes. These are flat plain pauses on top of those
+   * checks, tunable from chrome.storage without touching the code.
+   */
+  paceAfterLoadMs: 2000,     // page reported ready -> do something with it
+  paceBeforeCopyMs: 2500,    // review page ready -> start reading it
+  paceBetweenTasksMs: 4000,  // one task finished -> move to the next
 };
 
 const REVIEW_URL_RE = /\/projects\/[^/]+\/submission-[^/]+\/review/i;
@@ -441,6 +454,7 @@ async function listRevisions() {
   // to the home page, and without a line here there is nothing to explain it.
   log(`revision check: reloading ${cfg.homeUrl}`);
   const tab = await openHome(cfg.homeUrl);
+  await sleep(cfg.paceAfterLoadMs);
   const res = await askTab(tab.id, { type: 'LIST_REVISIONS', projectKey: cfg.projectKey });
 
   if (!res.rendered) {
@@ -484,15 +498,34 @@ async function collectFeedback(requestId, uids, options) {
   const collected = [];
   const failures = [];
 
-  for (const uid of uids) {
+  // Overridable per command, so a slow machine can be paced from the server
+  // without editing the extension.
+  const afterLoad = options.paceAfterLoadMs ?? cfg.paceAfterLoadMs;
+  const beforeCopy = options.paceBeforeCopyMs ?? cfg.paceBeforeCopyMs;
+  const betweenTasks = options.paceBetweenTasksMs ?? cfg.paceBetweenTasksMs;
+
+  for (const [index, uid] of uids.entries()) {
+    // Between tasks, not after the last one — no point idling before finishing.
+    if (index > 0) {
+      progress(requestId, 'pausing', `${betweenTasks}ms before the next task`);
+      await sleep(betweenTasks);
+    }
+
     progress(requestId, 'feedback', uid);
     try {
       // Back to the list each time: after reading one task the tab is on that
       // task's page, and the next Revise button only exists on the home page.
       const tab = await openHome(options.homeUrl || cfg.homeUrl);
+      await sleep(afterLoad);
+
       await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey: cfg.projectKey, timeout: 90000 });
       await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
       await askTab(tab.id, { type: 'WAIT_READY', timeout: 120000 });
+
+      // The review page is heavy: the sidebar cards and the Monaco panes mount
+      // after WAIT_READY is satisfied. Reading immediately is what returned
+      // half-drawn panes.
+      await sleep(beforeCopy);
 
       const res = await askTab(tab.id, { type: 'COPY_FEEDBACK' });
       collected.push({

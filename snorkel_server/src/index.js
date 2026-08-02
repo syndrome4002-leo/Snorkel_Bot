@@ -71,7 +71,26 @@ app.use(express.json({ limit: '5mb' }));
 // The dashboard itself is public — it holds no secrets and only asks for the
 // token. Everything it calls is not.
 if (existsSync(config.dashboardDir)) {
-  app.use(express.static(config.dashboardDir));
+  /*
+   * The HTML must never be cached; everything under /_next/static may be cached
+   * forever.
+   *
+   * Next puts a content hash in every JS/CSS filename but not in index.html, so
+   * a browser holding an old index.html keeps loading the old chunks — the page
+   * looks stale after a rebuild even though the new files are sitting right
+   * there. Which is exactly what happened.
+   */
+  app.use(
+    express.static(config.dashboardDir, {
+      setHeaders(res, filePath) {
+        if (filePath.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        } else if (filePath.includes(`${path.sep}_next${path.sep}static${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    })
+  );
 } else {
   console.warn(
     `[server] no built dashboard at ${config.dashboardDir}\n` +

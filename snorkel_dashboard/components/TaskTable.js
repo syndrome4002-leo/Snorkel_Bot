@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import FeedbackModal from './FeedbackModal';
 
 function when(iso) {
   if (!iso) return '';
@@ -11,11 +12,11 @@ function when(iso) {
 /** "in build" would otherwise become two class names. */
 const statusClass = (status) => String(status).trim().toLowerCase().replace(/\s+/g, '-');
 
-function TaskRow({ task, showMachine, onMarkSent }) {
+function TaskRow({ task, showMachine, onMarkSent, onOpenFeedback }) {
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const status = task.task_status || '—';
-  const feedbacks = Array.isArray(task.feedbacks) ? task.feedbacks : [];
+  const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
 
   return (
     <>
@@ -46,6 +47,16 @@ function TaskRow({ task, showMachine, onMarkSent }) {
               {sending ? 'sending…' : 'mark as sent'}
             </button>
           ) : null}
+
+          <button
+            className="link"
+            disabled={!rounds}
+            title={rounds ? 'Reviewer notes and automated checks' : 'No feedback collected yet'}
+            onClick={() => onOpenFeedback(task)}
+          >
+            feedback{rounds ? ` (${rounds})` : ''}
+          </button>
+
           <button className="link" onClick={() => setOpen((value) => !value)}>
             {open ? 'hide' : 'details'}
           </button>
@@ -54,48 +65,8 @@ function TaskRow({ task, showMachine, onMarkSent }) {
       {open ? (
         <tr className="details">
           <td colSpan={showMachine ? 7 : 6}>
-            <div className="muted">
-              {task.dropbox_path || 'not uploaded'} &middot; created {when(task.created_at)}
-            </div>
-
-            {feedbacks.length ? (
-              <div className="feedbacks">
-                <h4>
-                  Reviewer feedback ({feedbacks.length} round{feedbacks.length === 1 ? '' : 's'})
-                </h4>
-                {feedbacks.map((entry, index) => (
-                  <div key={index} className="feedback">
-                    <div className="muted">
-                      round {index + 1} &middot; {when(entry.collected_at)}
-                    </div>
-                    <pre>{entry.text}</pre>
-
-                    {(entry.checks || []).filter((c) => c.text).length ? (
-                      <details>
-                        <summary className="muted">
-                          {entry.checks.filter((c) => c.text).length} automated check pane(s)
-                        </summary>
-                        {entry.checks
-                          .filter((c) => c.text)
-                          .map((check) => (
-                            <div key={check.testid} className="feedback">
-                              <div className="muted">
-                                {check.title}
-                                {/* "viewport" is the only path that can come up
-                                    short, so it is worth showing. */}
-                                {check.via === 'viewport' ? ' · read from the viewport, may be partial' : ''}
-                              </div>
-                              <pre>{check.text}</pre>
-                            </div>
-                          ))}
-                      </details>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <h4>Task info</h4>
+            {/* The task's own info, and nothing else — every other field is
+                already a column, and the feedback has its own drawer. */}
             <pre>{task.initial_infos || '(no infos captured)'}</pre>
           </td>
         </tr>
@@ -106,6 +77,7 @@ function TaskRow({ task, showMachine, onMarkSent }) {
 
 export default function TaskTable({ tasks, note, onRefresh, onMarkSent, showMachine = false }) {
   const [filter, setFilter] = useState('');
+  const [feedbackTask, setFeedbackTask] = useState(null);
 
   const rows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -152,7 +124,13 @@ export default function TaskTable({ tasks, note, onRefresh, onMarkSent, showMach
           <tbody>
             {rows.length ? (
               rows.map((task) => (
-                <TaskRow key={task.UID} task={task} showMachine={showMachine} onMarkSent={onMarkSent} />
+                <TaskRow
+                  key={task.UID}
+                  task={task}
+                  showMachine={showMachine}
+                  onMarkSent={onMarkSent}
+                  onOpenFeedback={setFeedbackTask}
+                />
               ))
             ) : (
               <tr>
@@ -164,6 +142,14 @@ export default function TaskTable({ tasks, note, onRefresh, onMarkSent, showMach
           </tbody>
         </table>
       </div>
+
+      {feedbackTask ? (
+        // Keyed on the live row, so a round arriving while it is open shows up.
+        <FeedbackModal
+          task={tasks.find((t) => t.UID === feedbackTask.UID) || feedbackTask}
+          onClose={() => setFeedbackTask(null)}
+        />
+      ) : null}
     </section>
   );
 }

@@ -29,6 +29,23 @@
   // ------------------------------------------------------------- util ----
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  /*
+   * How long to wait after poking the page.
+   *
+   * Radix animates a section open and React mounts its fields afterwards, so
+   * clicking and reading in the same tick reads a section that is technically
+   * open but still empty. These are the original stn_ext numbers roughly
+   * doubled — it copies on a keypress while you watch, this runs unattended and
+   * can afford to be patient.
+   */
+  const PACE = {
+    afterSectionClick: 300,
+    afterAllSections: 900,
+    afterNoteClick: 250,
+    afterAllNotes: 600,
+    betweenPanes: 400,
+  };
   const raf = () => new Promise((r) => requestAnimationFrame(() => r()));
 
   const visibleText = (el) => (!el ? '' : String(el.innerText != null ? el.innerText : el.textContent || ''));
@@ -96,9 +113,9 @@
       if (!closed) continue;
       trigger.click();
       opened++;
-      await sleep(150);
+      await sleep(PACE.afterSectionClick);
     }
-    if (opened) await sleep(350);
+    if (opened) await sleep(PACE.afterAllSections);
     return opened;
   }
 
@@ -159,9 +176,9 @@
       if (!isWantedNote(noteTitle(header))) continue;
       header.click();
       opened++;
-      await sleep(120);
+      await sleep(PACE.afterNoteClick);
     }
-    if (opened) await sleep(200);
+    if (opened) await sleep(PACE.afterAllNotes);
     return opened;
   }
 
@@ -406,7 +423,7 @@
     const notes = [];
     const checks = [];
     const missing = [];
-    let left = budgetMs || 6000;
+    let left = budgetMs || 12000;
 
     const openedSections = await expandAllSections();
 
@@ -424,6 +441,8 @@
         missing.push(pane.testid);
         continue;
       }
+      // Monaco lays out lazily; give the pane a moment before reading it.
+      await sleep(PACE.betweenPanes);
       const started = Date.now();
       const res = await readCodeField(container, left);
       left -= Date.now() - started;
