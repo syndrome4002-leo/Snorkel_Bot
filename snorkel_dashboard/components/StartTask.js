@@ -17,7 +17,7 @@ const STEPS = [
  * work is the server's once the command is written: closing this tab, or losing
  * the network, does not cancel anything.
  */
-export default function StartTask({ machine, serverOnline, inBuildTask, taskInFlight }) {
+export default function StartTask({ machine, serverOnline, inBuildTask, taskInFlight, onOpenSettings }) {
   const [command, setCommand] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,6 +76,10 @@ export default function StartTask({ machine, serverOnline, inBuildTask, taskInFl
       <div className="row">
         <button className="primary" onClick={start} disabled={busy}>
           {busy ? 'Running…' : 'Start new task'}
+        </button>
+
+        <button onClick={onOpenSettings} title="Auto-start and other machine settings">
+          Settings
         </button>
 
         <span className="muted">

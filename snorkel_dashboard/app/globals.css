@@ -333,3 +333,54 @@ button.machine {
   .log { grid-template-columns: 1.6rem 1fr; }
   .log-time, .log-event { display: none; }
 }
+
+/* --- logs beside the tasks --- */
+.workspace {
+  display: grid;
+  /* The logs column is capped so the table keeps the room it needs; below
+     1000px they stack, logs first. */
+  grid-template-columns: minmax(300px, 32%) 1fr;
+  align-items: start;
+  gap: 16px;
+  margin: 16px 20px;
+}
+.workspace > .card { margin: 0; }
+.workspace .logs { max-height: min(60vh, 620px); }
+
+@media (max-width: 1000px) {
+  .workspace { grid-template-columns: 1fr; }
+  .workspace .logs { max-height: 320px; }
+}
+
+/* A narrow column cannot hold the log's four columns. */
+@media (max-width: 1400px) {
+  .workspace .log { grid-template-columns: 1.6rem 1fr; }
+  .workspace .log-time, .workspace .log-event { display: none; }
+}
+
+/* --- settings drawer --- */
+.setting { margin-bottom: 14px; }
+.setting label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.setting p { margin: 0 0 8px; }
+.state-on { color: var(--ok); font-size: 13px; }
+
+/* The countdown line: attached to the log box, visually part of it but outside
+   the scrolling area so it never scrolls away. */
+.tickers {
+  margin-top: -1px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: rgba(128, 128, 128, 0.09);
+  overflow: hidden;
+}
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ticker + .ticker { border-top: 1px solid var(--line); }
+.logs { border-radius: 8px 8px 0 0; }

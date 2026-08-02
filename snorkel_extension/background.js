@@ -146,6 +146,31 @@ function scheduleReconnect() {
 async function handleServerMessage(msg) {
   if (msg.type === 'ping') return void send({ type: 'pong', at: Date.now() });
 
+  // The dashboard owns the schedule; the alarm is re-created rather than
+  // adjusted, because chrome.alarms has no way to change an existing period.
+  if (msg.type === 'configure') {
+    const requestId = msg.requestId || String(Date.now());
+    try {
+      const every = Number(msg.revisionEveryMinutes);
+      if (Number.isFinite(every) && every >= 1) {
+        await chrome.alarms.clear(REVISION_ALARM);
+        chrome.alarms.create(REVISION_ALARM, { periodInMinutes: every });
+        await chrome.storage.local.set({ revisionEveryMinutes: every });
+        log(`revision check interval set to ${every} min`);
+      }
+      send({
+        type: 'result',
+        requestId,
+        ok: true,
+        revisionEveryMinutes: every,
+        next_check_at: await nextRevisionCheckAt(),
+      });
+    } catch (err) {
+      send({ type: 'result', requestId, ok: false, error: String((err && err.message) || err) });
+    }
+    return;
+  }
+
   // The server asks for feedback only for the UIDs it cares about, so this
   // never opens more task pages than necessary.
   if (msg.type === 'collect_feedback') {
@@ -468,6 +493,16 @@ async function listRevisions() {
   return { revisions: res.revisions, count: res.count, checked_at: new Date().toISOString() };
 }
 
+/** When Chrome will next fire the revision alarm, as an ISO string. */
+async function nextRevisionCheckAt() {
+  try {
+    const alarm = await chrome.alarms.get(REVISION_ALARM);
+    return alarm ? new Date(alarm.scheduledTime).toISOString() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Reports what is awaiting revision; the server decides what to do about it. */
 async function reportRevisions() {
   if (busy) return log('revision check skipped — a task is running');
@@ -480,6 +515,9 @@ async function reportRevisions() {
       type: 'revisions',
       uids: revisions.map((r) => r.uid),
       checked_at,
+      // Chrome's own schedule, not an assumption about the interval — an alarm
+      // that has drifted or been rescheduled still reports the truth.
+      next_check_at: await nextRevisionCheckAt(),
     });
   } catch (err) {
     log('revision check failed:', err.message);
@@ -628,7 +666,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // An MV3 worker is evicted when idle. The alarm wakes it up so the socket is
 // re-established (and stays re-established) without the user touching anything.
 chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
-chrome.alarms.create(REVISION_ALARM, { periodInMinutes: REVISION_EVERY_MINUTES });
+
+// The period the dashboard last set wins over the built-in default; the alarm
+// is re-created on every worker start, so without this it would silently drop
+// back to the default each time Chrome evicted the worker.
+chrome.storage.local.get({ revisionEveryMinutes: REVISION_EVERY_MINUTES }).then(({ revisionEveryMinutes }) => {
+  const every = Number(revisionEveryMinutes) >= 1 ? Number(revisionEveryMinutes) : REVISION_EVERY_MINUTES;
+  chrome.alarms.create(REVISION_ALARM, { periodInMinutes: every });
+});
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === KEEPALIVE_ALARM) {

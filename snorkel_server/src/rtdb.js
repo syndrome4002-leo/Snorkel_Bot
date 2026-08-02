@@ -24,6 +24,7 @@ const COMMANDS = () => `machines/${machineId()}/commands`;
 const STATUS = () => `machines/${machineId()}/status`;
 const SETTINGS = () => `machines/${machineId()}/settings`;
 const LOGS = () => `machines/${machineId()}/logs`;
+const TICKER = () => `machines/${machineId()}/ticker`;
 
 /** Log lines kept per machine. Old ones are trimmed rather than kept forever. */
 const LOG_CAP = 300;
@@ -176,6 +177,26 @@ export function pushLog(entry) {
       return trimLogs();
     })
     .catch((err) => console.warn('[rtdb] could not push a log line:', err.message));
+}
+
+/**
+ * The one line that changes rather than accumulates.
+ *
+ * A countdown pushed into the log stream would add a line a minute — 1,440 a
+ * day, burying everything worth reading. This is a single node that is
+ * overwritten in place, so the dashboard can show it pinned under the stream
+ * without it ever becoming history.
+ */
+export function setTicker(key, entry) {
+  if (!db) return;
+  db.ref(`${TICKER()}/${key}`)
+    .set({
+      at: new Date().toISOString(),
+      emoji: entry.emoji || '⏳',
+      event: entry.event || 'ticker',
+      message: String(entry.message == null ? '' : entry.message),
+    })
+    .catch((err) => console.warn('[rtdb] could not set the ticker:', err.message));
 }
 
 /** Drops the oldest lines once the stream grows past the cap. */

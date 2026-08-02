@@ -74,12 +74,20 @@
           "//": "Written from the dashboard, read by the server.",
           ".read": true,
           ".write": true,
-          "revise_limit": { ".validate": "newData.isNumber() && newData.val() >= 0 || !newData.exists()" },
+          "revise_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
+          "try_new_task_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
+          "check_revise_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "$other": { ".validate": true }
         },
 
         "logs": {
           "//": "Written by the server only; the dashboard reads the tail.",
+          ".read": true,
+          ".write": false
+        },
+
+        "ticker": {
+          "//": "One line, overwritten in place — the countdown to the next check.",
           ".read": true,
           ".write": false
         }

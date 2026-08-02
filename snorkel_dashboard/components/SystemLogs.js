@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { watchLogs } from '@/lib/commands';
+import { watchLogs, watchTicker } from '@/lib/commands';
 
 function time(iso) {
   if (!iso) return '';
@@ -25,6 +25,7 @@ const LEVELS = [
  */
 export default function SystemLogs({ machine }) {
   const [lines, setLines] = useState([]);
+  const [ticker, setTicker] = useState(null);
   const [level, setLevel] = useState('');
   const [follow, setFollow] = useState(true);
   const boxRef = useRef(null);
@@ -32,7 +33,13 @@ export default function SystemLogs({ machine }) {
   useEffect(() => {
     if (!machine) return undefined;
     setLines([]);
-    return watchLogs(machine, setLines);
+    setTicker(null);
+    const stopLogs = watchLogs(machine, setLines);
+    const stopTicker = watchTicker(machine, setTicker);
+    return () => {
+      stopLogs();
+      stopTicker();
+    };
   }, [machine]);
 
   const shown = useMemo(
@@ -100,6 +107,22 @@ export default function SystemLogs({ machine }) {
           </p>
         )}
       </div>
+
+      {/* Pinned beneath the stream, overwritten in place — these are statuses,
+          not events, so they never become history. Order is fixed so the two
+          lines do not swap places as they update. */}
+      {ticker ? (
+        <div className="tickers">
+          {['checks', 'tries'].map((key) =>
+            ticker[key] ? (
+              <div key={key} className="ticker">
+                <span className="log-emoji">{ticker[key].emoji || '⏳'}</span>
+                <span className="log-msg">{ticker[key].message}</span>
+              </div>
+            ) : null
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }

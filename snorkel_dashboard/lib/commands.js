@@ -15,6 +15,7 @@ export const commandsPath = (machine) => `machines/${machine}/commands`;
 export const statusPath = (machine) => `machines/${machine}/status`;
 export const settingsPath = (machine) => `machines/${machine}/settings`;
 export const logsPath = (machine) => `machines/${machine}/logs`;
+export const tickerPath = (machine) => `machines/${machine}/ticker`;
 
 /** Queues a command for one machine. Returns its id so the caller can watch it. */
 async function queue(machine, type, extra = {}) {
@@ -68,6 +69,15 @@ export function watchLogs(machine, onUpdate, max = 200) {
     });
     onUpdate(rows);
   });
+}
+
+/**
+ * The single line that changes rather than accumulates — currently the
+ * countdown to the next revision check. Kept out of the log stream on purpose:
+ * a line a minute would bury everything else.
+ */
+export function watchTicker(machine, onUpdate) {
+  return onValue(ref(rtdb(), tickerPath(machine)), (snapshot) => onUpdate(snapshot.val()));
 }
 
 /** Live updates for one command. Returns an unsubscribe function. */

@@ -8,7 +8,7 @@ import { addMachine, getSelected, listMachines, removeMachine, setSelected } fro
 import MachinePicker from '@/components/MachinePicker';
 import StatusPills from '@/components/StatusPills';
 import StartTask from '@/components/StartTask';
-import AutoStart from '@/components/AutoStart';
+import SettingsDrawer from '@/components/SettingsDrawer';
 import SystemLogs from '@/components/SystemLogs';
 import TaskTable from '@/components/TaskTable';
 
@@ -36,6 +36,7 @@ export default function Page() {
   const [statuses, setStatuses] = useState({}); // machine id -> status
   const [tasks, setTasks] = useState([]);
   const [tasksNote, setTasksNote] = useState('Loading…');
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // localStorage and Firebase are both browser-only.
   useEffect(() => {
@@ -124,6 +125,7 @@ export default function Page() {
           serverOnline={Boolean(status?.online)}
           inBuildTask={inBuildTask}
           taskInFlight={Boolean(status?.task_in_flight)}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       ) : (
         <section className="card">
@@ -135,11 +137,16 @@ export default function Page() {
         </section>
       )}
 
-      {selected ? <AutoStart machine={selected} /> : null}
+      {/* Logs on the left, tasks on the right: the logs are a narrow running
+          column, the table needs the width. */}
+      <div className={selected ? 'workspace' : ''}>
+        {selected ? <SystemLogs machine={selected} /> : null}
+        <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} />
+      </div>
 
-      <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} />
-
-      {selected ? <SystemLogs machine={selected} /> : null}
+      {settingsOpen && selected ? (
+        <SettingsDrawer machine={selected} onClose={() => setSettingsOpen(false)} />
+      ) : null}
     </>
   );
 }

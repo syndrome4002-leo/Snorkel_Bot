@@ -46,6 +46,7 @@ import {
   watchCommands,
   watchSettings,
   pushLog,
+  setTicker,
 } from './rtdb.js';
 import { machineId, machineInfo } from './machine.js';
 import {
@@ -417,6 +418,67 @@ function logEvent(emoji, event, message, extra = {}) {
   pushLog({ emoji, event, message, ...extra });
 }
 
+// ------------------------------------------------------------- ticker ----
+
+/*
+ * A one-line countdown to the extension's next revision sweep, refreshed every
+ * minute and OVERWRITTEN each time rather than appended — a per-minute log line
+ * would add 1,440 entries a day and bury everything else.
+ *
+ * The time comes from the extension reporting its own chrome.alarms schedule,
+ * so a drifted or rescheduled alarm still reads correctly instead of this
+ * assuming a fixed five minutes.
+ */
+let lastRevisionReport = null;
+let lastReviseCount = null;
+let nextAutoTryAt = null;
+/** Refreshed alongside the ticker so the countdown can say why it will not run. */
+let inBuildUid = null;
+
+function humanIn(iso) {
+  if (!iso) return null;
+  const left = new Date(iso).getTime() - Date.now();
+  if (left <= 0) return 'due now';
+  return `in ~${Math.max(1, Math.round(left / 60000))} min`;
+}
+
+function updateTicker() {
+  // --- when the revise list is next read ---
+  if (!lastRevisionReport) {
+    setTicker('checks', { emoji: '🔌', message: 'waiting for the extension to report in' });
+  } else {
+    const { next_check_at: next, checked_at: last } = lastRevisionReport;
+    const ago = last ? Math.round((Date.now() - new Date(last).getTime()) / 60000) : null;
+    const agoText =
+      ago === null ? '' : ago <= 0 ? ' (last checked just now)' : ` (last checked ${ago} min ago)`;
+    const when = humanIn(next);
+    setTicker('checks', {
+      emoji: when === 'due now' ? '🔄' : '⏳',
+      message: when
+        ? `check revise list ${when}${agoText}`
+        : `check revise list pending${agoText}`,
+    });
+  }
+
+  // --- when a new task is next attempted ---
+  const limit = Number(settings.revise_limit);
+  if (!Number.isFinite(limit) || limit <= 0) {
+    setTicker('tries', { emoji: '🛑', message: 'auto-start is off — set a revise tasks limit' });
+    return;
+  }
+  if (inBuildUid) {
+    setTicker('tries', { emoji: '🔨', message: `${inBuildUid} is in build — not starting anything` });
+    return;
+  }
+
+  const countText = lastReviseCount === null ? 'count unknown yet' : `${lastReviseCount} awaiting, limit ${limit}`;
+  const when = humanIn(nextAutoTryAt);
+  setTicker('tries', {
+    emoji: when === 'due now' ? '🤖' : '⏳',
+    message: when ? `try new task ${when} — ${countText}` : `try new task pending — ${countText}`,
+  });
+}
+
 // ------------------------------------------------------------ settings ----
 
 /** Whatever the dashboard has set for this machine. */
@@ -441,6 +503,15 @@ async function maybeAutoStart(reviseCount) {
 
   if (currentRun()) {
     logEvent('⏸️', 'auto_skip', 'a task is already running');
+    return;
+  }
+
+  // Checked here rather than left to the pipeline's own guard: that guard would
+  // throw after the attempt had begun, and the point is not to try at all while
+  // a task is in build.
+  const inBuild = await findInBuildTask(machineId()).catch(() => null);
+  if (inBuild) {
+    logEvent('⏸️', 'auto_skip', `${inBuild.UID} is in build — nothing to start`, { uid: inBuild.UID });
     return;
   }
 
@@ -810,6 +881,9 @@ hub.onRevisions = async (msg) => {
   }
 
   const uids = msg.uids || [];
+  lastRevisionReport = { checked_at: msg.checked_at, next_check_at: msg.next_check_at };
+  lastReviseCount = (msg.uids || []).length;
+  updateTicker();
   logEvent('🔍', 'revision_check', `${uids.length} task(s) awaiting revision`);
 
   try {
@@ -818,21 +892,83 @@ hub.onRevisions = async (msg) => {
     logEvent('❌', 'revision_failed', err.message, { level: 'error' });
   }
 
-  // Same five-minute beat, and the count is already in hand.
-  try {
-    await maybeAutoStart(uids.length);
-  } catch (err) {
-    logEvent('❌', 'auto_failed', err.message, { level: 'error' });
-  }
+  // Auto-start runs on its own interval now, so this only records the count it
+  // will use.
+  lastReviseCount = uids.length;
+  updateTicker();
 };
 
+/** Once a minute, in place. unref so it never holds the process open. */
+async function tick() {
+  const inBuild = await findInBuildTask(machineId()).catch(() => null);
+  inBuildUid = inBuild ? inBuild.UID : null;
+  updateTicker();
+}
+
+tick();
+setInterval(tick, 60000).unref();
+
+/** Minutes, with a floor so a typo cannot turn this into a busy loop. */
+function minutes(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 ? n : fallback;
+}
+
+const DEFAULT_TRY_EVERY = 5;
+const DEFAULT_CHECK_EVERY = 5;
+
+let autoTryTimer = null;
+
+/** Re-arms the auto-start timer whenever its interval changes. */
+function scheduleAutoTry() {
+  const every = minutes(settings.try_new_task_every_min, DEFAULT_TRY_EVERY);
+  if (autoTryTimer) clearInterval(autoTryTimer);
+
+  nextAutoTryAt = new Date(Date.now() + every * 60000).toISOString();
+  autoTryTimer = setInterval(async () => {
+    nextAutoTryAt = new Date(Date.now() + every * 60000).toISOString();
+    try {
+      // Uses the most recent count from the extension's own sweep rather than
+      // asking for a fresh one: the two run on their own intervals, and forcing
+      // a page reload here would fight with the revise check.
+      if (lastReviseCount !== null) await maybeAutoStart(lastReviseCount);
+    } catch (err) {
+      logEvent('❌', 'auto_failed', err.message, { level: 'error' });
+    }
+    updateTicker();
+  }, every * 60000);
+  autoTryTimer.unref?.();
+  updateTicker();
+}
+
+/** Tells the extension how often to re-read the revise list. */
+function pushCheckInterval() {
+  if (!hub.isConnected('snorkel')) return;
+  const every = minutes(settings.check_revise_every_min, DEFAULT_CHECK_EVERY);
+  hub
+    .command('snorkel', { type: 'configure', revisionEveryMinutes: every })
+    .then(() => logEvent('⚙️', 'settings', `extension will check the revise list every ${every} min`))
+    .catch((err) => logEvent('⚠️', 'settings', `could not set the check interval: ${err.message}`, { level: 'warn' }));
+}
+
 watchSettings((value) => {
-  const before = settings.revise_limit;
+  const before = settings;
   settings = value;
-  if (before !== settings.revise_limit) {
+
+  if (before.revise_limit !== settings.revise_limit) {
     logEvent('⚙️', 'settings', `revise tasks limit is now ${settings.revise_limit ?? 'unset'}`);
   }
+  if (before.try_new_task_every_min !== settings.try_new_task_every_min) {
+    logEvent('⚙️', 'settings', `try new task every ${minutes(settings.try_new_task_every_min, DEFAULT_TRY_EVERY)} min`);
+    scheduleAutoTry();
+  }
+  if (before.check_revise_every_min !== settings.check_revise_every_min) {
+    pushCheckInterval();
+  }
+  updateTicker();
 });
+
+scheduleAutoTry();
 
 watchCommands(async (command, report) => {
   // Marks a task submitted, which is what later makes it eligible for feedback

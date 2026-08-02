@@ -371,8 +371,18 @@ export async function addFeedback(uid, entry, extra = {}) {
   const existing = snapshot.exists ? snapshot.data() : null;
   const feedbacks = Array.isArray(existing?.feedbacks) ? existing.feedbacks : [];
 
-  const duplicate = feedbacks.some((item) => item && item.text === entry.text);
-  const next = duplicate ? feedbacks : [...feedbacks, entry];
+  /*
+   * Always append. Never compare, never replace.
+   *
+   * There used to be a guard here that dropped an entry whose text matched one
+   * already stored. It made sense when every task in the revise list was
+   * re-read on every sweep — without it the same message would have piled up.
+   * Now that a task is only read when it is "sent" or unknown, a collection is
+   * a deliberate act: you set the status back to "sent" precisely because you
+   * want that round recorded. Silently discarding it was the reason feedback
+   * looked like it was being replaced.
+   */
+  const next = [...feedbacks, entry];
 
   const now = new Date().toISOString();
   const record = {
@@ -397,37 +407,31 @@ export async function addFeedback(uid, entry, extra = {}) {
   await ref.set(record, { merge: true });
   console.log(
     `[firebase] ${config.firebase.collection}/${uid} -> task_status="${TASK_STATUS_NEEDS_REVISION}", ` +
-      `${next.length} feedback round(s)${duplicate ? ' (unchanged)' : ''}${snapshot.exists ? '' : ' [new task]'}`
+      `round ${next.length} appended${snapshot.exists ? '' : ' [new task]'}`
   );
-  return { record, created: !snapshot.exists, duplicate, rounds: next.length };
+  return { record, created: !snapshot.exists, rounds: next.length };
 }
-
-/** How long before a task already carrying feedback is looked at again. */
-export const RECOLLECT_AFTER_MS = Number(process.env.RECOLLECT_AFTER_MINUTES || 60) * 60 * 1000;
 
 /**
  * Which of `uids` are worth opening to read feedback from.
  *
- * A task is a candidate when:
- *   - this database has never seen it,
- *   - it is marked "sent" and so is waiting on a reviewer, or
- *   - it already has feedback but has not been looked at for a while.
+ * Exactly two cases:
+ *   - this database has never seen the task, or
+ *   - it is marked "sent" and so is waiting on a reviewer.
  *
- * That last case is the one that matters for a task sent back MORE THAN ONCE.
- * The rule used to be "sent or unknown" only, which meant that the moment a
- * task's first feedback was stored its status became "needs revision" and it
- * was skipped by every later sweep — so a second round could never arrive, and
- * the first round looked like the only one there would ever be.
+ * A task that already carries feedback is NOT reopened. Re-reading every task
+ * in the revise list on every sweep meant visiting pages whose feedback was
+ * already stored — minutes of browsing per sweep to re-read text that had not
+ * changed.
  *
- * Re-reading is safe because addFeedback ignores feedback whose text it has
- * already stored; an unchanged reviewer message does not pile up.
+ * The cost of that is real: a task can only pick up a second round of feedback
+ * by returning to "sent" first.
  */
-export async function findFeedbackCandidates(uids, recollectAfterMs = RECOLLECT_AFTER_MS) {
+export async function findFeedbackCandidates(uids) {
   if (!db || !uids.length) return { wanted: [], reasons: {} };
 
   const wanted = [];
   const reasons = {};
-  const now = Date.now();
 
   // Read one at a time by document id: an "in" query is capped at 30 values and
   // these lists are short.
@@ -439,20 +443,9 @@ export async function findFeedbackCandidates(uids, recollectAfterMs = RECOLLECT_
       reasons[uid] = 'not seen before';
       continue;
     }
-
-    const task = snap.data();
-    if (task.task_status === TASK_STATUS_SENT) {
+    if (snap.data().task_status === TASK_STATUS_SENT) {
       wanted.push(String(uid));
       reasons[uid] = 'sent, awaiting a reviewer';
-      continue;
-    }
-
-    const last = task.feedback_checked_at ? new Date(task.feedback_checked_at).getTime() : 0;
-    if (!last || now - last > recollectAfterMs) {
-      wanted.push(String(uid));
-      reasons[uid] = last
-        ? `last read ${Math.round((now - last) / 60000)} min ago`
-        : 'never read';
     }
   }
 
