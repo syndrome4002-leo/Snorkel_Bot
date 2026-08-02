@@ -21,8 +21,9 @@ import { config } from './config.js';
 import { unzipTo, zipFolder } from './archive.js';
 import { downloadFile, deleteFile, uploadFile } from './dropbox.js';
 import { runSession } from './claude.js';
-import { buildPrompt, documentPaths, introPrompt, revisionPrompt } from './prompts.js';
-import { TASK_STATUS_BUILD, appendAnswer, markDownloaded, markReady, patchTask } from './firebase.js';
+import { buildPrompt, documentPaths, extractPrompt, introPrompt, revisionPrompt } from './prompts.js';
+import { normaliseAnswers, parseJsonReply } from './answers.js';
+import { TASK_STATUS_BUILD, markDownloaded, markReady, patchTask, saveAnswers } from './firebase.js';
 
 /** How often a long build says it is still alive. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
@@ -178,11 +179,20 @@ export async function workOnTask(task, { log, onSession } = {}) {
   }
 
   // ------------------------------------------------------------- Claude ---
+  /*
+   * Three turns: the documents, the questions, then the same answers as JSON.
+   *
+   * The build is still "the two prompts ran". The third asks for no new thinking
+   * and looks at nothing new; it only restates what turn two already said in a
+   * shape that can be stored per field. Keeping it separate is what lets turn two
+   * stay word for word the question sheet, tone instructions and all.
+   */
   const prompts = [
     await introPrompt(docs),
     from === TASK_STATUS_BUILD
       ? await buildPrompt({ uid, taskDir, initialInfos: task.initial_infos })
       : await revisionPrompt({ uid, taskDir, feedbacks: task.feedbacks }),
+    await extractPrompt(),
   ];
 
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
@@ -234,15 +244,35 @@ export async function workOnTask(task, { log, onSession } = {}) {
       (session.costUsd ? ` ($${session.costUsd.toFixed(2)})` : '')
   );
 
-  // ------------------------------------------------------- the answer -----
-  const answerRound = await appendAnswer(uid, {
-    text: session.finalText,
-    written_at: new Date().toISOString(),
+  // ------------------------------------------------------- the answers ----
+  /*
+   * Turn two is the answer as a person would write it; turn three is that same
+   * answer per field. Both are kept: the prose is what gets pasted into a box
+   * the schema does not cover, and it is the only way to tell a bad answer from
+   * a bad extraction of a good one.
+   */
+  const prose = session.turns.length > 1 ? session.turns[session.turns.length - 2].text : '';
+  const { answers, ignored, problems } = await normaliseAnswers(parseJsonReply(session.finalText));
+
+  if (ignored.length) {
+    say('⚠️', 'answers_extra', `ignored key(s) not in the schema: ${ignored.join(', ')}`);
+  }
+  for (const problem of problems) say('⚠️', 'answers_value', problem);
+
+  const saved = await saveAnswers(uid, answers, {
     from,
     session_id: session.sessionId,
-    // Lines up an answer with the feedback round it responds to.
+    // Lines an answer round up with the feedback round it responds to.
     feedback_rounds: rounds,
+    text: prose,
   });
+
+  say(
+    '📝',
+    'answers_saved',
+    `${saved.fields} field(s) stored` +
+      (saved.changed.length ? `, changed: ${saved.changed.join(', ')}` : ', nothing changed')
+  );
 
   // -------------------------------------------------------- back up -------
   const zipName = await zipNameFor(task, taskDir);
@@ -264,13 +294,14 @@ export async function workOnTask(task, { log, onSession } = {}) {
     worker_cost_usd: session.costUsd || null,
   });
 
-  say('🏁', 'ready', `${uid} is ready to submit (answer round ${answerRound})`);
+  say('🏁', 'ready', `${uid} is ready to submit (answers round ${saved.round})`);
 
   return {
     uid,
     from,
     taskDir,
-    answerRound,
+    answerFields: saved.fields,
+    answersRound: saved.round,
     sessionId: session.sessionId,
     dropboxPath: uploaded.dropbox_path,
     costUsd: session.costUsd,

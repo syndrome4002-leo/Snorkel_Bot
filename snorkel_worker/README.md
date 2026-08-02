@@ -236,15 +236,48 @@ npm run once -- <UID> --dry    # print both prompts, run nothing
 | field | |
 | --- | --- |
 | `task_status` | `Working..` while open, then `ready to submit` |
-| `answers` | append-only, one entry per round: `{text, written_at, from, session_id, feedback_rounds, round}` |
+| `answers` | an object keyed by form field — see below |
+| `answers_history` | one entry per round: the fields it set, plus the prose they came from |
 | `file_uploaded` | `false` after the download, `true` after the upload |
 | `dropbox_path` | `null` after the download, the new path after the upload |
 | `worked_from` | which state it was claimed from, so a failure can put it back |
 | `worker_session_id` | resume the session by hand: `claude --resume <id>` |
 | `worker_error` | why the last attempt failed, cleared on the next claim |
 
-`answers` mirrors `feedbacks`, so round two's answer sits next to round two's
-feedback and the exchange reads as a conversation.
+### The answers object
+
+One key per box on the platform's form:
+
+```json
+{
+  "validity_required": "fixable",
+  "duplicate": "fixable",
+  "where_task_had_issues": ["instructions", "tests"],
+  "what_issues_found": ["the instructions are overly-prescriptive"],
+  "issues_in_detail": "...",
+  "senior_estimated_time": "20-40 minutes",
+  "review_time_min": 10
+}
+```
+
+A key that does not apply is left out rather than stored empty, so "not asked"
+and "answered with nothing" stay distinguishable.
+
+**This is why it is an object and not a list of rounds.** A reviewer sends back a
+few points, and the revision prompt asks for the changed answers *and only those*
+so you can replace them. Merging that reply over what is stored leaves every
+untouched answer exactly as it was. A list of rounds could not do that without
+somebody reading both and working out which one won.
+
+`answers_history` keeps each round anyway, because merging loses the previous
+value of an overwritten field, and an answer that got worse is the one you want
+to look at. Each entry also carries the prose from turn two, which is both what
+you paste into a box the schema does not cover and the only way to tell a bad
+answer from a bad extraction of a good one.
+
+The fields live in [prompts/answers.schema.json](prompts/answers.schema.json).
+The extraction prompt is generated from it, so adding a key there is enough to
+have it asked for and stored, with no code change.
 
 ## When things go wrong
 

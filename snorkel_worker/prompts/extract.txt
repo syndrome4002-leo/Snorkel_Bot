@@ -1,0 +1,10 @@
+Now put those same answers into JSON so they can be stored. Do not rewrite or improve them, do not add anything you did not already say above, and do not go back and look at the task again. This is only a change of format.
+
+Reply with the JSON object and nothing else, no explanation around it.
+
+{{fields}}
+
+Rules:
+- Leave out any key that does not apply to your answer. Do not include a key with an empty value just to have it there.
+- For a key with allowed values, use one of them exactly as written.
+- Free text keeps the wording you already used above. Same human tone, no markdown, no bullet characters, no "—".

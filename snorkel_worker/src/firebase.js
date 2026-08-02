@@ -248,23 +248,55 @@ export async function releaseTask(uid, toStatus, reason) {
 }
 
 /**
- * Records what Claude wrote for this round.
+ * Records the submitter-form answers.
  *
- * Append-only, in step with `feedbacks`: round two's answer sits next to round
- * two's feedback, so the exchange reads as a conversation rather than as a
- * single field that keeps being overwritten.
+ * An object keyed by field name, not a list of rounds, because that is the shape
+ * the answers are used in: each key is one box on the platform's form.
+ *
+ * It is also what makes a revision work. A reviewer sends back a handful of
+ * points, and the revision prompt asks for the fields that changed and only
+ * those, so merging the reply over what is already stored leaves the untouched
+ * answers exactly as they were. A list of rounds could not do that without
+ * somebody reading both and working out which won.
+ *
+ * `answers_history` keeps a copy of each round anyway. Merging loses the
+ * previous value of an overwritten field, and when an answer gets worse rather
+ * than better, that is the thing you want to look at.
  */
-export async function appendAnswer(uid, entry) {
+export async function saveAnswers(uid, answers, meta = {}) {
   if (!db) throw new Error(describe(initError));
+  if (!answers || !Object.keys(answers).length) {
+    throw new Error('Refusing to save an empty answers object.');
+  }
 
   const ref = docRef(uid);
   const snap = await ref.get();
-  const answers = Array.isArray(snap.data()?.answers) ? snap.data().answers : [];
-  const next = [...answers, { ...entry, round: answers.length + 1 }];
+  const existing = snap.exists && snap.data().answers && !Array.isArray(snap.data().answers)
+    ? snap.data().answers
+    : {};
+  const history = Array.isArray(snap.data()?.answers_history) ? snap.data().answers_history : [];
 
-  await ref.set({ answers: next, updated_at: new Date().toISOString() }, { merge: true });
-  console.log(`[firebase] ${uid} -> answer round ${next.length} appended`);
-  return next.length;
+  const now = new Date().toISOString();
+  const merged = { ...existing, ...answers };
+  const changed = Object.keys(answers).filter(
+    (key) => JSON.stringify(existing[key]) !== JSON.stringify(answers[key])
+  );
+
+  await ref.set(
+    {
+      answers: merged,
+      answers_history: [...history, { ...meta, at: now, round: history.length + 1, fields: answers }],
+      answers_updated_at: now,
+      updated_at: now,
+    },
+    { merge: true }
+  );
+
+  console.log(
+    `[firebase] ${uid} -> ${Object.keys(merged).length} answer field(s), ` +
+      `${changed.length} changed this round (${changed.join(', ') || 'none'})`
+  );
+  return { fields: Object.keys(merged).length, changed, round: history.length + 1 };
 }
 
 /** The end state: Claude is done and the zip is back on Dropbox. */

@@ -18,6 +18,7 @@
 
 import admin from 'firebase-admin';
 import { config } from './config.js';
+import { firebaseStatus } from './firebase.js';
 import { machineId, machineInfo } from './machine.js';
 
 const COMMANDS = () => `machines/${machineId()}/commands`;
@@ -70,6 +71,24 @@ export async function initRtdb() {
     return null;
   }
   if (db) return db;
+
+  /*
+   * Do not connect with credentials that are already known to be bad.
+   *
+   * The Realtime Database client retries auth forever, so a missing
+   * service-account key turns into a FIREBASE WARNING every second or two,
+   * repeating until the process is killed. The real cause is one line further up
+   * and quickly scrolls away. Refusing here means the machine says what is wrong
+   * once, in its own words, instead of drowning it.
+   */
+  const firestore = firebaseStatus();
+  if (firestore.enabled && !firestore.ready) {
+    console.error('[rtdb] not connecting — Firebase credentials are not usable:');
+    console.error(`[rtdb]   ${firestore.reason}`);
+    console.error('[rtdb] fix that first; the dashboard channel needs the same credentials.');
+    initError = new Error(firestore.reason);
+    return null;
+  }
 
   try {
     const app = admin.apps.length ? admin.app() : null;

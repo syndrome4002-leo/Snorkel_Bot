@@ -95,6 +95,55 @@ export async function buildPrompt({ uid, taskDir, initialInfos }) {
   });
 }
 
+let schemaCache = null;
+
+/**
+ * The answer keys, from prompts/answers.schema.json.
+ *
+ * Kept in a file rather than in code so the set of fields, the wording of the
+ * allowed values, and the prompt that asks for them all move together. Adding a
+ * key there is enough; nothing here needs to know about it.
+ */
+export async function answerSchema() {
+  if (schemaCache) return schemaCache;
+  const file = path.join(config.promptsDir, 'answers.schema.json');
+  const parsed = JSON.parse(await readFile(file, 'utf8'));
+  delete parsed['//'];
+  schemaCache = parsed;
+  return schemaCache;
+}
+
+/** The schema written out as something readable in a prompt. */
+function describeFields(schema) {
+  return Object.entries(schema)
+    .map(([key, spec]) => {
+      const bits = [];
+      if (spec.enum && spec.list) bits.push(`array, any of: ${spec.enum.map((v) => `"${v}"`).join(', ')}`);
+      else if (spec.enum) bits.push(`one of: ${spec.enum.map((v) => `"${v}"`).join(', ')}`);
+      else if (spec.number) bits.push('a number of minutes');
+      else if (spec.list) bits.push('array of strings');
+      else bits.push('text');
+
+      if (spec.question) bits.push(`question ${spec.question}`);
+      if (spec.when) bits.push(`only when ${spec.when}`);
+      return `  "${key}": ${bits.join('; ')}`;
+    })
+    .join('\n');
+}
+
+/**
+ * The last turn: the same answers, as JSON.
+ *
+ * A separate turn rather than asking for JSON up front, because the answers
+ * themselves have to read as prose a person wrote, and "reply in JSON" would
+ * pull against every instruction about tone in the question sheet. Reformatting
+ * something already written is a much smaller ask than writing it twice.
+ */
+export async function extractPrompt() {
+  const schema = await answerSchema();
+  return fill(await template('extract'), { fields: describeFields(schema) });
+}
+
 /** Turn two, for a task the reviewer sent back. */
 export async function revisionPrompt({ uid, taskDir, feedbacks }) {
   return fill(await template('revision'), {
