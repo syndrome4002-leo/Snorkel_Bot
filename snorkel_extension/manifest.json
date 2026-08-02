@@ -26,7 +26,8 @@
         "https://experts.snorkel-ai.com/*"
       ],
       "js": [
-        "content/unload-guard.js"
+        "content/unload-guard.js",
+        "content/monaco-bridge.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",

@@ -69,6 +69,27 @@ function TaskRow({ task, showMachine, onMarkSent }) {
                       round {index + 1} &middot; {when(entry.collected_at)}
                     </div>
                     <pre>{entry.text}</pre>
+
+                    {(entry.checks || []).filter((c) => c.text).length ? (
+                      <details>
+                        <summary className="muted">
+                          {entry.checks.filter((c) => c.text).length} automated check pane(s)
+                        </summary>
+                        {entry.checks
+                          .filter((c) => c.text)
+                          .map((check) => (
+                            <div key={check.testid} className="feedback">
+                              <div className="muted">
+                                {check.title}
+                                {/* "viewport" is the only path that can come up
+                                    short, so it is worth showing. */}
+                                {check.via === 'viewport' ? ' · read from the viewport, may be partial' : ''}
+                              </div>
+                              <pre>{check.text}</pre>
+                            </div>
+                          ))}
+                      </details>
+                    ) : null}
                   </div>
                 ))}
               </div>

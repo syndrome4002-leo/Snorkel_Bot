@@ -494,13 +494,15 @@ async function collectFeedback(requestId, uids, options) {
         // Kept apart as well as joined, so "Reviewer Feedback" and "Automated
         // feedback" stay distinguishable in the database.
         notes: res.notes || [],
+        checks: res.checks || [],
         page_url: res.page_url,
         collected_at: res.collected_at,
       });
       progress(
         requestId,
         'feedback_ok',
-        `${uid} (${res.feedback.length} chars, ${(res.notes || []).length} note(s))`
+        `${uid} (${res.feedback.length} chars, ${(res.notes || []).length} note(s), ` +
+          `${(res.checks || []).filter((c) => c.text).length}/${(res.checks || []).length} check pane(s))`
       );
     } catch (err) {
       log(`feedback for ${uid} failed:`, err.message);

@@ -224,6 +224,153 @@
     return out;
   }
 
+
+  // ------------------------------------------------------- check panes ----
+
+  /*
+   * The four automated check panes.
+   *
+   * These are Monaco editors, which only render the lines currently scrolled
+   * into view — so reading their DOM gives whatever fits the viewport, cut off
+   * without saying so. Three ways of getting the text, best first:
+   *
+   *   monaco-model   the editor's own value, via the page-world bridge
+   *   react-props    the string React was handed, same bridge
+   *   viewport       scroll the pane and stitch the rendered lines together
+   *
+   * Which one produced each pane is recorded, because only the first two are
+   * guaranteed complete. A pane read by "viewport" that ends mid-sentence is
+   * then identifiable rather than quietly wrong.
+   */
+  const CHECK_PANES = [
+    { title: 'Difficulty Check', testid: 'field-difficulty_check_summary' },
+    { title: 'Agentic Judge Quality Report', testid: 'field-code-rubric_panel_judge' },
+    { title: 'Oracle Check', testid: 'field-oracle_check_summary' },
+    { title: 'Quality Check', testid: 'field-quality_check_summary' },
+  ];
+
+  const MONACO_REQUEST_ATTR = 'data-snorkelbot-monaco-request';
+  const MONACO_RESULT_ID = '__snorkelbot_monaco_result';
+
+  /** Asks the MAIN-world bridge for a pane's true value. */
+  function askBridge(testid, timeout = 2000) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (value) => {
+        if (done) return;
+        done = true;
+        window.removeEventListener('snorkelbot:monaco-ready', onReady);
+        clearTimeout(timer);
+        resolve(value);
+      };
+
+      const onReady = () => {
+        const node = document.getElementById(MONACO_RESULT_ID);
+        if (!node) return finish(null);
+        try {
+          const payload = JSON.parse(node.textContent || '{}');
+          finish(payload.testid === testid ? payload : null);
+        } catch {
+          finish(null);
+        }
+      };
+
+      const timer = setTimeout(() => finish(null), timeout);
+      window.addEventListener('snorkelbot:monaco-ready', onReady);
+
+      document.documentElement.setAttribute(MONACO_REQUEST_ATTR, testid);
+      window.dispatchEvent(new Event('snorkelbot:read-monaco'));
+    });
+  }
+
+  /**
+   * Last resort: scroll the pane and collect the rendered lines.
+   *
+   * Monaco positions each .view-line absolutely, so the lines are keyed by
+   * their `top` and merged across scroll steps — that is what puts them back in
+   * order rather than in the order they happened to be rendered.
+   */
+  async function stitchViewport(host) {
+    const lines = new Map();
+    const scroller =
+      host.querySelector('.monaco-scrollable-element') ||
+      host.querySelector('.overflow-guard') ||
+      host;
+
+    const collect = () => {
+      for (const line of host.querySelectorAll('.view-line')) {
+        const top = parseFloat(line.style.top || '0');
+        if (!Number.isNaN(top)) lines.set(top, line.textContent || '');
+      }
+    };
+
+    collect();
+    let lastTop = -1;
+    let guard = 0;
+    // 200 steps is far more than any real report and stops a pane that refuses
+    // to scroll from spinning here forever.
+    while (scroller.scrollTop !== lastTop && guard++ < 200) {
+      lastTop = scroller.scrollTop;
+      scroller.scrollTop = lastTop + scroller.clientHeight;
+      await SnorkelBot.sleep(60);
+      collect();
+      if (scroller.scrollTop === lastTop) break;
+    }
+
+    return [...lines.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([, value]) => value)
+      .join('\n');
+  }
+
+  /** Opens collapsed sections, but only if a pane is actually missing. */
+  async function ensurePanesPresent() {
+    const missing = CHECK_PANES.filter((p) => !document.querySelector(`[data-testid="${p.testid}"]`));
+    if (!missing.length) return 0;
+
+    let opened = 0;
+    for (const button of document.querySelectorAll('button[aria-controls][aria-expanded="false"]')) {
+      SnorkelBot.click(button);
+      opened++;
+      await SnorkelBot.sleep(120);
+    }
+    if (opened) await SnorkelBot.sleep(500);
+    return opened;
+  }
+
+  async function readCheckPanes() {
+    await ensurePanesPresent();
+
+    const out = [];
+    for (const pane of CHECK_PANES) {
+      const host = document.querySelector(`[data-testid="${pane.testid}"]`);
+      if (!host) continue; // the pane is not on this path at all
+
+      let text = null;
+      let via = 'unavailable';
+
+      const bridged = await askBridge(pane.testid);
+      if (bridged && bridged.text) {
+        text = bridged.text;
+        via = bridged.via;
+      } else if (host.querySelector('.view-line')) {
+        text = await stitchViewport(host);
+        via = 'viewport';
+      }
+
+      const cleaned = SnorkelBot.cleanBlock(text || '');
+      out.push({
+        title: pane.title,
+        testid: pane.testid,
+        // An empty pane is reported rather than dropped: "has not run yet" is
+        // itself worth knowing.
+        text: cleaned,
+        via: cleaned ? via : 'empty',
+      });
+    }
+    return out;
+  }
+
   SnorkelBot.on('COPY_FEEDBACK', async (msg) => {
     assertOnReviewPage();
 
@@ -236,10 +383,12 @@
 
     const opened = await expandNotes();
     const sections = noteSections();
+    const checks = await readCheckPanes();
 
-    if (!sections.length) {
+    if (!sections.length && !checks.some((c) => c.text)) {
       throw new Error(
-        'The Task Notes sidebar is here but holds no Reviewer Feedback or Automated feedback.'
+        'Nothing to read here: no Reviewer Feedback or Automated feedback in the sidebar, ' +
+          'and none of the four check panes have any content.'
       );
     }
 
@@ -251,6 +400,8 @@
       uid: findUid(),
       feedback: text,
       notes: sections,
+      // Kept apart from the reviewer's prose: these are automated output.
+      checks,
       expanded: opened,
       page_url: location.href,
       collected_at: new Date().toISOString(),

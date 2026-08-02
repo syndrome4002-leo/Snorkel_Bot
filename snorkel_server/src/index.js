@@ -418,6 +418,8 @@ async function handleRevisionReport(uids) {
       {
         text: item.feedback,
         notes: item.notes || [],
+        // Automated check output, kept separate from the reviewer's prose.
+        checks: item.checks || [],
         collected_at: item.collected_at || new Date().toISOString(),
       },
       { source_url: item.page_url || null }
