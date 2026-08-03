@@ -1147,27 +1147,46 @@ startStatusHeartbeat(async () => ({
  * The extension raises this by itself on its own timer; nothing asked for it,
  * so it is handled here rather than as a command reply.
  */
-hub.onRevisions = async (msg) => {
-  if (msg.error) {
-    return logEvent('⚠️', 'revision_check_failed', msg.error, { level: 'warn' });
-  }
-
-  const uids = msg.uids || [];
-  lastRevisionReport = { checked_at: msg.checked_at, next_check_at: msg.next_check_at };
-  lastReviseCount = (msg.uids || []).length;
+/**
+ * Takes in one reading of the revise list, however it was obtained.
+ *
+ * There are three ways a reading arrives — the extension's own alarm, a request
+ * from this server, and the dashboard's button — and every one of them has to
+ * leave the same two facts behind. They used to be recorded in only the first,
+ * so a reading this server asked for collected feedback perfectly well and still
+ * left auto-start believing the count was unknown.
+ */
+async function applyRevisionReport({ uids = [], checked_at, next_check_at }) {
+  lastRevisionReport = {
+    checked_at: checked_at || new Date().toISOString(),
+    // The extension reports its own alarm time; a requested check does not
+    // change that schedule, so an absent value keeps the one already known.
+    next_check_at: next_check_at || lastRevisionReport?.next_check_at || null,
+  };
+  lastReviseCount = uids.length;
   updateTicker();
   logEvent('🔍', 'revision_check', `${uids.length} task(s) awaiting revision`);
 
+  let outcome = { considered: uids.length, collected: 0 };
   try {
-    await handleRevisionReport(uids);
+    outcome = await handleRevisionReport(uids);
   } catch (err) {
     logEvent('❌', 'revision_failed', err.message, { level: 'error' });
   }
 
-  // Auto-start runs on its own interval now, so this only records the count it
-  // will use.
-  lastReviseCount = uids.length;
   updateTicker();
+  return outcome;
+}
+
+hub.onRevisions = async (msg) => {
+  if (msg.error) {
+    return logEvent('⚠️', 'revision_check_failed', msg.error, { level: 'warn' });
+  }
+  await applyRevisionReport({
+    uids: msg.uids || [],
+    checked_at: msg.checked_at,
+    next_check_at: msg.next_check_at,
+  });
 };
 
 /** Once a minute, in place. unref so it never holds the process open. */
@@ -1191,6 +1210,45 @@ const DEFAULT_CHECK_EVERY = 5;
 
 let autoTryTimer = null;
 
+/**
+ * Asks the extension to read the revise list now.
+ *
+ * Auto-start compares the number of tasks awaiting revision against the limit,
+ * and that number only ever arrives from the extension's own sweep. Until the
+ * first one lands the server has nothing to compare and starts nothing — so on a
+ * restart, or with a long check interval, it would sit idle for the whole of
+ * that interval with no sign of why.
+ *
+ * Asking rather than assuming keeps the count the site's own, which is the point
+ * of taking it from a page reload in the first place.
+ */
+let askingForCount = false;
+
+async function requestReviseCount(why) {
+  if (askingForCount) return;
+  if (!hub.isConnected('snorkel')) return;
+  if (currentRun() || submitInFlight) return; // the tab is busy; it would refuse anyway
+
+  askingForCount = true;
+  try {
+    logEvent('🔄', 'revise_check', `asking the extension to read the revise list (${why})`);
+    const report_ = await hub.command('snorkel', { type: 'check_revisions' });
+    await applyRevisionReport({
+      uids: (report_.revisions || []).map((r) => r.uid),
+      checked_at: report_.checked_at,
+      next_check_at: report_.next_check_at,
+    });
+
+    // The count is the only thing auto-start was missing, so act on it now
+    // rather than idling until the next tick.
+    if (lastReviseCount !== null) await maybeAutoStart(lastReviseCount);
+  } catch (err) {
+    logEvent('⚠️', 'revise_check', `could not read the revise list: ${err.message}`, { level: 'warn' });
+  } finally {
+    askingForCount = false;
+  }
+}
+
 /** Re-arms the auto-start timer whenever its interval changes. */
 function scheduleAutoTry() {
   const every = minutes(settings.try_new_task_every_min, DEFAULT_TRY_EVERY);
@@ -1204,6 +1262,9 @@ function scheduleAutoTry() {
       // asking for a fresh one: the two run on their own intervals, and forcing
       // a page reload here would fight with the revise check.
       if (lastReviseCount !== null) await maybeAutoStart(lastReviseCount);
+      // No count yet means auto-start has nothing to decide on. Rather than
+      // skip and wait for the extension's own alarm, ask for one now.
+      else await requestReviseCount('auto-start has no count yet');
     } catch (err) {
       logEvent('❌', 'auto_failed', err.message, { level: 'error' });
     }
@@ -1682,6 +1743,21 @@ watchSettings((value) => {
   updateTicker();
 });
 
+/*
+ * An extension arriving is the other moment worth asking.
+ *
+ * A server restart, or the browser reconnecting, leaves the count unknown until
+ * the extension's own alarm next fires — which with a long check interval could
+ * be half an hour of nothing happening for no visible reason.
+ */
+hub.onEvent((event) => {
+  if (event.type !== 'connected' || event.role !== 'snorkel') return;
+  if (lastReviseCount !== null) return;
+  // A moment for the extension to finish settling before it is asked to drive
+  // the page.
+  setTimeout(() => requestReviseCount('the extension just connected'), 4000).unref?.();
+});
+
 scheduleAutoTry();
 scheduleSubmitSweep();
 
@@ -1709,7 +1785,11 @@ watchCommands(async (command, report) => {
 
   if (command.type === 'check_revisions') {
     const report_ = await hub.command('snorkel', { type: 'check_revisions' });
-    const outcome = await handleRevisionReport(report_.revisions?.map((r) => r.uid) || []);
+    const outcome = await applyRevisionReport({
+      uids: (report_.revisions || []).map((r) => r.uid),
+      checked_at: report_.checked_at,
+      next_check_at: report_.next_check_at,
+    });
     return { step: 'done', ...outcome };
   }
 

@@ -64,6 +64,9 @@ export class ExtensionHub {
           }
           this.#register(role, ws, msg);
           console.log(`[hub] hello from ${msg.client} v${msg.version} as "${role}"`);
+          // Announced so the server can act on an extension arriving, rather
+          // than only ever waiting to be spoken to.
+          this.#emit({ type: 'connected', role, client: msg.client, version: msg.version });
           return;
         }
 
