@@ -105,6 +105,13 @@ export const config = {
     collection: process.env.FIREBASE_COLLECTION || 'Tasks',
 
     /**
+     * What the platform's checks keep rejecting, and what fixed it. One document
+     * per distinct failure, shared by every machine — the point is that a task
+     * benefits from failures it never had itself.
+     */
+    lessonsCollection: process.env.FIREBASE_LESSONS_COLLECTION || 'CheckLessons',
+
+    /**
      * Realtime Database URL — the channel the dashboard talks to this server
      * through. Separate product from Firestore and created separately; the
      * console shows the URL once the database exists. Empty turns the channel

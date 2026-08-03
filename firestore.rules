@@ -24,6 +24,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // What the platform's checks keep rejecting, and what fixed it. Written by
+    // the server and the worker through the Admin SDK; the dashboard only reads.
+    match /CheckLessons/{signature} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -436,6 +436,18 @@ async function runSentinelFlow(requestId, options) {
   await waitForTabComplete(reviewTab.id).catch(() => {}); // SPA routes stay 'complete'
   await askTab(tab.id, { type: 'WAIT_READY', timeout: 90000 });
 
+  return captureCurrentTask(requestId, options, tab, projectKey, start);
+}
+
+/**
+ * Scrapes and downloads whatever task the tab is already showing.
+ *
+ * Split out of the flow above so it can also be used when the browser turns out
+ * to be on a task nobody asked it to open — the work of adopting that task is
+ * identical, and the only difference is that there was no Start click to get
+ * there.
+ */
+async function captureCurrentTask(requestId, options, tab, projectKey, start = {}) {
   // 4a — scrape
   progress(requestId, 'scrape');
   const scraped = await askTab(tab.id, { type: 'SCRAPE' });
@@ -595,7 +607,31 @@ async function submitCheck(requestId, options) {
     await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey, timeout: 90000 });
   }
 
-  await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
+  /*
+   * The site can simply decline to open the task.
+   *
+   * With enough submissions already waiting to be revised, Start does nothing
+   * and the browser stays on /home — the platform will not hand out more work
+   * until some of the backlog is cleared. That is a queue state, not a fault,
+   * and it needs its own code so the server can wait for the backlog to drop
+   * instead of retrying every few minutes against a door that is shut.
+   */
+  try {
+    await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
+  } catch (err) {
+    const stillHome = await getTab(tab.id).then((t) => t && /\/home/i.test(t.url || ''));
+    if (!stillHome) throw err;
+
+    const failure = new Error(
+      options.is_new_task
+        ? `Clicked Start for ${uid} but the site stayed on the home page — it is not handing ` +
+          `out the task, usually because too many submissions are waiting to be revised.`
+        : `Clicked Revise for ${uid} but the site stayed on the home page — the card may have ` +
+          `gone from the list.`
+    );
+    failure.code = 'START_UNAVAILABLE';
+    throw failure;
+  }
   await askTab(tab.id, { type: 'WAIT_READY', timeout: 120000 });
   await sleep(options.paceBeforeCopyMs ?? cfg.paceBeforeCopyMs);
 
@@ -608,13 +644,34 @@ async function submitCheck(requestId, options) {
    * task's zip onto somebody else's task is not something you could undo.
    */
   const page = await askTab(tab.id, { type: 'SUBMIT_PAGE_UID' }).catch(() => ({ uid: null }));
+
+  /*
+   * A different task on the page means the one we came for is gone.
+   *
+   * Snorkel hands each account one assignment at a time, so Start opens
+   * whatever it is holding now. If that is not the task we were sent to upload,
+   * somebody else has taken ours and the platform has moved us on to another.
+   *
+   * Uploading here would put our zip onto someone else's task, so that does not
+   * happen. What does happen is that the task now open is adopted: it is
+   * scraped and downloaded exactly as a freshly started one would be, because
+   * the browser is already sitting on it and abandoning it would only mean
+   * starting it again a minute later.
+   */
   if (page.uid && page.uid !== uid) {
-    const err = new Error(
-      `Expected task ${uid} but the page is showing ${page.uid}. Nothing was uploaded.`
-    );
-    err.code = 'WRONG_TASK';
-    throw err;
+    progress(requestId, 'wrong_task', `expected ${uid}, found ${page.uid} — taking the new one instead`);
+    log(`task ${uid} is gone; the page is showing ${page.uid} — adopting it`);
+
+    const taken = await captureCurrentTask(requestId, options, tab, projectKey);
+    return {
+      uid,
+      wrong_task: true,
+      page_uid: page.uid,
+      // The caller saves and uploads this the same way it would a normal start.
+      taken,
+    };
   }
+
   if (!page.uid) log(`could not read a UID from ${page.page_url || 'the page'} — continuing`);
 
   /*

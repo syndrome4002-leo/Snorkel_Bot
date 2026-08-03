@@ -197,6 +197,35 @@ overrides `MAX_CONCURRENT` live; a task already running is never interrupted.
 Each concurrent task is a full Claude session building a repo and running its
 tests, so more is not automatically faster.
 
+## Learning from failed checks
+
+Every failed platform check is filed under a **signature** — the log with build
+ids, timestamps, durations and paths normalised away, then hashed. That is what
+makes the same complaint on a different task the same entry rather than a new
+one, so the collection is an index instead of a pile.
+
+```
+task A fails  ─┐
+task B fails  ─┴─► CheckLessons/<signature>   occurrences: 2
+                     ↓ worker fixes it, writes what fixed it
+                   lesson: "..."   confirmed: false
+                     ↓ the platform then passes the task
+                   confirmed: true
+                     ↓
+                   goes into every later build's prompt
+```
+
+A lesson is **written early and trusted late**. The worker records what it thinks
+fixed a failure right after fixing it, but nothing is shown to another task until
+the platform actually passes the upload. A guess about a failure nobody has
+beaten is how a knowledge base starts teaching its own mistakes.
+
+Only confirmed lessons reach a prompt, at most fifteen, most frequent first —
+frequency being the closest thing to importance the data has.
+
+Reading them can never fail a build: if the collection is unreachable the run
+carries on without them. They are an advantage, not a dependency.
+
 ## Prompts
 
 The wording lives in `prompts/*.txt`, not in code. Edits take effect on the next

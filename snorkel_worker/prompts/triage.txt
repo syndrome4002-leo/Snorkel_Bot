@@ -1,0 +1,10 @@
+Below is task infos from the snorkel platform:
+===================================================
+
+{{initial_infos}}
+
+==================================================================================================
+
+Here are the downloaded sentinel task files here in this task directory, please inspect all files and you need to make corrections. Before doing anything, let me know first if this task fixable or other options (invalid, valid-as-is).
+
+Answer with one word on its own first line: fixable, invalid, or valid-as-is. Then a short paragraph saying why, in a human tone, with no markdown and no bullet points.

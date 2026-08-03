@@ -121,43 +121,75 @@ function runTurn(prompt, { cwd, sessionId, resume, addDirs = [], timeoutMs, onLo
 }
 
 /**
- * Runs `prompts` in order against one folder, as a single conversation.
+ * A conversation you can add to a turn at a time.
  *
- * Returns every turn, because the *last* one is the answer worth storing but the
- * earlier ones are what you read when the answer looks wrong.
+ * The build has to look at what came back before deciding what to ask next — a
+ * task judged invalid gets no further prompts at all — so the turns cannot be
+ * queued up in advance.
+ *
+ * `resume` continues an earlier session by id. Claude Code keeps sessions on
+ * disk, so a task coming back hours later with a failed check can be handed the
+ * failure inside the conversation that produced it, still holding the documents,
+ * the task and the answers it wrote. Starting fresh would mean paying to read all
+ * of that again and hoping for the same conclusions.
  */
-export async function runSession(prompts, { cwd, addDirs = [], timeoutMs, onLog, label = '' } = {}) {
-  const sessionId = randomUUID();
+export function openSession({ cwd, addDirs = [], timeoutMs, onLog, label = '', resume = null } = {}) {
+  const sessionId = resume || randomUUID();
   const started = Date.now();
   const turns = [];
+  let resumed = Boolean(resume);
 
-  if (onLog) onLog(`session ${sessionId}${label ? ` (${label})` : ''}`);
-
-  for (const [index, prompt] of prompts.entries()) {
-    // The budget is for the whole session, so each turn gets what is left.
-    const remaining = timeoutMs ? timeoutMs - (Date.now() - started) : 0;
-    if (timeoutMs && remaining <= 0) {
-      throw new Error(`Ran out of time before turn ${index + 1} of ${prompts.length}.`);
-    }
-
-    const turn = await runTurn(prompt, {
-      cwd,
-      sessionId,
-      resume: index > 0,
-      addDirs,
-      timeoutMs: remaining,
-      onLog,
-    });
-    turns.push(turn);
-  }
+  if (onLog) onLog(`session ${sessionId}${resume ? ' (resumed)' : ''}${label ? ` (${label})` : ''}`);
 
   return {
-    sessionId,
+    id: sessionId,
     turns,
+
+    async send(prompt) {
+      // The budget is for the whole session, so each turn gets what is left.
+      const remaining = timeoutMs ? timeoutMs - (Date.now() - started) : 0;
+      if (timeoutMs && remaining <= 0) {
+        throw new Error(`Ran out of time before turn ${turns.length + 1}.`);
+      }
+
+      const turn = await runTurn(prompt, {
+        cwd,
+        sessionId,
+        resume: resumed,
+        addDirs,
+        timeoutMs: remaining,
+        onLog,
+      });
+      resumed = true;
+      turns.push(turn);
+      return turn;
+    },
+
+    get costUsd() {
+      return turns.reduce((sum, t) => sum + (t.cost || 0), 0);
+    },
+    get durationMs() {
+      return Date.now() - started;
+    },
+  };
+}
+
+/**
+ * Runs `prompts` in order against one folder, as a single conversation.
+ *
+ * The simple case, where every turn is known up front.
+ */
+export async function runSession(prompts, options = {}) {
+  const session = openSession(options);
+  for (const prompt of prompts) await session.send(prompt);
+
+  return {
+    sessionId: session.id,
+    turns: session.turns,
     /** What Claude said last — for a revision, this is the answer to store. */
-    finalText: turns.length ? turns[turns.length - 1].text : '',
-    costUsd: turns.reduce((sum, t) => sum + (t.cost || 0), 0),
-    durationMs: Date.now() - started,
+    finalText: session.turns.length ? session.turns[session.turns.length - 1].text : '',
+    costUsd: session.costUsd,
+    durationMs: session.durationMs,
   };
 }
 

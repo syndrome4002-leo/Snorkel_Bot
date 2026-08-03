@@ -13,6 +13,7 @@ import { appendFile, readFile, writeFile, rm } from 'node:fs/promises';
 import admin from 'firebase-admin';
 import { config, serverRoot } from './config.js';
 import { machineId } from './machine.js';
+import { recordFailures, confirmLessons } from './lessons.js';
 
 /**
  * Records that could not reach Firestore are appended here as one JSON object
@@ -48,6 +49,19 @@ export const TASK_STATUS_READY = 'ready to submit';
 
 /** One of the platform's own checks came back FAIL. Needs a person. */
 export const TASK_STATUS_STATIC_FAIL = 'static check fail';
+
+/** Both of the platform's checks passed. Waiting on a person to submit it. */
+export const TASK_STATUS_STATIC_PASS = 'static checks pass';
+
+/**
+ * The platform gave this assignment to somebody else while we still had it.
+ *
+ * A dead end rather than a failure: there is no page left to open and nothing
+ * to submit. It exists mainly so the task stops counting as unfinished — left
+ * at "ready to submit" it would block every future start, waiting to be handed
+ * in on a page that no longer belongs to us.
+ */
+export const TASK_STATUS_TAKEN = 'taken by other';
 
 let db = null;
 let initError = null;
@@ -416,20 +430,25 @@ export async function addFeedback(uid, entry, extra = {}) {
     updated_at: now,
     ...extra,
   };
-  // A submission the reviewer sent back that this bot never downloaded is still
-  // a task worth having — it just starts life needing revision.
+  /*
+   * Never creates a task.
+   *
+   * Feedback is only collected for submissions already in this database, so a
+   * missing document here means it was deleted between the sweep choosing it and
+   * this write. Creating one would quietly reintroduce exactly the behaviour
+   * that rule exists to prevent, so it is reported and skipped instead.
+   */
   if (!snapshot.exists) {
-    record.created_at = now;
-    record.file_uploaded = false;
-    record.initial_infos = existing?.initial_infos || '';
+    console.warn(`[firebase] ${uid} is no longer in ${config.firebase.collection} — feedback not stored`);
+    return { record: null, skipped: true, reason: 'the task is not in the database' };
   }
 
   await ref.set(record, { merge: true });
   console.log(
     `[firebase] ${config.firebase.collection}/${uid} -> task_status="${TASK_STATUS_NEEDS_REVISION}", ` +
-      `round ${next.length} appended${snapshot.exists ? '' : ' [new task]'}`
+      `round ${next.length} appended`
   );
-  return { record, created: !snapshot.exists, rounds: next.length };
+  return { record, skipped: false, rounds: next.length };
 }
 
 /**
@@ -448,28 +467,40 @@ export async function addFeedback(uid, entry, extra = {}) {
  * by returning to "sent" first.
  */
 export async function findFeedbackCandidates(uids) {
-  if (!db || !uids.length) return { wanted: [], reasons: {} };
+  if (!db || !uids.length) return { wanted: [], reasons: {}, unknown: [] };
 
   const wanted = [];
   const reasons = {};
+  const unknown = [];
 
   // Read one at a time by document id: an "in" query is capped at 30 values and
   // these lists are short.
   for (const uid of uids) {
     const snap = await db.collection(config.firebase.collection).doc(String(uid)).get();
 
+    /*
+     * A submission this database has never seen is left alone.
+     *
+     * It used to be collected and stored as a new task. The revise list is the
+     * whole account's, though, not just this bot's — anything worked by hand, or
+     * before the bot existed, shows up there too. Adopting those meant the Tasks
+     * collection filled with rows the bot had never built and could not do
+     * anything useful with, and every sweep spent minutes opening their pages.
+     *
+     * Only tasks this bot already knows about are followed now.
+     */
     if (!snap.exists) {
-      wanted.push(String(uid));
-      reasons[uid] = 'not seen before';
+      unknown.push(String(uid));
       continue;
     }
+
     if (snap.data().task_status === TASK_STATUS_SENT) {
       wanted.push(String(uid));
       reasons[uid] = 'sent, awaiting a reviewer';
     }
   }
 
-  return { wanted, reasons };
+  return { wanted, reasons, unknown };
 }
 
 /**
@@ -520,6 +551,27 @@ export async function findReadyToSubmit(machine) {
 }
 
 /**
+ * Retires a task the platform has reassigned.
+ *
+ * `is_new_task` is cleared as well as the status: it is the field the start
+ * guard reads, and a task nobody can open should not hold the account's slot.
+ */
+export async function markTaken(uid, replacedBy = null) {
+  if (!db) throw new Error(describe(initError));
+  const now = new Date().toISOString();
+  const patch = {
+    task_status: TASK_STATUS_TAKEN,
+    is_new_task: false,
+    taken_at: now,
+    taken_replaced_by: replacedBy,
+    updated_at: now,
+  };
+  await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
+  console.log(`[firebase] ${uid} -> task_status="${TASK_STATUS_TAKEN}"${replacedBy ? ` (now holding ${replacedBy})` : ''}`);
+  return patch;
+}
+
+/**
  * Records what the platform's checks said.
  *
  * A failure is a state a person has to look at, so it gets its own status. A
@@ -549,7 +601,29 @@ export async function saveStaticCheck(uid, result) {
     updated_at: now,
   };
 
-  if (!passed) patch.task_status = TASK_STATUS_STATIC_FAIL;
+  // A pass is the end of the road for the bot: the task has been built, checked
+  // and accepted by the platform's own gates, and only a person submits it.
+  patch.task_status = passed ? TASK_STATUS_STATIC_PASS : TASK_STATUS_STATIC_FAIL;
+
+  /*
+   * Every failure is filed against a signature so the same complaint on another
+   * task is recognised rather than rediscovered; every pass settles whichever
+   * failures this task was carrying.
+   *
+   * Deliberately not allowed to break the check itself. A knowledge base that
+   * can fail a working submission is worse than no knowledge base.
+   */
+  try {
+    if (passed) {
+      const carrying = (await getTask(uid))?.static_check_signatures || [];
+      await confirmLessons(uid, carrying);
+      patch.static_check_signatures = [];
+    } else {
+      patch.static_check_signatures = await recordFailures(uid, result);
+    }
+  } catch (err) {
+    console.warn('[lessons] could not be updated:', err.message);
+  }
 
   await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
   console.log(
@@ -571,10 +645,27 @@ export async function saveStaticCheck(uid, result) {
  * "Working.." counts: the task is still being built, it just moved from the
  * browser to Claude.
  */
+/**
+ * Every state a new task passes through before it has been handed in.
+ *
+ * `sent` is deliberately not here: once a submission is with a reviewer the slot
+ * is free and the next task can be started. Nor is `needs revision`, which a new
+ * task cannot be — the moment feedback arrives it stops being new.
+ */
+export const UNFINISHED_NEW_STATUSES = [
+  TASK_STATUS_STARTED,
+  'Working..',
+  TASK_STATUS_READY,
+  TASK_STATUS_STATIC_FAIL,
+  // Built and accepted by the platform's checks, but still not handed in — so it
+  // is still holding the account's assignment.
+  TASK_STATUS_STATIC_PASS,
+];
+
 export async function findNewTaskInProgress() {
   if (!db) return null;
 
-  for (const status of [TASK_STATUS_STARTED, 'Working..']) {
+  for (const status of UNFINISHED_NEW_STATUSES) {
     const snap = await db
       .collection(config.firebase.collection)
       .where('is_new_task', '==', true)

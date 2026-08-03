@@ -20,10 +20,30 @@ import path from 'node:path';
 import { config } from './config.js';
 import { unzipTo, zipFolder } from './archive.js';
 import { downloadFile, deleteFile, uploadFile } from './dropbox.js';
-import { runSession } from './claude.js';
-import { buildPrompt, documentPaths, extractPrompt, introPrompt, revisionPrompt } from './prompts.js';
+import { openSession } from './claude.js';
+import {
+  documentPaths,
+  extractPrompt,
+  fixPrompt,
+  introPrompt,
+  revisionPrompt,
+  lessonPrompt,
+  staticFixPrompt,
+  triagePrompt,
+} from './prompts.js';
 import { normaliseAnswers, parseJsonReply } from './answers.js';
-import { TASK_STATUS_BUILD, markDownloaded, markReady, patchTask, saveAnswers } from './firebase.js';
+import { lessonsBlock, recordLesson } from './lessons.js';
+import {
+  TASK_STATUS_BUILD,
+  TASK_STATUS_INVALID,
+  TASK_STATUS_STATIC_FAIL,
+  TASK_STATUS_VALID_AS_IS,
+  markDownloaded,
+  markReady,
+  markTriaged,
+  patchTask,
+  saveAnswers,
+} from './firebase.js';
 
 /** How often a long build says it is still alive. */
 const HEARTBEAT_MS = 5 * 60 * 1000;
@@ -90,6 +110,82 @@ async function zipNameFor(task, taskDir) {
     // fall through
   }
   return `${path.basename(taskDir)}.zip`;
+}
+
+/**
+ * Reads fixable / invalid / valid-as-is out of the triage reply.
+ *
+ * The prompt asks for the word on its own first line, and usually that is what
+ * comes back. The whole reply is searched as a fallback, because a run should
+ * not be thrown away over a sentence of preamble — but a reply with no verdict
+ * in it at all is a real failure and is treated as one.
+ */
+export function readVerdict(text) {
+  const body = String(text || '').trim();
+  const first = body.split('\n')[0].trim().toLowerCase();
+
+  const match = (haystack) => {
+    // valid-as-is before fixable: "valid as is" contains neither, but a reply
+    // saying "not fixable, it is invalid" must not be read as fixable.
+    if (/\bvalid[\s-]*as[\s-]*is\b/.test(haystack)) return 'valid-as-is';
+    if (/\binvalid\b|\bnot fixable\b/.test(haystack)) return 'invalid';
+    if (/\bfixable\b/.test(haystack)) return 'fixable';
+    return null;
+  };
+
+  const verdict = match(first) || match(body.toLowerCase());
+  if (!verdict) {
+    throw new Error(
+      `Could not read a verdict from the triage answer. It started: ${body.slice(0, 200)}`
+    );
+  }
+
+  // Everything after the verdict line is the reason, which is worth keeping for
+  // a task that stops here — it is the only explanation anyone will get.
+  const note = body.split('\n').slice(1).join('\n').trim();
+  return { verdict, note: note.slice(0, 4000) };
+}
+
+/** The build logs from whichever platform checks failed. */
+export function failedCheckLogs(task) {
+  const results = task.static_check_result?.results || [];
+  const failed = results.filter((r) => r.verdict !== 'pass');
+  if (!failed.length) return '';
+
+  return failed
+    .map((r) => `--- ${r.label}: ${String(r.verdict || 'unknown').toUpperCase()} ---\n${r.summary || ''}\n\n${r.logs || '(no build logs were captured)'}`)
+    .join('\n\n');
+}
+
+/**
+ * The zip to upload.
+ *
+ * Claude is asked to build one in the task folder, named after the original
+ * directory, because the platform expects that name. If it did so, that is the
+ * file to send — repacking the folder ourselves would produce a different
+ * archive from the one it just checked its own work against.
+ *
+ * Falling back to packing the folder keeps a run that got everything else right
+ * from failing over a missing file.
+ */
+async function zipToUpload(task, taskDir) {
+  const zips = [];
+  for (const entry of await readdir(taskDir, { withFileTypes: true })) {
+    if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.zip') continue;
+    const full = path.join(taskDir, entry.name);
+    zips.push({ name: entry.name, path: full, mtime: (await stat(full)).mtimeMs });
+  }
+
+  if (zips.length) {
+    // Newest wins: an earlier round's zip may still be sitting there.
+    zips.sort((a, b) => b.mtime - a.mtime);
+    return { path: zips[0].path, name: zips[0].name, madeByClaude: true };
+  }
+
+  const name = await zipNameFor(task, taskDir);
+  const out = path.join(config.workDir, name);
+  await zipFolder(taskDir, out);
+  return { path: out, name, madeByClaude: false };
 }
 
 /**
@@ -170,39 +266,17 @@ export async function workOnTask(task, { log, onSession } = {}) {
     if (!taskDir) {
       const looked = [config.workDir, ...config.extraTaskDirs].join(', ');
       throw new Error(
-        `No folder for ${uid}. A task needing revision is worked in place, so its folder ` +
-          `has to be on disk already — looked for "${uid}_submission" in: ${looked}. ` +
-          `Move the folder there, or add its location to EXTRA_TASK_DIRS.`
+        `No folder for ${uid}. A task at "${from}" is worked in place and is never ` +
+          `downloaded, so its folder has to be on disk already — looked for ` +
+          `"${uid}_submission" in: ${looked}. Move the folder there, or add its ` +
+          `location to EXTRA_TASK_DIRS.`
       );
     }
     say('📂', 'found', `working in ${taskDir}`);
   }
 
   // ------------------------------------------------------------- Claude ---
-  /*
-   * Three turns: the documents, the questions, then the same answers as JSON.
-   *
-   * The build is still "the two prompts ran". The third asks for no new thinking
-   * and looks at nothing new; it only restates what turn two already said in a
-   * shape that can be stored per field. Keeping it separate is what lets turn two
-   * stay word for word the question sheet, tone instructions and all.
-   */
-  const prompts = [
-    await introPrompt(docs),
-    from === TASK_STATUS_BUILD
-      ? await buildPrompt({ uid, taskDir, initialInfos: task.initial_infos })
-      : await revisionPrompt({ uid, taskDir, feedbacks: task.feedbacks }),
-    await extractPrompt(),
-  ];
-
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
-  say(
-    '🧠',
-    'claude_start',
-    from === TASK_STATUS_BUILD
-      ? `building ${uid} with ${docs.length} document(s) attached`
-      : `revising ${uid} from ${rounds} feedback round(s)`
-  );
 
   /*
    * A build is quiet for a long time — Claude reads, edits and runs tests
@@ -216,23 +290,105 @@ export async function workOnTask(task, { log, onSession } = {}) {
       say(
         '⏳',
         'claude_working',
-        `still building ${uid} — ${Math.round((Date.now() - beatStarted) / 60000)} min so far`
+        `still working ${uid} — ${Math.round((Date.now() - beatStarted) / 60000)} min so far`
       ),
     HEARTBEAT_MS
   );
   heartbeat.unref?.();
 
-  let session;
+  /*
+   * A failed platform check is answered inside the conversation that produced
+   * the task, not a new one. That session still holds the documents, the files
+   * it read and the answers it wrote, so "fix this and rewrite the answers"
+   * means something. Starting fresh would pay to read all of it again and hope
+   * for the same conclusions.
+   */
+  const session = openSession({
+    cwd: taskDir,
+    // The documents sit outside the task folder, so Claude has to be allowed to
+    // read there explicitly.
+    addDirs: config.docsDir ? [config.docsDir] : [],
+    timeoutMs,
+    label: uid,
+    resume: from === TASK_STATUS_STATIC_FAIL ? task.worker_session_id || null : null,
+    onLog: (line) => onSession && onSession(line),
+  });
+
+  let stage = 'revision';
+  let triage = null;
+
   try {
-    session = await runSession(prompts, {
-      cwd: taskDir,
-      // The documents sit outside the task folder, so Claude has to be allowed
-      // to read there explicitly.
-      addDirs: config.docsDir ? [config.docsDir] : [],
-      timeoutMs,
-      label: uid,
-      onLog: (line) => onSession && onSession(line),
-    });
+    if (from === TASK_STATUS_STATIC_FAIL) {
+      // ---- the platform rejected the last upload -------------------------
+      stage = 'build';
+      const logs = failedCheckLogs(task);
+      if (!logs) {
+        throw new Error(`${uid} is at "${from}" but has no static_check_result logs to work from.`);
+      }
+
+      const attempt = Number(task.static_fix_attempts || 0) + 1;
+      say('🔁', 'static_fix', `${uid} failed the platform checks — fixing (attempt ${attempt})`);
+
+      // Only intro if this is not a resumed conversation; a resumed one has it.
+      if (!task.worker_session_id) await session.send(await introPrompt(docs));
+      await session.send(await staticFixPrompt({ uid, taskDir, logs, lessons: await lessonsBlock() }));
+      await patchTask(uid, { static_fix_attempts: attempt });
+
+      /*
+       * Write down what fixed it, against the signatures this failure was filed
+       * under. Recorded now but not trusted yet: snorkel_server marks it
+       * confirmed only if the platform actually passes the next upload, so a
+       * lesson that turns out to be wrong never reaches another task.
+       */
+      const lesson = await session.send(await lessonPrompt());
+      const written = await recordLesson(task.static_check_signatures, lesson.text);
+      if (written) say('📚', 'lesson', `noted what fixed this, against ${written} known failure(s)`);
+    } else if (from === TASK_STATUS_BUILD) {
+      // ---- a first build -------------------------------------------------
+      stage = 'build';
+      say('🧠', 'claude_start', `building ${uid} with ${docs.length} document(s) attached`);
+
+      await session.send(await introPrompt(docs));
+      const verdict = await session.send(
+        await triagePrompt({ uid, taskDir, initialInfos: task.initial_infos })
+      );
+
+      triage = readVerdict(verdict.text);
+      say('🔎', 'triage', `${uid} is ${triage.verdict}`);
+
+      /*
+       * Anything but fixable ends the run here. There are no corrections to
+       * make and no form to fill in, so asking for them would only produce
+       * answers about work that was never done.
+       */
+      if (triage.verdict !== 'fixable') {
+        clearInterval(heartbeat);
+        const status = triage.verdict === 'invalid' ? TASK_STATUS_INVALID : TASK_STATUS_VALID_AS_IS;
+        await markTriaged(uid, status, triage.note);
+        say('🛑', 'triage_stop', `${uid} -> "${status}", nothing to build`);
+        return {
+          uid,
+          from,
+          taskDir,
+          triage: triage.verdict,
+          status,
+          sessionId: session.id,
+          costUsd: session.costUsd,
+          durationMs: session.durationMs,
+        };
+      }
+
+      await session.send(await fixPrompt({ uid, taskDir, lessons: await lessonsBlock() }));
+    } else {
+      // ---- a reviewer sent it back ---------------------------------------
+      say('🧠', 'claude_start', `revising ${uid} from ${rounds} feedback round(s)`);
+      await session.send(await introPrompt(docs));
+      await session.send(await revisionPrompt({ uid, taskDir, feedbacks: task.feedbacks }));
+    }
+
+    // The answers as prose are what a person reads; this turn is the same thing
+    // per field, so it can be stored and pasted into the form.
+    await session.send(await extractPrompt(stage));
   } finally {
     clearInterval(heartbeat);
   }
@@ -246,13 +402,18 @@ export async function workOnTask(task, { log, onSession } = {}) {
 
   // ------------------------------------------------------- the answers ----
   /*
-   * Turn two is the answer as a person would write it; turn three is that same
-   * answer per field. Both are kept: the prose is what gets pasted into a box
-   * the schema does not cover, and it is the only way to tell a bad answer from
-   * a bad extraction of a good one.
+   * The turn before last is the answer as a person would write it; the last is
+   * that same answer per field. Both are kept: the prose goes into any box the
+   * schema does not cover, and it is the only way to tell a bad answer from a
+   * bad extraction of a good one.
    */
-  const prose = session.turns.length > 1 ? session.turns[session.turns.length - 2].text : '';
-  const { answers, ignored, problems } = await normaliseAnswers(parseJsonReply(session.finalText));
+  const turns = session.turns;
+  const prose = turns.length > 1 ? turns[turns.length - 2].text : '';
+  const { answers, ignored, problems } = await normaliseAnswers(
+    parseJsonReply(turns[turns.length - 1].text)
+  );
+
+  if (triage && !answers.validity_required) answers.validity_required = triage.verdict;
 
   if (ignored.length) {
     say('⚠️', 'answers_extra', `ignored key(s) not in the schema: ${ignored.join(', ')}`);
@@ -261,7 +422,7 @@ export async function workOnTask(task, { log, onSession } = {}) {
 
   const saved = await saveAnswers(uid, answers, {
     from,
-    session_id: session.sessionId,
+    session_id: session.id,
     // Lines an answer round up with the feedback round it responds to.
     feedback_rounds: rounds,
     text: prose,
@@ -275,22 +436,21 @@ export async function workOnTask(task, { log, onSession } = {}) {
   );
 
   // -------------------------------------------------------- back up -------
-  const zipName = await zipNameFor(task, taskDir);
-  const outZip = path.join(config.workDir, zipName);
-  await zipFolder(taskDir, outZip);
+  const { path: outZip, name: zipName, madeByClaude } = await zipToUpload(task, taskDir);
+  say('📦', 'packed', `${zipName}${madeByClaude ? ' (built by Claude)' : ' (packed from the folder)'}`);
 
   say('⬆️', 'upload', `uploading ${zipName}`);
   const uploaded = await uploadFile(outZip, { fileName: zipName });
 
-  // Dropbox has it; a second copy in the downloads folder is only clutter. The
-  // unpacked folder stays — the next revision round works in it.
-  await rm(outZip, { force: true });
+  // Only remove what we made ourselves. A zip Claude built belongs to the task
+  // folder and is what the next round starts from.
+  if (!madeByClaude) await rm(outZip, { force: true });
 
   await markReady(uid, {
     file_name: zipName,
     dropbox_path: uploaded.dropbox_path,
     local_path: taskDir,
-    worker_session_id: session.sessionId,
+    worker_session_id: session.id,
     worker_cost_usd: session.costUsd || null,
   });
 
@@ -302,7 +462,7 @@ export async function workOnTask(task, { log, onSession } = {}) {
     taskDir,
     answerFields: saved.fields,
     answersRound: saved.round,
-    sessionId: session.sessionId,
+    sessionId: session.id,
     dropboxPath: uploaded.dropbox_path,
     costUsd: session.costUsd,
     durationMs: session.durationMs,

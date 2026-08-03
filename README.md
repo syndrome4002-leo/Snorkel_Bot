@@ -117,6 +117,20 @@ Three tasks at once by default, settable from the dashboard.
 
 The bot never clicks Submit. Nothing reaches a reviewer without you.
 
+**If Snorkel will not open the task at all** — Start does nothing and the browser
+stays on `/home` — the platform is refusing to hand out work because too many
+submissions are already waiting to be revised. The sweep stops asking and waits
+for the revise count to drop, rather than spending a page load every three
+minutes on a door that is shut. It resumes the moment the count falls, or after
+an hour regardless, in case that count never arrives.
+
+**If the page shows a different task**, the assignment was reassigned while we
+held it. Nothing is uploaded — that zip belongs to the old task. Instead the
+lost one is retired to `"taken by other"` so it stops holding the account's slot,
+and the task now on screen is adopted: scraped, downloaded, saved and uploaded,
+exactly as a freshly started one. The browser is already sitting on it, so
+walking away would only mean starting it again a minute later.
+
 While an upload is running the extension refuses everything else, so the revise
 sweep and auto-start cannot navigate the tab out from under it.
 
@@ -153,8 +167,20 @@ upload, so the fields always exist and can be queried.
 | `Working..` | worker | Claude has the folder open |
 | `ready to submit` | worker | Claude is done; checks run, then a human submits it |
 | `static check fail` | server | the platform's own checks said no; needs a person |
+| `taken by other` | server | the platform reassigned it; a dead end, blocks nothing |
 | `sent` | you | submitted, waiting on a reviewer |
 | `needs revision` | server | the reviewer sent it back, with feedback attached |
+
+### The revise sweep
+
+The extension reloads the home page on a timer and reports every UID in the
+revise list. The server then opens only the ones that are **already in the
+database and marked `sent`**.
+
+The revise list belongs to the whole account, so submissions this bot never built
+appear there too. Those are counted and logged, never adopted — collecting them
+would fill `Tasks` with rows the bot cannot do anything with, and spend minutes
+per sweep opening their pages.
 
 The server never moves a task off `"in build"` — see the note under **One task at
 a time** below. Only the worker advances a task from there.

@@ -80,6 +80,17 @@ export const config = {
     taskTimeoutMinutes: num(process.env.TASK_TIMEOUT_MINUTES, 90),
 
     /**
+     * How many times to answer a failed platform check before leaving the task
+     * alone.
+     *
+     * The loop is meant to run until both checks pass, but "until it passes" and
+     * "forever" are the same thing when the fix is not working — and every round
+     * is a full Claude session plus two platform builds. After this many the task
+     * stays at "static check fail" for a person to look at.
+     */
+    maxStaticFixAttempts: num(process.env.MAX_STATIC_FIX_ATTEMPTS, 5),
+
+    /**
      * Take work belonging to any machine rather than only this one. Off by
      * default: the machine that built a task is the one whose download folder
      * holds its files.
@@ -159,6 +170,8 @@ export const config = {
     ),
     projectId: process.env.FIREBASE_PROJECT_ID || '',
     collection: process.env.FIREBASE_COLLECTION || 'Tasks',
+    /** Shared with snorkel_server: what the platform's checks keep rejecting. */
+    lessonsCollection: process.env.FIREBASE_LESSONS_COLLECTION || 'CheckLessons',
     databaseUrl: process.env.FIREBASE_DATABASE_URL || '',
   },
 };

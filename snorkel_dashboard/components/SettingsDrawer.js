@@ -50,6 +50,14 @@ const FIELDS = [
     min: 1,
     placeholder: '3',
   },
+  {
+    group: 'Worker',
+    key: 'static_fix_limit',
+    label: 'Static check fix attempts',
+    help: 'How many times to answer a failed platform check before leaving the task alone. Each attempt is a full Claude session plus two platform builds. Defaults to 5.',
+    min: 1,
+    placeholder: '5',
+  },
 ];
 
 /** Field order is fixed, so the groups render in the order they first appear. */

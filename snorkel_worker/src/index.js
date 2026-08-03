@@ -53,6 +53,12 @@ let pollTimer = null;
 const log = (emoji, event, message, extra = {}) => pushLog({ emoji, event, message, ...extra });
 
 /** The dashboard's number wins; the env var is the fallback for a headless box. */
+function staticFixLimit() {
+  const fromDashboard = Number(settings.static_fix_limit);
+  if (Number.isFinite(fromDashboard) && fromDashboard > 0) return Math.floor(fromDashboard);
+  return Math.max(1, config.worker.maxStaticFixAttempts);
+}
+
 function maxConcurrent() {
   const fromDashboard = Number(settings.worker_max_concurrent);
   if (Number.isFinite(fromDashboard) && fromDashboard > 0) return Math.floor(fromDashboard);
@@ -64,6 +70,7 @@ function snapshot() {
     role: 'worker',
     running: running.size,
     max_concurrent: maxConcurrent(),
+    static_fix_limit: staticFixLimit(),
     tasks: [...running.values()].map((t) => ({ uid: t.uid, from: t.from, started_at: t.startedAt })),
     poll_seconds: config.worker.pollSeconds,
     working_for: machines,
@@ -197,7 +204,7 @@ async function poll() {
 
     // Ask for more than there is room for: some will already be claimed by the
     // time we get to them, and a short list would leave slots idle.
-    const candidates = await findWorkableTasks(machines, free + 5);
+    const candidates = await findWorkableTasks(machines, free + 5, staticFixLimit());
     const available = candidates.filter((t) => !running.has(String(t.UID || t.id)));
     if (!available.length) return;
 

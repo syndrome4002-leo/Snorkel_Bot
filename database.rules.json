@@ -106,6 +106,7 @@
           "check_revise_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "submit_check_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "worker_max_concurrent": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
+          "static_fix_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "$other": { ".validate": true }
         },
 

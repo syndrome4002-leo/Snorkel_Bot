@@ -64,6 +64,7 @@ import {
   TASK_STATUS_STATIC_FAIL,
   TASK_STATUS_READY,
   saveStaticCheck,
+  markTaken,
   findReadyToSubmit,
   markSent,
   addFeedback,
@@ -306,11 +307,12 @@ async function assertNoTaskInBuild(options = {}) {
     if (!elsewhere) return;
 
     const error = new Error(
-      `A new task is already being built on ${elsewhere.machine_id || 'another machine'} ` +
-        `(${elsewhere.UID}, "${elsewhere.task_status}"). Finish it first, ` +
+      `A new task is not finished yet: ${elsewhere.UID} is at "${elsewhere.task_status}" on ` +
+        `${elsewhere.machine_id || 'another machine'}. Submit it first, ` +
         `or pass {"force": true} to start another anyway.`
     );
     error.code = 'TASK_IN_BUILD';
+    error.uid = elsewhere.UID;
     throw error;
   }
 
@@ -568,6 +570,15 @@ function updateTicker() {
     });
     return;
   }
+  if (submitBlocked) {
+    setTicker('tries', {
+      emoji: '⛔',
+      message:
+        `Snorkel will not open ${submitBlocked.uid} — waiting for the revise list to fall below ` +
+        `${submitBlocked.reviseCount === Infinity ? 'its current size' : submitBlocked.reviseCount}`,
+    });
+    return;
+  }
 
   const countText = lastReviseCount === null ? 'count unknown yet' : `${lastReviseCount} awaiting, limit ${limit}`;
   const when = humanIn(nextAutoTryAt);
@@ -620,6 +631,27 @@ async function maybeAutoStart(reviseCount) {
     return;
   }
 
+  /*
+   * And no new task anywhere may be unfinished.
+   *
+   * Broader than the check above in both directions: every machine, and every
+   * state short of "sent". A new task sitting at "ready to submit" or "static
+   * check fail" is still holding the account's assignment — it has been built
+   * but not handed in — and starting another would leave two unfinished
+   * submissions with nobody having decided to do that.
+   */
+  const unfinished = await findNewTaskInProgress().catch(() => null);
+  if (unfinished) {
+    logEvent(
+      '⏸️',
+      'auto_skip',
+      `${unfinished.UID} is a new task at "${unfinished.task_status}" ` +
+        `on ${unfinished.machine_id || 'another machine'} — not starting another`,
+      { uid: unfinished.UID }
+    );
+    return;
+  }
+
   logEvent('🤖', 'auto_start', `${reviseCount} awaiting revision, below the limit of ${limit} — starting one`);
 
   try {
@@ -662,11 +694,25 @@ async function handleRevisionReport(uids) {
   console.log(`[revisions] extension reported ${uids.length} awaiting revision`);
   if (!uids.length) return { considered: 0, collected: 0 };
 
-  const { wanted, reasons } = await findFeedbackCandidates(uids);
+  const { wanted, reasons, unknown } = await findFeedbackCandidates(uids);
+
+  /*
+   * Said out loud rather than passed over. The revise list belongs to the whole
+   * account, so submissions this bot never built are normal and expected there —
+   * but "12 awaiting revision, collecting 0" reads like a broken sweep unless
+   * you can see that 12 of them are simply not ours.
+   */
+  if (unknown.length) {
+    console.log(`[revisions] ignoring ${unknown.length} not in the database: ${unknown.join(', ')}`);
+    logEvent('🙈', 'feedback_skip', `${unknown.length} in the revise list are not this bot's tasks`);
+  }
 
   if (!wanted.length) {
-    console.log(`[revisions] ${uids.length} awaiting revision, all read recently`);
-    return { considered: uids.length, collected: 0 };
+    console.log(
+      `[revisions] ${uids.length} awaiting revision, nothing to collect ` +
+        `(${unknown.length} not ours, ${uids.length - unknown.length} already read)`
+    );
+    return { considered: uids.length, collected: 0, ignored: unknown.length };
   }
 
   console.log(
@@ -679,7 +725,7 @@ async function handleRevisionReport(uids) {
 
   let stored = 0;
   for (const item of result.collected || []) {
-    await addFeedback(
+    const saved = await addFeedback(
       item.uid,
       {
         text: item.feedback,
@@ -690,6 +736,12 @@ async function handleRevisionReport(uids) {
       },
       { source_url: item.page_url || null }
     );
+
+    if (saved.skipped) {
+      logEvent('⚠️', 'feedback_skipped', `${item.uid}: ${saved.reason}`, { level: 'warn', uid: item.uid });
+      continue;
+    }
+
     stored++;
     logEvent('📝', 'feedback_saved', `feedback stored for ${item.uid}`, { uid: item.uid });
   }
@@ -697,7 +749,12 @@ async function handleRevisionReport(uids) {
     logEvent('⚠️', 'feedback_failed', `${failure.uid}: ${failure.error}`, { level: 'warn', uid: failure.uid });
   }
 
-  return { considered: uids.length, collected: stored, failed: (result.failures || []).length };
+  return {
+    considered: uids.length,
+    collected: stored,
+    ignored: unknown.length,
+    failed: (result.failures || []).length,
+  };
 }
 
 // ----------------------------------------------------- the whole thing ----
@@ -1062,6 +1119,45 @@ const DEFAULT_SUBMIT_EVERY = 3;
 let submitTimer = null;
 
 /**
+ * Set when the platform refused to open a task because the revise queue is full.
+ *
+ * Retrying on the normal three-minute beat would be pointless: nothing changes
+ * until some of the backlog is handed in, and each attempt costs a page load and
+ * a minute of the browser. So the sweep waits for the one thing that actually
+ * moves it — the revise count going down.
+ *
+ * `until` is a backstop for the case where that count never arrives, because the
+ * extension has gone away or nobody is revising anything. Without it a single
+ * refusal would park the sweep for good.
+ */
+let submitBlocked = null;
+
+const SUBMIT_BLOCK_MAX_MINUTES = 60;
+
+/** True while the platform is still refusing, and says so once when it stops. */
+function submitStillBlocked() {
+  if (!submitBlocked) return false;
+
+  if (lastReviseCount !== null && lastReviseCount < submitBlocked.reviseCount) {
+    logEvent(
+      '🔓',
+      'submit_unblocked',
+      `revise list is down to ${lastReviseCount} from ${submitBlocked.reviseCount} — trying again`
+    );
+    submitBlocked = null;
+    return false;
+  }
+
+  if (Date.now() >= submitBlocked.until) {
+    logEvent('🔁', 'submit_unblocked', `waited ${SUBMIT_BLOCK_MAX_MINUTES} min — trying again anyway`);
+    submitBlocked = null;
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Finds a finished task and asks the extension to upload it and run the checks.
  *
  * Deliberately one at a time. Each check queues a build on the platform and the
@@ -1073,6 +1169,7 @@ async function maybeSubmitCheck() {
   if (!hub.isConnected('snorkel')) return;
   // A task being started or read is using the same tab.
   if (currentRun()) return;
+  if (submitStillBlocked()) return;
 
   const found = await findReadyToSubmit(machineId()).catch((err) => {
     console.warn('[server] could not look for tasks to check:', err.message);
@@ -1120,6 +1217,25 @@ async function maybeSubmitCheck() {
       config.submitTimeoutMs
     );
 
+    /*
+     * The assignment was gone and the extension came back holding a different
+     * task. Nothing was uploaded; what it has instead is that task, already
+     * scraped and downloaded.
+     *
+     * The lost task is retired so it stops blocking, and the new one goes
+     * through exactly the same save-and-upload the normal start does. From the
+     * worker's point of view a new task simply appeared, which is what happened.
+     */
+    if (result.wrong_task) {
+      logEvent('🫥', 'task_taken', `New task is taken by anyone — ${uid} is gone`, {
+        uid,
+        level: 'warn',
+      });
+      await markTaken(uid, result.page_uid || null);
+      await adoptTakenTask(result.taken, result.page_uid);
+      return;
+    }
+
     await saveStaticCheck(uid, result);
 
     if (result.passed) {
@@ -1132,14 +1248,77 @@ async function maybeSubmitCheck() {
       });
     }
   } catch (err) {
-    // Left as "ready to submit" so the next sweep tries again. A failure to run
-    // the checks is not a failed check, and recording it as one would put a task
-    // in front of a person for no reason.
-    logEvent('❌', 'submit_error', `${uid}: ${err.message}`, { uid, level: 'error' });
+    if (err.code === 'START_UNAVAILABLE') {
+      /*
+       * The platform would not open the task. Wait for the revise backlog to
+       * come down rather than asking again in three minutes — the answer will
+       * be the same until somebody hands one in.
+       */
+      submitBlocked = {
+        uid,
+        reviseCount: lastReviseCount ?? Infinity,
+        until: Date.now() + SUBMIT_BLOCK_MAX_MINUTES * 60000,
+      };
+      logEvent(
+        '⛔',
+        'submit_blocked',
+        `Snorkel would not open ${uid}` +
+          (lastReviseCount === null
+            ? ' — waiting until the revise list has been read'
+            : ` with ${lastReviseCount} awaiting revision — waiting for that to drop`),
+        { uid, level: 'warn' }
+      );
+    } else {
+      // Left as "ready to submit" so the next sweep tries again. A failure to
+      // run the checks is not a failed check, and recording it as one would put
+      // a task in front of a person for no reason.
+      logEvent('❌', 'submit_error', `${uid}: ${err.message}`, { uid, level: 'error' });
+    }
   } finally {
     submitInFlight = null;
     updateTicker();
     publishNow();
+  }
+}
+
+/**
+ * Takes on the task the platform handed us instead.
+ *
+ * The browser half of a start has already happened — the page was scraped and
+ * the file downloaded — so this is only the half the server does anyway: write
+ * the record, then put the zip in Dropbox. After that the worker picks it up
+ * like any other new task.
+ */
+async function adoptTakenTask(taken, pageUid) {
+  if (!taken || !taken.task || !taken.task.UID) {
+    logEvent('⚠️', 'task_taken', `nothing usable was captured from ${pageUid || 'the new page'}`, {
+      level: 'warn',
+    });
+    return;
+  }
+
+  const uid = taken.task.UID;
+  logEvent('🚀', 'task_start', `taking on ${uid} instead`, { uid });
+
+  const saved = await saveTask(taken.task, taken.meta || {});
+  if (!saved.saved) {
+    logEvent('⚠️', 'task_warn', `${uid} could not be saved: ${saved.reason}`, { uid, level: 'warn' });
+    return;
+  }
+  logEvent('⬇️', 'task_downloaded', `${taken.task.file_name} (${uid})`, { uid });
+
+  try {
+    const dropbox = await runDropboxStep(uid, {});
+    if (dropbox.uploaded) {
+      logEvent('☁️', 'task_uploaded', `${dropbox.file.name} -> ${dropbox.task.dropbox_path}`, { uid });
+    }
+  } catch (err) {
+    // The record exists and the file is on disk, so the ordinary upload retry
+    // path can still finish this. Not worth failing the whole sweep over.
+    logEvent('⚠️', 'task_warn', `${uid} was saved but not uploaded: ${err.message}`, {
+      uid,
+      level: 'warn',
+    });
   }
 }
 

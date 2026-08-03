@@ -113,6 +113,15 @@ export async function answerSchema() {
   return schemaCache;
 }
 
+/** Only the keys a given run is allowed to produce. */
+export async function schemaForStage(stage) {
+  const schema = await answerSchema();
+  if (!stage) return schema;
+  return Object.fromEntries(
+    Object.entries(schema).filter(([, spec]) => !spec.stages || spec.stages.includes(stage))
+  );
+}
+
 /** The schema written out as something readable in a prompt. */
 function describeFields(schema) {
   return Object.entries(schema)
@@ -139,9 +148,39 @@ function describeFields(schema) {
  * pull against every instruction about tone in the question sheet. Reformatting
  * something already written is a much smaller ask than writing it twice.
  */
-export async function extractPrompt() {
-  const schema = await answerSchema();
-  return fill(await template('extract'), { fields: describeFields(schema) });
+export async function extractPrompt(stage = null) {
+  return fill(await template('extract'), { fields: describeFields(await schemaForStage(stage)) });
+}
+
+/**
+ * Turn two of a first build: is this task worth fixing at all?
+ *
+ * Asked on its own, before any work, because the answer decides whether there is
+ * any work to do. A task that is invalid or already valid needs no corrections,
+ * no zip and no form answers, and asking for them in the same breath would get
+ * them written anyway.
+ */
+export async function triagePrompt({ uid, taskDir, initialInfos }) {
+  return fill(await template('triage'), {
+    uid,
+    task_dir: taskDir,
+    initial_infos: initialInfos || '(the platform showed no task info)',
+  });
+}
+
+/** Turn three, only when triage said fixable: do the work and answer the form. */
+export async function fixPrompt({ uid, taskDir, lessons = '' }) {
+  return fill(await template('fix'), { uid, task_dir: taskDir, lessons: lessons ? `${lessons}\n` : '' });
+}
+
+/** After the platform's own checks failed: here is what it said, fix it. */
+export async function staticFixPrompt({ uid, taskDir, logs, lessons = '' }) {
+  return fill(await template('staticfix'), { uid, task_dir: taskDir, logs, lessons });
+}
+
+/** Asked once a fix is done: what should the next task have known? */
+export async function lessonPrompt() {
+  return template('lesson');
 }
 
 /** Turn two, for a task the reviewer sent back. */

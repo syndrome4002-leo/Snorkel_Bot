@@ -1,0 +1,9 @@
+Got following feedback, pls fix this and rewrite full answers again:
+
+{{logs}}
+
+When you are done, remake the zip file in this task directory under the same name as before, so the corrected task can be uploaded again.
+
+Same writing rules as before: answers not so long and human written, no hypen links or bullet points or symbols or "—", and a blank line between each item where an answer has several.
+
+{{lessons}}

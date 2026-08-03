@@ -1,0 +1,5 @@
+One more thing, and keep it to a couple of sentences.
+
+Looking at what the check complained about and what you changed to answer it, what is the general rule a future task should follow to avoid this in the first place? Write it so it makes sense to someone working on a different task who never saw this failure.
+
+Plain sentences only, no markdown, no bullet points, no "—". If you cannot tell what actually fixed it, say exactly that instead of guessing.

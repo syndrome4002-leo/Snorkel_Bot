@@ -1,0 +1,43 @@
+make the corrections and make zip file ( file name should be from the original directory name which is an info that I gave you at first saying infos from platform ) in this task directory.
+
+and write answers to following questions:
+
+1 Select where the task had issues ( select all that apply )
+- Instructions
+- Tests
+- Oracle Solution
+- Environment/Dockerfile
+
+2 What issues did you find with the task?
+- Every requirement in the instructions is not properly tested
+- All test requirements are not properly specified in the instructions
+- The instructions appear LLM generated
+- The instructions are overly-prescriptive
+- The task leaks solution information
+- The oracle does not implement the solution following the instructions.
+- Less than 10 fail-to-pass tests in test suite
+
+3 Describe each issue in detail:
+
+For each issue category selected, please give details in this format:
+
+1) [Issue Category 1 - the first category you selected above]
+Issue Description/explanation - give specific examples in the code when helpful
+Is the issue fixable or not fixable?
+If it IS fixable, how could this be fixed? If not, explain why not.
+
+2) [Issue Category 2]...
+
+[ Re-upload the entire task as a zip file with the corrected instructions, tests, or oracle below, ensuring the task remains valid. Ensure the upload is submitted as <all-task-content>. Do not include runs/ or task/directory ]
+
+4 Files Changed - List every file you changed.
+For each file, include: File path, what changed, why you changed it. You do not need to repeat full validation details here if you already included them in the validation section ( Write like this "[changed, updated, replaced, moved...] ...because..." )
+
+5 If you added to the PR in any way, explain how. If you did not modify the PR in any way, write 'NA'. Remember you may not change or reduce the scope of the PR, but you may expand on it to add complexity.
+
+Writing answers rule:
+- Each Answers should be not so long, just like human-written.
+- The answers must not include hypen links or bullet points, symbols, formatting patterns including "—"
+- In a answer field, there should be blank line between each item. ( apply only for answers that have multiple items )
+
+{{lessons}}The zip must hold the task content at its root. Do not include runs/ or task/ and do not put an older zip inside it.

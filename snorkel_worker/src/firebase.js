@@ -21,11 +21,24 @@ export const TASK_STATUS_BUILD = 'in build';
 export const TASK_STATUS_NEEDS_REVISION = 'needs revision';
 /** Held while Claude has the folder open. */
 export const TASK_STATUS_WORKING = 'Working..';
-/** Claude is done; a human submits it. */
+/** Claude is done; the platform's checks run next. */
 export const TASK_STATUS_READY = 'ready to submit';
 
-/** The two statuses the worker picks up, and nothing else. */
-export const WORKABLE = [TASK_STATUS_BUILD, TASK_STATUS_NEEDS_REVISION];
+/** Set by snorkel_server when one of the platform's checks came back FAIL. */
+export const TASK_STATUS_STATIC_FAIL = 'static check fail';
+/** Both platform checks passed. The end of the road for the bot. */
+export const TASK_STATUS_STATIC_PASS = 'static checks pass';
+
+/*
+ * Triage outcomes. A task that is not fixable is not worked at all: there are no
+ * corrections to make, no zip to build and no form to fill in, so the run stops
+ * at the answer and the task waits for a person.
+ */
+export const TASK_STATUS_INVALID = 'invalid';
+export const TASK_STATUS_VALID_AS_IS = 'valid-as-is';
+
+/** The statuses the worker picks up, and nothing else. */
+export const WORKABLE = [TASK_STATUS_BUILD, TASK_STATUS_NEEDS_REVISION, TASK_STATUS_STATIC_FAIL];
 
 let db = null;
 let initError = null;
@@ -169,7 +182,7 @@ const docRef = (uid) => db.collection(config.firebase.collection).doc(String(uid
  * first. The lists here are short, so a handful of small exact queries beats one
  * broad one that has to be filtered afterwards.
  */
-export async function findWorkableTasks(machineIds = [], limit = 10) {
+export async function findWorkableTasks(machineIds = [], limit = 10, staticFixLimit = null) {
   if (!db) return [];
 
   const found = new Map();
@@ -189,7 +202,23 @@ export async function findWorkableTasks(machineIds = [], limit = 10) {
     }
   }
 
-  return [...found.values()].sort((a, b) => String(a.updated_at || '').localeCompare(String(b.updated_at || '')));
+  /*
+   * A task that has been round the fix loop too many times is left alone.
+   *
+   * "Until both checks pass" and "forever" are the same instruction when the fix
+   * is not working, and each round costs a Claude session and two platform
+   * builds. Past the limit it stays at "static check fail" for a person.
+   */
+  const eligible = [...found.values()].filter((task) => {
+    if (task.task_status !== TASK_STATUS_STATIC_FAIL) return true;
+    const cap = staticFixLimit ?? config.worker.maxStaticFixAttempts;
+    const attempts = Number(task.static_fix_attempts || 0);
+    if (attempts < cap) return true;
+    console.log(`[firebase] ${task.UID} has had ${attempts} static-check fixes (limit ${cap}) — leaving it`);
+    return false;
+  });
+
+  return eligible.sort((a, b) => String(a.updated_at || '').localeCompare(String(b.updated_at || '')));
 }
 
 /**
@@ -297,6 +326,28 @@ export async function saveAnswers(uid, answers, meta = {}) {
       `${changed.length} changed this round (${changed.join(', ') || 'none'})`
   );
   return { fields: Object.keys(merged).length, changed, round: history.length + 1 };
+}
+
+/**
+ * Ends a run without producing a submission.
+ *
+ * Used when triage says the task is invalid or already valid: nothing was
+ * changed, nothing is uploaded, and the task stops here for a person to look at.
+ */
+export async function markTriaged(uid, status, note = '') {
+  if (!db) throw new Error(describe(initError));
+  const now = new Date().toISOString();
+  const patch = {
+    task_status: status,
+    triage_note: note || null,
+    triaged_at: now,
+    worker_pid: null,
+    worker_error: null,
+    updated_at: now,
+  };
+  await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
+  console.log(`[firebase] ${uid} -> task_status="${status}" (triage)`);
+  return patch;
 }
 
 /** The end state: Claude is done and the zip is back on Dropbox. */
