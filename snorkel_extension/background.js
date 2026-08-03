@@ -617,6 +617,21 @@ async function submitCheck(requestId, options) {
   }
   if (!page.uid) log(`could not read a UID from ${page.page_url || 'the page'} — continuing`);
 
+  /*
+   * The page has to be put into the right state first: the check buttons are
+   * inside a collapsed accordion, and the re-upload field does not exist at all
+   * until both analysis questions say Fixable. Neither is optional — without
+   * this step there is simply nothing on the page to click or attach to.
+   */
+  progress(requestId, 'prepare', 'opening the sections and answering the analysis questions');
+  const prepared = await askTab(tab.id, { type: 'SUBMIT_PREPARE', timeout: 30000 });
+  progress(
+    requestId,
+    'prepared',
+    `${prepared.sections_opened} section(s) opened; ${prepared.chosen.join('; ')}; ` +
+      `upload control: ${prepared.upload_control}`
+  );
+
   progress(requestId, 'attach', options.file_name || 'the task zip');
   const attached = await askTab(tab.id, {
     type: 'SUBMIT_ATTACH',
@@ -639,7 +654,7 @@ async function submitCheck(requestId, options) {
     checks.results.map((r) => `${r.label}: ${r.verdict}`).join(', ')
   );
 
-  return { uid, page_uid: page.uid || null, attached, ...checks };
+  return { uid, page_uid: page.uid || null, prepared, attached, ...checks };
 }
 
 async function collectFeedback(requestId, uids, options) {

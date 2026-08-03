@@ -34,12 +34,133 @@
   /** A verdict panel, once the platform has finished running the check. */
   const RESULT_PANEL = '.rounded-md.border-2';
 
+  /**
+   * The two analysis questions, which gate everything else on this page.
+   *
+   * The re-upload field only exists once both say Fixable — its own label says
+   * so ("If \"Fixable\" is selected, please re-upload..."). React does not render
+   * it otherwise, so there is nothing to attach to and no amount of waiting will
+   * produce one.
+   */
+  const VALIDITY_FIELDS = [
+    { key: 'validity_required', sel: '[data-testid="field-multidimensionradio-segments-valid"]' },
+    { key: 'duplicate', sel: '[data-testid="field-radio-ec-valid"]' },
+  ];
+
+  /** Radix accordions unmount what they hide, so a closed section has no buttons. */
+  const SECTION = '[data-testid^="section-"]';
+
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
   const buttonsIn = (root) => $$('button', root);
   const findButton = (root, re) =>
     buttonsIn(root).find((b) => re.test(SnorkelBot.normText(SnorkelBot.text(b))));
+
+  // ----------------------------------------------------------- prepare ----
+
+  /**
+   * Opens every collapsed section on the page.
+   *
+   * The check buttons live inside "Submission Feedback", and Radix removes the
+   * contents of a closed accordion from the DOM rather than hiding them. A
+   * closed section is therefore indistinguishable from a page that does not have
+   * those buttons at all, which is exactly how it fails if you skip this.
+   */
+  async function expandSections() {
+    let opened = 0;
+
+    for (const section of $$(SECTION)) {
+      // A section's own header carries its name; "Show Build Logs" inside the
+      // section is the same kind of control and would otherwise match first.
+      const name = (section.getAttribute('data-testid') || '').replace(/^section-/, '');
+      const toggle = $$('h3 > button[aria-expanded]', section).find(
+        (b) => SnorkelBot.normText(SnorkelBot.text(b)) === SnorkelBot.normText(name)
+      );
+
+      if (!toggle || toggle.getAttribute('aria-expanded') === 'true') continue;
+      SnorkelBot.click(toggle);
+      opened++;
+      await SnorkelBot.sleep(250);
+    }
+
+    if (opened) await SnorkelBot.sleep(600);
+    return opened;
+  }
+
+  /**
+   * Answers both analysis questions with Fixable.
+   *
+   * Worth being plain about: this writes to the submission form, and the page
+   * saves as you go. It is done because the upload field does not exist until
+   * both are set, not because the bot has decided the task is fixable.
+   */
+  async function chooseFixable() {
+    const chosen = [];
+
+    for (const { key, sel } of VALIDITY_FIELDS) {
+      const field = await SnorkelBot.waitFor(() => $(sel), {
+        timeout: 30000,
+        label: `the ${key} question`,
+      });
+
+      const option = $('button[role="radio"][value="Fixable"]', field);
+      if (!option) {
+        const seen = $$('button[role="radio"]', field).map((b) => b.getAttribute('value'));
+        throw new Error(
+          `No "Fixable" option on ${key}. Options present: ${seen.join(', ') || 'none'}.`
+        );
+      }
+
+      if (option.getAttribute('aria-checked') === 'true') {
+        chosen.push(`${key} was already Fixable`);
+        continue;
+      }
+
+      SnorkelBot.click(option);
+      await SnorkelBot.waitFor(() => option.getAttribute('aria-checked') === 'true' || null, {
+        timeout: 10000,
+        label: `${key} to become Fixable`,
+      });
+      chosen.push(`${key} set to Fixable`);
+      await SnorkelBot.sleep(400);
+    }
+
+    return chosen;
+  }
+
+  /**
+   * Gets the page into the state where a file can be attached and the checks
+   * can be clicked. Nothing here uploads or submits anything.
+   */
+  SnorkelBot.on('SUBMIT_PREPARE', async (msg) => {
+    const opened = await expandSections();
+    const chosen = await chooseFixable();
+
+    // Setting the answers is what makes React render the upload field; it is not
+    // instant, and attaching before it exists is the failure this waits out.
+    const field = await SnorkelBot.waitFor(() => $(OUTPUT_FIELD), {
+      timeout: msg.timeout || 30000,
+      label: 'the re-upload field to appear',
+    }).catch(() => null);
+
+    if (!field) {
+      throw new Error(
+        'Set both questions to Fixable but the re-upload field never appeared. ' +
+          `Sections opened: ${opened}. ${chosen.join('; ')}.`
+      );
+    }
+
+    // Reported so the log says which of the two shapes it actually found, since
+    // that decides how the file has to be attached.
+    const control = $('input[type="file"]', field)
+      ? 'file input'
+      : $('button[aria-label="Remove file"]', field)
+        ? 'a file is already attached'
+        : 'no input — will need a drop';
+
+    return { sections_opened: opened, chosen, upload_control: control };
+  });
 
   // ------------------------------------------------------------ upload ----
 
