@@ -280,6 +280,18 @@ export function currentRun() {
 async function assertNoTaskInBuild(options = {}) {
   if (options.force) return;
 
+  // Same reasoning as auto-start: nothing downstream is worth doing for a task
+  // that cannot be handed in today.
+  const allowance = await submitAllowanceLeft();
+  if (allowance.limited && allowance.left <= 0) {
+    const error = new Error(
+      `Today's limit of ${allowance.limit} new task(s) has been reached ` +
+        `(${allowance.used} submitted). Pass {"force": true} to start one anyway.`
+    );
+    error.code = 'DAILY_LIMIT';
+    throw error;
+  }
+
   if (runInFlight) {
     const error = new Error(
       `A task is in building (started ${runInFlight.started_at}). Wait for it to finish, ` +
@@ -613,6 +625,13 @@ function updateTicker() {
     });
     return;
   }
+  if (cappedForToday) {
+    setTicker('tries', {
+      emoji: '🛑',
+      message: `Daily limit reached — no new task will be started until tomorrow`,
+    });
+    return;
+  }
   if (submitBlocked) {
     setTicker('tries', {
       emoji: '⛔',
@@ -682,6 +701,23 @@ async function maybeAutoStart(reviseCount) {
 
   if (reviseCount >= limit) {
     logEvent('⏸️', 'auto_skip', `${reviseCount} awaiting revision, limit is ${limit} — not starting`);
+    return;
+  }
+
+  /*
+   * The daily cap stops the work at its source.
+   *
+   * A task started today that cannot be submitted today is a download, a Claude
+   * session, an upload and two platform builds spent on something that then sits
+   * and waits. Refusing to start is the only place the saving is real.
+   */
+  const allowance = await submitAllowanceLeft();
+  if (allowance.limited && allowance.left <= 0) {
+    logEvent(
+      '🛑',
+      'daily_limit',
+      `${allowance.used} of ${allowance.limit} new tasks submitted today — not starting another`
+    );
     return;
   }
 
@@ -1189,6 +1225,15 @@ function scheduleAutoTry() {
  */
 let submitInFlight = null;
 
+/*
+ * Whether today's new-task limit is used up.
+ *
+ * Kept as a remembered value because the ticker runs synchronously and cannot
+ * wait on Firestore. Refreshed by whichever check last asked, which is often
+ * enough for a line that only says why nothing is happening.
+ */
+let cappedForToday = false;
+
 const DEFAULT_SUBMIT_EVERY = 3;
 
 /*
@@ -1249,7 +1294,9 @@ async function submitAllowanceLeft() {
 
   try {
     const { count } = await countSentToday();
-    return { limited: true, left: Math.max(0, limit - count), used: count, limit };
+    const left = Math.max(0, limit - count);
+    cappedForToday = left <= 0;
+    return { limited: true, left, used: count, limit };
   } catch (err) {
     logEvent('⚠️', 'daily_limit', `could not count today's submissions: ${err.message}`, { level: 'warn' });
     return { limited: false, left: Infinity, used: 0, limit, unknown: true };
@@ -1322,13 +1369,25 @@ async function maybeSubmitCheck() {
   if (currentRun()) return;
   if (submitStillBlocked()) return;
 
-  const found = await findReadyToSubmit(machineId()).catch((err) => {
+  const capped = await submitAllowanceLeft();
+  const atCap = capped.limited && capped.left <= 0;
+
+  const found = await findReadyToSubmit(machineId(), { excludeNew: atCap }).catch((err) => {
     console.warn('[server] could not look for tasks to check:', err.message);
     return null;
   });
   if (!found) return;
 
   if (!found.task) {
+    if (found.heldByCap) {
+      setTicker('submits', {
+        emoji: '🛑',
+        message:
+          `${capped.used} of ${capped.limit} new tasks submitted today — ` +
+          `${found.heldByCap} built and waiting until tomorrow`,
+      });
+      return;
+    }
     if (found.waiting) {
       setTicker('submits', {
         emoji: '⏸️',
@@ -1357,7 +1416,8 @@ async function maybeSubmitCheck() {
    * work would spend the cap on nothing.
    */
   const allowance = await submitAllowanceLeft();
-  const maySubmit = autoSubmit() && allowance.left > 0;
+  // The cap counts new tasks, so it only ever withholds a new task's submission.
+  const maySubmit = autoSubmit() && (task.is_new_task !== true || allowance.left > 0);
 
   if (autoSubmit() && !maySubmit) {
     logEvent(

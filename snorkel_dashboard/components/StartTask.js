@@ -58,7 +58,9 @@ export default function StartTask({ machine, serverOnline, inBuildTask, taskInFl
           detach();
           // Snorkel handed out no task — a normal outcome (daily limit, empty
           // queue), so it is called out rather than buried in the error line.
-          if (value.error_code === 'START_UNAVAILABLE') {
+          if (value.error_code === 'DAILY_LIMIT') {
+            window.alert(value.error || "Today's limit for new tasks has been reached.");
+          } else if (value.error_code === 'START_UNAVAILABLE') {
             window.alert('currently not able to start a new task');
           }
         }

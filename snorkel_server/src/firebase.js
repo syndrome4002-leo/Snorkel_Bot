@@ -598,7 +598,7 @@ export async function findInBuildTask(machine) {
  * nothing to fetch and nothing to attach. Those are skipped rather than failed —
  * they are mid-flight, not broken.
  */
-export async function findReadyToSubmit(machine) {
+export async function findReadyToSubmit(machine, { excludeNew = false } = {}) {
   if (!db) return null;
 
   const snap = await db
@@ -613,11 +613,23 @@ export async function findReadyToSubmit(machine) {
   // index-free, but keeping it in memory lets the caller see how many were
   // skipped and why, which is the difference between "nothing to do" and
   // "three tasks are stuck waiting on an upload".
-  const eligible = rows.filter((t) => t.file_uploaded === true);
+  let eligible = rows.filter((t) => t.file_uploaded === true);
   const waiting = rows.length - eligible.length;
 
+  /*
+   * At the daily cap, new tasks are left alone entirely.
+   *
+   * Uploading one and running the platform's checks only to stop short of
+   * submitting spends real time and two platform builds on something that
+   * cannot be handed in today. Revisions are unaffected — the cap counts new
+   * tasks, and stopping a revision because of it would be the wrong limit
+   * applied to the wrong thing.
+   */
+  const heldByCap = excludeNew ? eligible.filter((t) => t.is_new_task === true).length : 0;
+  if (excludeNew) eligible = eligible.filter((t) => t.is_new_task !== true);
+
   eligible.sort((a, b) => String(a.updated_at || '').localeCompare(String(b.updated_at || '')));
-  return { task: eligible[0] || null, eligible: eligible.length, waiting };
+  return { task: eligible[0] || null, eligible: eligible.length, waiting, heldByCap };
 }
 
 /**
