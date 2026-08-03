@@ -16,6 +16,7 @@ export const statusPath = (machine) => `machines/${machine}/status`;
 export const settingsPath = (machine) => `machines/${machine}/settings`;
 export const logsPath = (machine) => `machines/${machine}/logs`;
 export const tickerPath = (machine) => `machines/${machine}/ticker`;
+export const workerPath = (machine) => `machines/${machine}/worker`;
 
 /** Queues a command for one machine. Returns its id so the caller can watch it. */
 async function queue(machine, type, extra = {}) {
@@ -95,4 +96,13 @@ export function watchServerStatus(machine, onUpdate) {
   return onValue(ref(rtdb(), statusPath(machine)), (snapshot) => {
     onUpdate(snapshot.val());
   });
+}
+
+/**
+ * What snorkel_worker is doing, including how much of the Claude subscription
+ * it can see left. Published under its own key so it sits alongside the
+ * server's status rather than competing with it for the same node.
+ */
+export function watchWorker(machine, onUpdate) {
+  return onValue(ref(rtdb(), workerPath(machine)), (snapshot) => onUpdate(snapshot.val()));
 }

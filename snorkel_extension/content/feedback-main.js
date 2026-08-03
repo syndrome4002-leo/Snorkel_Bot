@@ -480,6 +480,214 @@
     };
   }
 
+  // ----------------------------------------------------- build logs ----
+
+  /*
+   * Reading a build-log panel in full.
+   *
+   * The panel is virtualised: only the rows on screen exist in the DOM, so
+   * reading its textContent gives you the first screenful and nothing else —
+   * about seven lines of a log that runs to hundreds. The isolated world cannot
+   * do better, because the ways out of this all need page-world access: the
+   * editor's own model, React's props, or scrolling the thing and stitching what
+   * appears.
+   *
+   * Which of those applies depends on what the panel is built from, and that is
+   * not knowable from here — so all of them are tried and the longest result
+   * wins. `how` says which one worked, so the logs tell you rather than leaving
+   * you to guess.
+   */
+
+  const scrollableIn = (root) => {
+    if (root.scrollHeight > root.clientHeight + 4) return root;
+    const nodes = root.querySelectorAll('*');
+    for (const el of nodes) {
+      if (el.scrollHeight > el.clientHeight + 4) {
+        const style = getComputedStyle(el);
+        if (/(auto|scroll)/.test(style.overflowY)) return el;
+      }
+    }
+    return null;
+  };
+
+  /**
+   * Scrolls a plain (non-Monaco) virtualised list and keeps what goes past.
+   *
+   * Rows are keyed by their offset within the scrolled content, which is stable
+   * as the list re-renders — so a row seen twice lands in the same slot instead
+   * of being appended again, and identical lines at different heights stay
+   * distinct. Keying on the text would collapse a log's many repeated lines into
+   * one.
+   */
+  async function readByScrollingPlain(box, budgetMs) {
+    const deadline = Date.now() + (budgetMs || 45000);
+    const rows = new Map();
+
+    const harvest = () => {
+      const base = box.scrollTop;
+      for (const el of box.querySelectorAll('div, span, p, tr, li, pre')) {
+        if (el.children.length) continue; // leaves only, or every line counts twice
+        const text = String(el.textContent == null ? '' : el.textContent).replace(/ /g, ' ');
+        if (!text.trim()) continue;
+        const top = Math.round(base + el.getBoundingClientRect().top - box.getBoundingClientRect().top);
+        rows.set(top, text);
+      }
+    };
+
+    box.scrollTop = 0;
+    await raf();
+    harvest();
+
+    let lastTop = -1;
+    while (Date.now() < deadline) {
+      if (box.scrollTop === lastTop) break; // hit the bottom
+      lastTop = box.scrollTop;
+      box.scrollTop = box.scrollTop + Math.max(80, box.clientHeight - 40);
+      box.dispatchEvent(new WheelEvent('wheel', { deltaY: 400, bubbles: true }));
+      await raf();
+      await new Promise((r) => setTimeout(r, 40));
+      harvest();
+    }
+
+    const ordered = Array.from(rows.keys()).sort((a, b) => a - b);
+    return {
+      text: ordered.map((k) => rows.get(k)).join('\n').replace(/\s+$/, ''),
+      truncated: Date.now() >= deadline,
+    };
+  }
+
+  /**
+   * Uses the panel's own Copy button, by catching what it copies.
+   *
+   * The page has already solved this problem — its Copy button produces the
+   * whole log, virtualised or not. Reading the clipboard back would need a
+   * permission and a focused document, so instead the write is intercepted:
+   * `navigator.clipboard.writeText` is shadowed for the length of one click, and
+   * a `copy` listener catches the `execCommand` route. Both are put back
+   * afterwards, and nothing ever reaches the real clipboard.
+   */
+  async function readByCopyButton(region) {
+    let host = region;
+    let button = null;
+    // The button sits in the panel header, above the editor, so it is usually a
+    // sibling of the region rather than inside it.
+    for (let up = 0; up < 4 && host && !button; up++) {
+      button = Array.from(host.querySelectorAll('button')).find(
+        (b) => /^copy$/i.test((b.getAttribute('title') || '').trim()) || /^copy$/i.test(visibleText(b))
+      );
+      host = host.parentElement;
+    }
+    if (!button) return { text: '', how: 'no copy button' };
+
+    let captured = '';
+    const clip = navigator.clipboard;
+    const hadOwn = clip ? Object.prototype.hasOwnProperty.call(clip, 'writeText') : false;
+    const original = clip ? clip.writeText : null;
+
+    // Bubble phase, so the page's own handler has already put the text in.
+    const onCopy = (event) => {
+      try {
+        const text = event.clipboardData && event.clipboardData.getData('text/plain');
+        if (text && text.length > captured.length) captured = text;
+      } catch {
+        /* not readable from here */
+      }
+    };
+
+    document.addEventListener('copy', onCopy);
+    if (clip) {
+      clip.writeText = function (text) {
+        captured = String(text == null ? '' : text);
+        return Promise.resolve();
+      };
+    }
+
+    try {
+      button.click();
+      // The handler may be async; a moment is enough for either route.
+      await new Promise((r) => setTimeout(r, 350));
+    } finally {
+      document.removeEventListener('copy', onCopy);
+      if (clip) {
+        if (hadOwn && original) clip.writeText = original;
+        else delete clip.writeText;
+      }
+    }
+
+    return { text: captured, how: 'copy button' };
+  }
+
+  async function readLogRegion(region, budgetMs) {
+    const attempts = [];
+
+    // The page's own Copy button, which already produces the whole log.
+    try {
+      const viaCopy = await readByCopyButton(region);
+      if (viaCopy.text) attempts.push(viaCopy);
+    } catch (err) {
+      attempts.push({ text: '', how: `copy button failed: ${err.message}` });
+    }
+
+    // The editor-aware path: model, React props, or Monaco's own scrolling.
+    try {
+      const viaCode = await readCodeField(region, budgetMs);
+      if (viaCode && viaCode.text) attempts.push({ ...viaCode, how: `code field (${viaCode.how})` });
+    } catch (err) {
+      attempts.push({ text: '', how: `code field failed: ${err.message}` });
+    }
+
+    // Whatever happens to be rendered right now — the old behaviour, kept as a
+    // floor so this can never do worse than before.
+    attempts.push({ text: visibleText(region), how: 'rendered text' });
+
+    // A plain virtualised list, which the code-field path does not know about.
+    const box = scrollableIn(region);
+    if (box) {
+      try {
+        const scrolled = await readByScrollingPlain(box, budgetMs);
+        if (scrolled.text) attempts.push({ ...scrolled, how: 'scrolled the panel' });
+      } catch (err) {
+        attempts.push({ text: '', how: `scrolling failed: ${err.message}` });
+      }
+    }
+
+    const best = attempts.reduce((a, b) => (b.text.length > a.text.length ? b : a), { text: '', how: 'nothing' });
+    return { ...best, tried: attempts.map((a) => `${a.how}=${a.text.length}`) };
+  }
+
+  const LOGS_REQUEST_ATTR = 'data-snorkelbot-logs-request';
+  const LOGS_RESULT_ID = '__snorkelbot_logs_result';
+
+  function publishLogs(payload) {
+    let node = document.getElementById(LOGS_RESULT_ID);
+    if (!node) {
+      node = document.createElement('script');
+      node.type = 'application/json';
+      node.id = LOGS_RESULT_ID;
+      (document.documentElement || document).appendChild(node);
+    }
+    node.textContent = JSON.stringify(payload);
+    window.dispatchEvent(new Event('snorkelbot:logs-ready'));
+  }
+
+  window.addEventListener('snorkelbot:read-logs', async () => {
+    let request = {};
+    try {
+      request = JSON.parse(document.documentElement.getAttribute(LOGS_REQUEST_ATTR) || '{}');
+    } catch {
+      // handled below as a missing region
+    }
+    const token = request.token || '';
+
+    try {
+      const region = request.regionId ? document.getElementById(request.regionId) : null;
+      if (!region) throw new Error(`No element with id "${request.regionId}" — the panel may have closed.`);
+      publishLogs({ token, ok: true, ...(await readLogRegion(region, request.budgetMs || 45000)) });
+    } catch (err) {
+      publishLogs({ token, ok: false, error: String((err && err.message) || err) });
+    }
+  });
+
   // ---------------------------------------------------------- channel ----
 
   function publish(payload) {

@@ -375,8 +375,79 @@
       (regionId && document.getElementById(regionId)) ||
       panel.querySelector('[role="region"]') ||
       null;
+    if (!region) return '';
 
-    return region ? SnorkelBot.cleanBlock(SnorkelBot.text(region)) : '';
+    /*
+     * Read from the page world, not from here.
+     *
+     * The log panel is virtualised: only the rows on screen are in the DOM, so
+     * this script — which has no access to the editor's model, to React's props,
+     * or to anything that survives a re-render — can see about seven lines of a
+     * log that runs to hundreds. Everything that gets the rest of it needs
+     * page-world access, so the request goes across and the answer comes back.
+     */
+    if (!region.id) region.id = `snorkelbot-log-${Math.random().toString(36).slice(2)}`;
+
+    try {
+      const full = await requestLogs(region.id);
+      if (full.text && full.text.length) return SnorkelBot.cleanBlock(full.text);
+    } catch (err) {
+      // Falling back rather than failing: a short log is worth more than none,
+      // and this is the last step of a run that has otherwise succeeded.
+      console.warn('[snorkel-bot] full log read failed, using what is rendered:', err.message);
+    }
+
+    return SnorkelBot.cleanBlock(SnorkelBot.text(region));
+  }
+
+  /** Asks the page-world reader for one panel's logs in full. */
+  function requestLogs(regionId, timeout = 60000) {
+    return new Promise((resolve, reject) => {
+      const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      let done = false;
+
+      const finish = (fn, value) => {
+        if (done) return;
+        done = true;
+        window.removeEventListener('snorkelbot:logs-ready', onReady);
+        clearTimeout(timer);
+        fn(value);
+      };
+
+      const onReady = () => {
+        const node = document.getElementById('__snorkelbot_logs_result');
+        if (!node) return;
+        let payload;
+        try {
+          payload = JSON.parse(node.textContent || '{}');
+        } catch {
+          return finish(reject, new Error('The page returned unreadable log data.'));
+        }
+        // A leftover answer from an earlier read is not this one.
+        if (payload.token !== token) return;
+        if (!payload.ok) return finish(reject, new Error(payload.error || 'Reading the logs failed.'));
+        finish(resolve, payload);
+      };
+
+      const timer = setTimeout(
+        () =>
+          finish(
+            reject,
+            new Error(
+              'No answer from the page-world log reader. If the extension was reloaded, the tab ' +
+                'needs reloading too — MAIN-world scripts only attach on a fresh page load.'
+            )
+          ),
+        timeout
+      );
+
+      window.addEventListener('snorkelbot:logs-ready', onReady);
+      document.documentElement.setAttribute(
+        'data-snorkelbot-logs-request',
+        JSON.stringify({ token, regionId, budgetMs: Math.max(5000, timeout - 10000) })
+      );
+      window.dispatchEvent(new Event('snorkelbot:read-logs'));
+    });
   }
 
   /** The summary sentence, which carries the Build ID. */

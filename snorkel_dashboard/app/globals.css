@@ -458,3 +458,17 @@ button.machine {
 /* A boolean setting reads better as a switch line than as a labelled box. */
 .switch { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
 .switch input { width: 16px; height: 16px; cursor: pointer; }
+
+/* --- Claude usage meters --- */
+.meter { margin-top: 12px; }
+.meter-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(128, 128, 128, 0.18);
+  overflow: hidden;
+  margin: 5px 0 4px;
+}
+.meter-fill { height: 100%; background: var(--ok); transition: width 240ms ease; }
+.meter-fill.warn { background: var(--warn); }
+.meter-fill.bad { background: var(--bad); }
+.pill.muted { color: var(--muted); }

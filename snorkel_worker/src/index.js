@@ -39,6 +39,7 @@ import { startConnectServer } from './connect.js';
 import { checkClaude } from './claude.js';
 import { dropboxConfigured } from './dropbox.js';
 import { workOnTask } from './task.js';
+import { readClaudeUsage } from './usage.js';
 import { acquireLock, releaseLock, releaseLockSync, workerProcessAlive } from './lock.js';
 
 /** uid -> what it is doing, for the status the dashboard reads. */
@@ -65,8 +66,11 @@ function maxConcurrent() {
   return Math.max(1, config.worker.maxConcurrent);
 }
 
-function snapshot() {
+async function snapshot() {
   return {
+    // Read fresh each beat: the file is rewritten by whichever Claude run last
+    // heard from the API, which may not be this process.
+    claude_usage: await readClaudeUsage(),
     role: 'worker',
     running: running.size,
     max_concurrent: maxConcurrent(),

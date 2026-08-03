@@ -143,6 +143,12 @@ export const config = {
      */
     permissionMode: process.env.CLAUDE_PERMISSION_MODE || 'bypassPermissions',
 
+    /**
+     * Where Claude Code caches what the API said about rate limits. Empty means
+     * the usual place under the Claude config directory.
+     */
+    usageCache: process.env.CLAUDE_USAGE_CACHE || '',
+
     /** Extra CLI arguments, split on spaces. Escape hatch for anything not modelled here. */
     extraArgs: String(process.env.CLAUDE_ARGS || '').split(/\s+/).filter(Boolean),
   },
