@@ -18,6 +18,7 @@ import {
   TASK_STATUS_BUILD,
   TASK_STATUS_WORKING,
   WORKABLE,
+  RESTORABLE,
   claimTask,
   findOrphanedTasks,
   findWorkableTasks,
@@ -32,6 +33,7 @@ import {
   startWorkerHeartbeat,
   watchSettings,
   watchMachineIndex,
+  watchSystem,
   goOffline,
   publishNow,
 } from './rtdb.js';
@@ -46,6 +48,13 @@ import { acquireLock, releaseLock, releaseLockSync, workerProcessAlive } from '.
 const running = new Map();
 
 let settings = {};
+
+/*
+ * The master switch, shared with snorkel_server. Off means claim nothing new;
+ * tasks already open are left to finish, because a Claude session killed halfway
+ * is simply wasted.
+ */
+let systemEnabled = true;
 /** Whose tasks to work, from the dashboard. Empty means there is nothing to do. */
 let machines = [];
 let stopping = false;
@@ -78,6 +87,7 @@ async function snapshot() {
     tasks: [...running.values()].map((t) => ({ uid: t.uid, from: t.from, started_at: t.startedAt })),
     poll_seconds: config.worker.pollSeconds,
     working_for: machines,
+    system_enabled: systemEnabled,
   };
 }
 
@@ -117,7 +127,9 @@ async function recoverOrphans() {
       continue;
     }
 
-    const back = WORKABLE.includes(task.worked_from) ? task.worked_from : TASK_STATUS_BUILD;
+    // RESTORABLE, not WORKABLE: a task goes back where it came from even if the
+    // worker is no longer taking that status.
+    const back = RESTORABLE.includes(task.worked_from) ? task.worked_from : TASK_STATUS_BUILD;
     await releaseTask(task.UID, back, 'The worker stopped while this task was open.');
     log('♻️', 'recovered', `${task.UID} was left in "${TASK_STATUS_WORKING}" — put back to "${back}"`, {
       level: 'warn',
@@ -172,6 +184,17 @@ async function startTask(task) {
 function updateTicker() {
   const max = maxConcurrent();
 
+  if (!systemEnabled) {
+    setTicker('worker', {
+      emoji: '⏹️',
+      event: 'worker',
+      message: running.size
+        ? `System disabled — finishing ${running.size} task(s), then stopping`
+        : 'System disabled — claiming nothing',
+    });
+    return;
+  }
+
   if (!machines.length && !config.worker.anyMachine) {
     setTicker('worker', {
       emoji: '🕳️',
@@ -194,6 +217,7 @@ function updateTicker() {
 
 async function poll() {
   if (stopping) return;
+  if (!systemEnabled) return;
 
   try {
     const max = maxConcurrent();
@@ -351,6 +375,21 @@ async function main() {
     new Promise((resolve) => setTimeout(resolve, 5000)),
   ]);
 
+  watchSystem((enabled) => {
+    if (enabled === systemEnabled) return;
+    systemEnabled = enabled;
+    log(
+      enabled ? '▶️' : '⏹️',
+      'system',
+      enabled
+        ? 'System enabled — picking up work again'
+        : 'System disabled from the dashboard — claiming nothing new (running tasks finish)',
+      { level: enabled ? 'info' : 'warn' }
+    );
+    updateTicker();
+    publishNow();
+  });
+
   startWorkerHeartbeat(snapshot, 10_000);
   startConnectServer(connectState);
 
@@ -363,6 +402,11 @@ async function main() {
       `Worker ready — up to ${maxConcurrent()} task(s) at once, working for ` +
         `${machines.length} machine(s): ${machines.join(', ')}`
     );
+    // Worth saying every start: a revision sitting untouched looks like a bug
+    // unless you know revisions are switched off.
+    if (!config.worker.handleRevisions) {
+      log('⏭️', 'revisions_off', 'Reviewer revisions are off — only new tasks are picked up (HANDLE_REVISIONS=true turns them back on)');
+    }
   } else if (config.worker.anyMachine) {
     log('🤖', 'worker_up', `Worker ready — up to ${maxConcurrent()} task(s) at once, taking work from any machine`);
   } else {

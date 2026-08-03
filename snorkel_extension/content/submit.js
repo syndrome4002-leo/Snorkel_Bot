@@ -53,6 +53,43 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+  /*
+   * Deliberate pauses between actions.
+   *
+   * Every wait in this file is a "wait until X exists" check, which fires the
+   * instant the element appears and before the app has settled around it. On top
+   * of being a good way to click something React is about to re-render, filling
+   * thirty fields in two seconds does not look like a person working through a
+   * form.
+   *
+   * The ranges are randomised rather than fixed, because a constant gap is its
+   * own kind of tell. `paceScale` in the command multiplies all of them, so this
+   * can be slowed down from the server without touching the extension.
+   */
+  const PACE = {
+    section: [400, 900],      // opening one collapsed section
+    radio: [600, 1200],       // choosing a radio option
+    field: [700, 1600],       // moving from one answer to the next
+    option: [250, 650],       // ticking one checkbox in a list
+    number: [400, 900],       // typing a handling time
+    afterRemove: [900, 1600], // the file control swapping back to empty
+    beforeCheck: [1500, 2800],// before asking the platform to run a check
+    beforeSubmit: [2000, 3500],
+  };
+
+  let paceScale = 1;
+
+  const jitter = ([min, max]) => min + Math.random() * (max - min);
+
+  /** One human-sized pause. `SnorkelBot.sleep` stays for waits that are not pacing. */
+  const pause = (kind) => SnorkelBot.sleep(Math.round(jitter(PACE[kind] || PACE.field) * paceScale));
+
+  /** Every handler takes the scale from its own command, so it can change mid-run. */
+  function setPace(msg) {
+    const scale = Number(msg && msg.pace_scale);
+    paceScale = Number.isFinite(scale) && scale > 0 ? Math.min(10, scale) : 1;
+  }
+
   const buttonsIn = (root) => $$('button', root);
   const findButton = (root, re) =>
     buttonsIn(root).find((b) => re.test(SnorkelBot.normText(SnorkelBot.text(b))));
@@ -81,10 +118,10 @@
       if (!toggle || toggle.getAttribute('aria-expanded') === 'true') continue;
       SnorkelBot.click(toggle);
       opened++;
-      await SnorkelBot.sleep(250);
+      await pause('section');
     }
 
-    if (opened) await SnorkelBot.sleep(600);
+    if (opened) await pause('section');
     return opened;
   }
 
@@ -123,7 +160,7 @@
         label: `${key} to become Fixable`,
       });
       chosen.push(`${key} set to Fixable`);
-      await SnorkelBot.sleep(400);
+      await pause('radio');
     }
 
     return chosen;
@@ -134,6 +171,7 @@
    * can be clicked. Nothing here uploads or submits anything.
    */
   SnorkelBot.on('SUBMIT_PREPARE', async (msg) => {
+    setPace(msg);
     const opened = await expandSections();
     const chosen = await chooseFixable();
 
@@ -257,6 +295,7 @@
    * looks exactly like a check run against the new one.
    */
   SnorkelBot.on('SUBMIT_ATTACH', async (msg) => {
+    setPace(msg);
     const field = await SnorkelBot.waitFor(() => $(OUTPUT_FIELD), {
       timeout: msg.timeout || 60000,
       label: 'the re-upload field',
@@ -285,7 +324,7 @@
         timeout: 20000,
         label: 'the existing file to be removed',
       });
-      await SnorkelBot.sleep(500);
+      await pause('afterRemove');
     }
 
     /*
@@ -367,7 +406,7 @@
         timeout: 10000,
         label: 'the build logs to expand',
       }).catch(() => null);
-      await SnorkelBot.sleep(400);
+      await pause('section');
     }
 
     const regionId = toggle.getAttribute('aria-controls');
@@ -509,11 +548,12 @@
    * is both ruder and harder to attribute if something goes wrong.
    */
   SnorkelBot.on('SUBMIT_RUN_CHECKS', async (msg) => {
+    setPace(msg);
     const timeout = msg.checkTimeout || 600000;
     const results = [];
 
     for (const [key, spec] of Object.entries(CHECKS)) {
-      if (results.length) await SnorkelBot.sleep(msg.betweenChecksMs || 2000);
+      await pause('beforeCheck');
       results.push(await runCheck(key, spec, timeout));
     }
 
@@ -646,7 +686,7 @@
     }
     if (hit.getAttribute('aria-checked') !== 'true') {
       SnorkelBot.click(hit);
-      await SnorkelBot.sleep(200);
+      await pause('radio');
     }
     return { ok: true };
   }
@@ -675,7 +715,7 @@
       if (want && !checked) {
         SnorkelBot.click(box);
         ticked++;
-        await SnorkelBot.sleep(150);
+        await pause('option');
       }
     }
     return { ok: true, ticked, of: boxes.length };
@@ -688,6 +728,7 @@
    * that a person looks at this before it goes anywhere.
    */
   SnorkelBot.on('SUBMIT_FILL_FORM', async (msg) => {
+    setPace(msg);
     const answers = msg.answers || {};
     const filled = [];
     const skipped = [];
@@ -721,7 +762,7 @@
       } catch (err) {
         skipped.push(`${spec.key} (${err.message})`);
       }
-      await SnorkelBot.sleep(250);
+      await pause('field');
     }
 
     // Every requirement gets affirmed. It is a checklist of things that must be
@@ -751,7 +792,7 @@
 
       setNativeValue(box, String(minutes));
       filled.push(`${time.label} = ${minutes}`);
-      await SnorkelBot.sleep(200);
+      await pause('number');
     }
 
     /*
@@ -797,6 +838,8 @@
       } else if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
         skipped.push('submit (the button is disabled, so the form is not complete)');
       } else {
+        // The last click of the whole run, and the one that cannot be undone.
+        await pause('beforeSubmit');
         SnorkelBot.click(button);
         // Some builds ask to confirm; some do not. Either is fine.
         const confirmed = await confirmDialog('Submit', { timeout: 6000 });

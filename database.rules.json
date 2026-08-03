@@ -56,6 +56,21 @@
       ".write": false
     },
 
+    "system": {
+      "//": [
+        "The master switch, read by every server and worker.",
+        "",
+        "Off means take no new work. Anything already running is left to",
+        "finish — a Claude session killed halfway is wasted, and a browser",
+        "abandoned mid-upload leaves a task in a state nobody asked for."
+      ],
+      ".read": true,
+      ".write": true,
+      "enabled": { ".validate": "newData.isBoolean()" },
+      "changed_at": { ".validate": "!newData.exists() || newData.isString()" },
+      "$other": { ".validate": true }
+    },
+
     "workers": {
       "//": [
         "One entry per snorkel_worker, keyed by the machine it runs on.",

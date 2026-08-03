@@ -18,6 +18,7 @@ import StartTask from '@/components/StartTask';
 import SettingsDrawer from '@/components/SettingsDrawer';
 import SystemLogs from '@/components/SystemLogs';
 import ClaudeUsage from '@/components/ClaudeUsage';
+import SystemSwitch from '@/components/SystemSwitch';
 import TaskTable from '@/components/TaskTable';
 
 /** Shown only when .env.local has not been filled in — a setup problem, not a login. */
@@ -137,6 +138,7 @@ export default function Page() {
       <header>
         <h1>🤿 Bot</h1>
         {selected ? <StatusPills status={status} /> : <span className="muted">All machines</span>}
+        <SystemSwitch />
       </header>
 
       <MachinePicker

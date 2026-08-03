@@ -37,6 +37,25 @@ const TICKER = () => `machines/${machineId()}/ticker`;
  */
 const TASK_LOGS = (uid) => `task_logs/${uid}`;
 
+/**
+ * The master switch. One node for the whole system, not per machine.
+ *
+ * Off means stop taking new work. Whatever is already running is left alone:
+ * killing a Claude session halfway wastes it, and abandoning a browser mid
+ * upload leaves a task in a state nobody chose.
+ */
+const SYSTEM = 'system';
+
+export function watchSystem(onChange) {
+  if (!db) return () => {};
+  const ref = db.ref(SYSTEM);
+  // Absent means on. A system that switched itself off because nobody had ever
+  // touched the setting would be a poor surprise.
+  const handler = (snapshot) => onChange((snapshot.val() || {}).enabled !== false);
+  ref.on('value', handler);
+  return () => ref.off('value', handler);
+}
+
 /** Log lines kept per machine. Old ones are trimmed rather than kept forever. */
 const LOG_CAP = 300;
 

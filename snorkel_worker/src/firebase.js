@@ -37,8 +37,38 @@ export const TASK_STATUS_STATIC_PASS = 'static checks pass';
 export const TASK_STATUS_INVALID = 'invalid';
 export const TASK_STATUS_VALID_AS_IS = 'valid-as-is';
 
-/** The statuses the worker picks up, and nothing else. */
-export const WORKABLE = [TASK_STATUS_BUILD, TASK_STATUS_NEEDS_REVISION, TASK_STATUS_STATIC_FAIL];
+/**
+ * The statuses the worker picks up, and nothing else.
+ *
+ * Reviewer revisions are off by default. The first-build path — download, build,
+ * then answer whatever the platform's checks say — is the part being used, and
+ * a worker that also grabs revisions makes it harder to watch. Set
+ * HANDLE_REVISIONS=true to turn them back on; the code for them is untouched.
+ *
+ * "static check fail" stays regardless: that is the first build being corrected,
+ * not a reviewer's round.
+ */
+export const WORKABLE = [
+  TASK_STATUS_BUILD,
+  TASK_STATUS_STATIC_FAIL,
+  ...(config.worker.handleRevisions ? [TASK_STATUS_NEEDS_REVISION] : []),
+];
+
+/**
+ * Every status a claimed task may be put back to.
+ *
+ * Deliberately not the same list. A task is picked up from WORKABLE, but it has
+ * to be returned to wherever it actually came from — including a status the
+ * worker is no longer taking. Sharing one list would quietly reset an
+ * interrupted revision to "in build", and the next run would download the zip
+ * again and rebuild it from scratch, losing the round it was part way through.
+ */
+export const RESTORABLE = [
+  TASK_STATUS_BUILD,
+  TASK_STATUS_NEEDS_REVISION,
+  TASK_STATUS_STATIC_FAIL,
+  TASK_STATUS_READY,
+];
 
 let db = null;
 let initError = null;

@@ -707,7 +707,15 @@ async function submitCheck(requestId, options) {
    * this step there is simply nothing on the page to click or attach to.
    */
   progress(requestId, 'prepare', 'opening the sections and answering the analysis questions');
-  const prepared = await askTab(tab.id, { type: 'SUBMIT_PREPARE', timeout: 30000 });
+  // How long to leave between actions on the form. 1 is the built-in human
+  // pacing; a larger number stretches every gap, without an extension reload.
+  const paceScale = Number(options.pace_scale) > 0 ? Number(options.pace_scale) : 1;
+
+  const prepared = await askTab(tab.id, {
+    type: 'SUBMIT_PREPARE',
+    timeout: 30000,
+    pace_scale: paceScale,
+  });
   progress(
     requestId,
     'prepared',
@@ -718,6 +726,7 @@ async function submitCheck(requestId, options) {
   progress(requestId, 'attach', options.file_name || 'the task zip');
   const attached = await askTab(tab.id, {
     type: 'SUBMIT_ATTACH',
+    pace_scale: paceScale,
     file_url: options.file_url,
     file_name: options.file_name || `${uid}.zip`,
     uploadTimeout: options.uploadTimeout || 300000,
@@ -727,8 +736,8 @@ async function submitCheck(requestId, options) {
   progress(requestId, 'checks', 'running Check feedback and Check prescriptiveness');
   const checks = await askTab(tab.id, {
     type: 'SUBMIT_RUN_CHECKS',
+    pace_scale: paceScale,
     checkTimeout: options.checkTimeout || 600000,
-    betweenChecksMs: options.betweenChecksMs || 2000,
   });
 
   progress(
@@ -751,6 +760,7 @@ async function submitCheck(requestId, options) {
       progress(requestId, 'fill_form', 'both checks passed — writing the answers onto the form');
       form = await askTab(tab.id, {
         type: 'SUBMIT_FILL_FORM',
+        pace_scale: paceScale,
         answers: options.answers,
         times: options.times || null,
         // Passed through as given. The extension does not decide policy; it is

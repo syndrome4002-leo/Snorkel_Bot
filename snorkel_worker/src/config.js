@@ -91,6 +91,14 @@ export const config = {
     maxStaticFixAttempts: num(process.env.MAX_STATIC_FIX_ATTEMPTS, 5),
 
     /**
+     * Whether to pick up tasks a reviewer sent back.
+     *
+     * Off while the first-build path is the one being watched. Turning it on is
+     * the only change needed — nothing about revisions has been removed.
+     */
+    handleRevisions: bool(process.env.HANDLE_REVISIONS, false),
+
+    /**
      * Take work belonging to any machine rather than only this one. Off by
      * default: the machine that built a task is the one whose download folder
      * holds its files.

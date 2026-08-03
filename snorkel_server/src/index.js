@@ -39,6 +39,7 @@ import {
   exchangeCode,
   applyRefreshToken,
   downloadStream,
+  deleteFile,
 } from './dropbox.js';
 import { updateEnvFile, ENV_PATH } from './envfile.js';
 import {
@@ -48,6 +49,7 @@ import {
   publishNow,
   watchCommands,
   watchSettings,
+  watchSystem,
   pushLog,
   setTicker,
 } from './rtdb.js';
@@ -398,6 +400,38 @@ app.get('/api/task-file/:uid', async (req, res) => {
     // Node's Readable.fromWeb, via the pipeline helper, so a client that goes
     // away mid-download tears the Dropbox request down with it.
     await pipeline(Readable.fromWeb(body), res);
+
+    /*
+     * The zip has reached the browser, so the Dropbox copy has done its job.
+     *
+     * Dropbox is a handover point rather than storage: the worker puts a file
+     * there for the browser to collect, and once collected, leaving it behind
+     * only invites a later run to upload a stale build. Deleting keeps the rule
+     * the rest of the system relies on — a file present in Dropbox means nobody
+     * has taken it yet.
+     *
+     * Only after the stream finished. A client that gave up halfway throws out
+     * of the pipeline above and lands in the catch, with the file untouched and
+     * still there to be fetched again.
+     *
+     * Neither the delete nor the record-keeping may fail the request: the
+     * browser already has every byte, and reporting an error now would make a
+     * finished download look like a broken one.
+     */
+    try {
+      await deleteFile(remote);
+      await patchTask(uid, {
+        dropbox_path: null,
+        file_uploaded: false,
+        submit_file_served_at: new Date().toISOString(),
+      });
+      logEvent('🗑️', 'dropbox_clear', `${name} handed to the browser and removed from Dropbox`, { uid });
+    } catch (err) {
+      logEvent('⚠️', 'dropbox_clear', `${uid}: served the file but could not clear Dropbox: ${err.message}`, {
+        uid,
+        level: 'warn',
+      });
+    }
   } catch (err) {
     console.error(`[server] could not serve ${uid}:`, err.message);
     if (!res.headersSent) {
@@ -537,6 +571,12 @@ function humanIn(iso) {
 }
 
 function updateTicker() {
+  if (!systemEnabled) {
+    setTicker('checks', { emoji: '⏹️', message: 'System disabled — nothing is being started' });
+    setTicker('tries', { emoji: '⏹️', message: 'System disabled — enable it on the dashboard to resume' });
+    return;
+  }
+
   // --- when the revise list is next read ---
   if (!lastRevisionReport) {
     setTicker('checks', { emoji: '🔌', message: 'waiting for the extension to report in' });
@@ -594,6 +634,30 @@ function updateTicker() {
 /** Whatever the dashboard has set for this machine. */
 let settings = {};
 
+/*
+ * The master switch, shared by every server and worker.
+ *
+ * Off means take no new work. Nothing already running is interrupted: a browser
+ * abandoned partway through an upload leaves a task in a state nobody chose, and
+ * stopping is meant to be safe rather than abrupt.
+ */
+let systemEnabled = true;
+
+watchSystem((enabled) => {
+  if (enabled === systemEnabled) return;
+  systemEnabled = enabled;
+  logEvent(
+    enabled ? '▶️' : '⏹️',
+    'system',
+    enabled
+      ? 'System enabled — taking work again'
+      : 'System disabled from the dashboard — no new work will be started (anything running finishes)',
+    { level: enabled ? 'info' : 'warn' }
+  );
+  updateTicker();
+  publishNow();
+});
+
 /**
  * Keeps starting tasks so long as fewer than `revise_limit` are waiting to be
  * revised.
@@ -603,6 +667,7 @@ let settings = {};
  * not a number this server has inferred from its own records.
  */
 async function maybeAutoStart(reviseCount) {
+  if (!systemEnabled) return;
   const limit = Number(settings.revise_limit);
   if (!Number.isFinite(limit) || limit <= 0) return;
 
@@ -690,6 +755,12 @@ async function maybeAutoStart(reviseCount) {
  * revision, so there is nothing new to fetch.
  */
 async function handleRevisionReport(uids) {
+  // Reading the list is harmless, but opening task pages to collect feedback is
+  // work, and work is what the switch stops.
+  if (!systemEnabled) {
+    console.log('[revisions] system is disabled — not collecting feedback');
+    return { considered: uids.length, collected: 0, disabled: true };
+  }
   // Always says something. An empty report used to return in silence, which
   // looked identical to the report never arriving.
   console.log(`[revisions] extension reported ${uids.length} awaiting revision`);
@@ -1214,6 +1285,7 @@ function submitStillBlocked() {
  * a slower way to do the same work with more ways to interleave badly.
  */
 async function maybeSubmitCheck() {
+  if (!systemEnabled) return;
   if (submitInFlight) return;
   if (!hub.isConnected('snorkel')) return;
   // A task being started or read is using the same tab.
@@ -1266,6 +1338,9 @@ async function maybeSubmitCheck() {
           times: formTimesFor(task),
           send_to_reviewer: sendToReviewer(),
           auto_submit: autoSubmit(),
+          // Stretches the pauses between actions on the form. Left at 1 unless
+          // somebody has asked for slower.
+          pace_scale: Number(settings.submit_pace) > 0 ? Number(settings.submit_pace) : 1,
         },
       },
       // Two platform builds back to back, on a zip this size.
@@ -1455,6 +1530,19 @@ scheduleAutoTry();
 scheduleSubmitSweep();
 
 watchCommands(async (command, report) => {
+  /*
+   * Nothing that starts work runs while the system is off.
+   *
+   * `mark_sent` is exempt: it records something you did on the platform
+   * yourself, and refusing to write it down would lose information rather than
+   * prevent an action.
+   */
+  if (!systemEnabled && command.type !== 'mark_sent') {
+    const error = new Error('The system is disabled on the dashboard. Enable it to start work.');
+    error.code = 'SYSTEM_DISABLED';
+    throw error;
+  }
+
   // Marks a task submitted, which is what later makes it eligible for feedback
   // collection. The dashboard cannot write to Firestore itself, so it asks.
   if (command.type === 'mark_sent') {

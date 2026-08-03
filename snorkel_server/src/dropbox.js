@@ -235,6 +235,35 @@ export async function uploadFile(filePath, { folder = '', fileName = null, size 
 }
 
 /**
+ * Removes a file from Dropbox.
+ *
+ * A missing file counts as success. The point is that it is gone, and failing on
+ * "it was already gone" would turn a retry into a dead end.
+ */
+export async function deleteFile(remotePath) {
+  const token = await getAccessToken();
+  const target = remotePath.startsWith('/') ? remotePath : dropboxPath(config.dropbox.folder, remotePath);
+
+  const res = await fetch(`${config.dropbox.apiBase}/2/files/delete_v2`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: target }),
+  });
+
+  if (res.ok) {
+    console.log(`[dropbox] deleted ${target}`);
+    return { deleted: true, path: target };
+  }
+
+  const detail = await readError(res);
+  if (/not_found/.test(detail)) {
+    console.log(`[dropbox] ${target} was already gone`);
+    return { deleted: false, path: target, reason: 'not found' };
+  }
+  throw new Error(`Dropbox delete failed (HTTP ${res.status}): ${detail}`);
+}
+
+/**
  * Opens a download without reading it into memory.
  *
  * Returns the raw response so the caller can pipe it straight on. A task zip is

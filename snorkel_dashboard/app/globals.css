@@ -475,3 +475,11 @@ button.machine {
 .usage-figure { font-size: 13px; font-variant-numeric: tabular-nums; }
 .worker-card { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
 .worker-card:first-of-type { border-top: 0; }
+
+/* The master switch. Loud when off, because "off" is the surprising state. */
+.sys-switch { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
+.sys-switch.off {
+  border-color: var(--bad);
+  color: var(--bad);
+  background: rgba(197, 56, 47, 0.1);
+}

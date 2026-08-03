@@ -33,6 +33,25 @@ const TICKER = () => `machines/${machineId()}/ticker`;
  */
 const WORKER = () => `workers/${machineId()}`;
 
+/**
+ * The master switch. One node for the whole system, not per machine.
+ *
+ * Off means stop taking new work. Whatever is already running is left alone:
+ * killing a Claude session halfway wastes it, and abandoning a browser mid
+ * upload leaves a task in a state nobody chose.
+ */
+const SYSTEM = 'system';
+
+export function watchSystem(onChange) {
+  if (!db) return () => {};
+  const ref = db.ref(SYSTEM);
+  // Absent means on. A system that switched itself off because nobody had ever
+  // touched the setting would be a poor surprise.
+  const handler = (snapshot) => onChange((snapshot.val() || {}).enabled !== false);
+  ref.on('value', handler);
+  return () => ref.off('value', handler);
+}
+
 /** The machines the dashboard has been told to work. Shared, not per-machine. */
 const MACHINE_INDEX = 'machines_index';
 

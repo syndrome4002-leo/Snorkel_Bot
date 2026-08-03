@@ -35,7 +35,10 @@ For each file, include: File path, what changed, why you changed it. You do not 
 
 5 If you added to the PR in any way, explain how. If you did not modify the PR in any way, write 'NA'. Remember you may not change or reduce the scope of the PR, but you may expand on it to add complexity.
 
-6 How much time would you estimate a senior engineer familiar with the codebase would take to solve this?
+6 What makes this task difficult?
+Describe what makes this task technically challenging. Consider factors such as edge cases, implementation dependencies, requirements that may be overlooked on first reading, or complexity in the test setup.
+
+7 How much time would you estimate a senior engineer familiar with the codebase would take to solve this?
 - <10 minutes
 - 10-20 minutes
 - 20-40 minutes
