@@ -73,15 +73,7 @@ function WorkerCard({ worker }) {
         <>
           <Window label="5-hour window" pct={usage.session_5h_pct} reset={usage.reset_5h} />
           <Window label="7-day window" pct={usage.weekly_7d_pct} reset={usage.reset_7d} />
-          {usage.stale ? (
-            <p className="error">
-              Last heard {Math.round(usage.age_hours / 24)} days ago, so these are out of date.
-              Claude Code only rewrites these figures during an interactive session; the worker
-              runs headless, which leaves them untouched.
-            </p>
-          ) : (
-            <p className="muted">Updated {when(usage.written_at)}.</p>
-          )}
+          <p className="muted">Updated {when(usage.written_at)}.</p>
         </>
       ) : (
         <p className="muted">{usage?.reason || 'No usage figures reported yet.'}</p>
