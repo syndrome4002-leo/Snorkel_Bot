@@ -69,6 +69,7 @@ import {
   saveStaticCheck,
   markTaken,
   patchTask,
+  countSentToday,
   findReadyToSubmit,
   markSent,
   addFeedback,
@@ -1227,6 +1228,34 @@ function autoSubmit() {
   return settings.auto_submit === true;
 }
 
+/** Empty or 0 means no daily cap. */
+function dailySubmitLimit() {
+  const n = Number(settings.daily_submit_limit);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
+/**
+ * Whether another task may be submitted today.
+ *
+ * Counted from the tasks themselves rather than a running total, so it is right
+ * after a restart and right across two machines sharing the account.
+ *
+ * A failure to count does not block: the limit is a courtesy to the platform,
+ * and a Firestore hiccup should not quietly stop the day's work. It is logged.
+ */
+async function submitAllowanceLeft() {
+  const limit = dailySubmitLimit();
+  if (limit === null) return { limited: false, left: Infinity, used: 0, limit: null };
+
+  try {
+    const { count } = await countSentToday();
+    return { limited: true, left: Math.max(0, limit - count), used: count, limit };
+  } catch (err) {
+    logEvent('⚠️', 'daily_limit', `could not count today's submissions: ${err.message}`, { level: 'warn' });
+    return { limited: false, left: Infinity, used: 0, limit, unknown: true };
+  }
+}
+
 function formTimesFor(task) {
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
   return {
@@ -1319,6 +1348,26 @@ async function maybeSubmitCheck() {
     `http://127.0.0.1:${config.port}/api/task-file/${encodeURIComponent(uid)}` +
     (config.botToken ? `?token=${encodeURIComponent(config.botToken)}` : '');
 
+  /*
+   * The daily cap withholds the Submit click, not the run.
+   *
+   * Uploading the zip and running the platform's checks does not submit
+   * anything, and a task that ends the day at "static checks pass" is exactly
+   * where you want it — filled in and waiting for one click. Refusing to do that
+   * work would spend the cap on nothing.
+   */
+  const allowance = await submitAllowanceLeft();
+  const maySubmit = autoSubmit() && allowance.left > 0;
+
+  if (autoSubmit() && !maySubmit) {
+    logEvent(
+      '🛑',
+      'daily_limit',
+      `${allowance.used} of ${allowance.limit} submitted today — ${uid} will be filled in and left for you`,
+      { uid, level: 'warn' }
+    );
+  }
+
   logEvent('📤', 'submit_start', `${uid} — uploading ${task.file_name || 'the task zip'} and running the checks`, {
     uid,
   });
@@ -1338,7 +1387,7 @@ async function maybeSubmitCheck() {
           answers: task.answers && !Array.isArray(task.answers) ? task.answers : null,
           times: formTimesFor(task),
           send_to_reviewer: sendToReviewer(),
-          auto_submit: autoSubmit(),
+          auto_submit: maySubmit,
           // Stretches the pauses between actions on the form. Left at 1 unless
           // somebody has asked for slower.
           pace_scale: Number(settings.submit_pace) > 0 ? Number(settings.submit_pace) : 1,
@@ -1396,7 +1445,14 @@ async function maybeSubmitCheck() {
        */
       if (form?.submitted) {
         await markSent(uid);
-        logEvent('📮', 'task_sent', `${uid} submitted — status "sent", no longer a new task`, { uid });
+        const after = await submitAllowanceLeft();
+        logEvent(
+          '📮',
+          'task_sent',
+          `${uid} submitted — status "sent", no longer a new task` +
+            (after.limited ? ` (${after.used} of ${after.limit} today)` : ''),
+          { uid }
+        );
 
         const sheet = await recordSubmission(task, {
           csvUrl: settings.sheet_csv_url,

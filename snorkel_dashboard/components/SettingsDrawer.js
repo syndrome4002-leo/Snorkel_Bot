@@ -84,6 +84,14 @@ const FIELDS = [
   },
   {
     group: 'Submitting',
+    key: 'daily_submit_limit',
+    label: 'New tasks to submit per day',
+    help: 'Counts new tasks only, not revisions. From midnight, across every machine. At the limit a task is still built, uploaded and checked, and the form filled in for you to submit by hand. Empty or 0 means no limit.',
+    min: 0,
+    placeholder: 'no limit',
+  },
+  {
+    group: 'Submitting',
     key: 'auto_submit',
     type: 'checkbox',
     label: 'Submit automatically',

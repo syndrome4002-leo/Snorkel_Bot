@@ -373,6 +373,44 @@ export async function markUploaded(uid, extra = {}) {
   return patch;
 }
 
+/**
+ * How many tasks have been submitted since midnight, and which.
+ *
+ * Counted from `sent_at` rather than from a tally kept somewhere, so it survives
+ * restarts, is right across several machines, and cannot drift out of step with
+ * what actually happened. Midnight is this machine's local midnight, which is
+ * the day boundary a person means when they say "per day".
+ *
+ * Not scoped to a machine: the limit is about the Snorkel account, and two
+ * machines each submitting up to the limit would be twice the intended number.
+ */
+export async function countSentToday({ newOnly = true } = {}) {
+  if (!db) return { count: 0, uids: [], since: null };
+
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  const since = midnight.toISOString();
+
+  // A range on one field needs no composite index, and ISO-8601 strings in UTC
+  // compare correctly as strings.
+  const snap = await db
+    .collection(config.firebase.collection)
+    .where('sent_at', '>=', since)
+    .get();
+
+  /*
+   * Filtered here rather than in the query. An equality on `submitted_new`
+   * alongside a range on `sent_at` would need a composite index created by hand;
+   * a day of submissions is a handful of documents, so it costs nothing to
+   * decide in memory.
+   */
+  const uids = snap.docs
+    .filter((d) => !newOnly || d.data().submitted_new === true)
+    .map((d) => d.id);
+
+  return { count: uids.length, uids, since };
+}
+
 /** Merges a patch into one task. The generic escape hatch. */
 export async function patchTask(uid, patch) {
   if (!db) throw new Error(describe(initError));
@@ -385,7 +423,20 @@ export async function patchTask(uid, patch) {
 /** Marks a task as submitted and awaiting review. */
 export async function markSent(uid) {
   if (!db) throw new Error(describe(initError));
+
+  /*
+   * Remember whether this was a new task, before the flag is cleared below.
+   *
+   * The daily cap counts new tasks, and `is_new_task` stops being true the
+   * instant a task is submitted — so afterwards there is no way to tell a new
+   * submission from a revision. This is that fact, written down while it is
+   * still knowable.
+   */
+  const before = await db.collection(config.firebase.collection).doc(String(uid)).get();
+  const wasNew = before.exists && before.data().is_new_task === true;
+
   const patch = {
+    submitted_new: wasNew,
     task_status: TASK_STATUS_SENT,
     /*
      * Submitted, so it is no longer the new task the account is holding — the

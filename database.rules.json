@@ -139,6 +139,7 @@
           "sheet_csv_url": { ".validate": "!newData.exists() || newData.isString()" },
           "sheet_webhook_url": { ".validate": "!newData.exists() || newData.isString()" },
           "auto_submit": { ".validate": "!newData.exists() || newData.isBoolean()" },
+          "daily_submit_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
           "$other": { ".validate": true }
         },
 
