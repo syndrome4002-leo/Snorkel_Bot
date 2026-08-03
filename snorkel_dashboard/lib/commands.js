@@ -16,7 +16,7 @@ export const statusPath = (machine) => `machines/${machine}/status`;
 export const settingsPath = (machine) => `machines/${machine}/settings`;
 export const logsPath = (machine) => `machines/${machine}/logs`;
 export const tickerPath = (machine) => `machines/${machine}/ticker`;
-export const workerPath = (machine) => `machines/${machine}/worker`;
+export const workersPath = () => 'workers';
 
 /** Queues a command for one machine. Returns its id so the caller can watch it. */
 async function queue(machine, type, extra = {}) {
@@ -99,10 +99,19 @@ export function watchServerStatus(machine, onUpdate) {
 }
 
 /**
- * What snorkel_worker is doing, including how much of the Claude subscription
- * it can see left. Published under its own key so it sits alongside the
- * server's status rather than competing with it for the same node.
+ * Every snorkel_worker that has registered, keyed by the machine it runs on.
+ *
+ * Not scoped to the machine being viewed: a worker is told which machines to
+ * work for and is usually on none of them, so there is no machine branch it
+ * belongs under. Looking for it there is how the usage panel ended up showing
+ * nothing while a worker was running perfectly well.
  */
-export function watchWorker(machine, onUpdate) {
-  return onValue(ref(rtdb(), workerPath(machine)), (snapshot) => onUpdate(snapshot.val()));
+export function watchWorkers(onUpdate) {
+  return onValue(ref(rtdb(), workersPath()), (snapshot) => {
+    const rows = [];
+    snapshot.forEach((child) => {
+      rows.push({ id: child.key, ...(child.val() || {}) });
+    });
+    onUpdate(rows);
+  });
 }

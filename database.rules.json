@@ -56,6 +56,18 @@
       ".write": false
     },
 
+    "workers": {
+      "//": [
+        "One entry per snorkel_worker, keyed by the machine it runs on.",
+        "",
+        "Shared rather than nested under a machine, because a worker works for",
+        "machines it is not itself one of — there is no machine branch it",
+        "naturally belongs to. Browsers only read it."
+      ],
+      ".read": true,
+      ".write": false
+    },
+
     "machines_index": {
       "//": [
         "The machines being worked, added from the dashboard.",

@@ -22,7 +22,16 @@ import { machineId, machineInfo } from './machine.js';
 const SETTINGS = () => `machines/${machineId()}/settings`;
 const LOGS = () => `machines/${machineId()}/logs`;
 const TICKER = () => `machines/${machineId()}/ticker`;
-const WORKER = () => `machines/${machineId()}/worker`;
+/*
+ * Workers register in one shared place, not under the machine they happen to
+ * run on.
+ *
+ * A worker is told which machines to work for and is usually on none of them —
+ * so looking for it under the machine you are viewing finds nothing, which is
+ * exactly what the dashboard did. `/workers` is where you look when you want to
+ * know whether a worker exists at all.
+ */
+const WORKER = () => `workers/${machineId()}`;
 
 /** The machines the dashboard has been told to work. Shared, not per-machine. */
 const MACHINE_INDEX = 'machines_index';

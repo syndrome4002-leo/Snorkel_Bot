@@ -167,7 +167,7 @@ export default function Page() {
         </section>
       )}
 
-      {selected ? <ClaudeUsage machine={selected} tasks={tasks} /> : null}
+      <ClaudeUsage />
 
       {/* Logs on the left, tasks on the right: the logs are a narrow running
           column, the table needs the width. */}

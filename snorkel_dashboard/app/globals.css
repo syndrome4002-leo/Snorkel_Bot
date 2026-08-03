@@ -472,3 +472,6 @@ button.machine {
 .meter-fill.warn { background: var(--warn); }
 .meter-fill.bad { background: var(--bad); }
 .pill.muted { color: var(--muted); }
+.usage-figure { font-size: 13px; font-variant-numeric: tabular-nums; }
+.worker-card { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.worker-card:first-of-type { border-top: 0; }

@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { watchWorker } from '@/lib/commands';
+import { useEffect, useState } from 'react';
+import { watchWorkers } from '@/lib/commands';
 
 function when(iso) {
   if (!iso) return '';
@@ -9,34 +9,89 @@ function when(iso) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
-/** "in 3 days", "in 4 hours", or "passed" for a window that has already rolled. */
+/**
+ * "in 3 days", falling back to hours and minutes as it gets close.
+ *
+ * A window an hour away is not "in 0 days", and one that has already rolled is
+ * not "in -2 days" — both are worth saying properly rather than rounding into
+ * something wrong.
+ */
 function until(iso) {
   if (!iso) return '';
   const ms = new Date(iso).getTime() - Date.now();
   if (!Number.isFinite(ms)) return '';
-  if (ms <= 0) return 'passed';
+  if (ms <= 0) return 'already passed';
+
   const hours = ms / 3600000;
   if (hours < 1) return `in ${Math.max(1, Math.round(ms / 60000))} min`;
-  if (hours < 48) return `in ${Math.round(hours)} h`;
-  return `in ${Math.round(hours / 24)} days`;
+  if (hours < 48) return `in ${Math.round(hours)} hours`;
+  const days = Math.round(hours / 24);
+  return `in ${days} day${days === 1 ? '' : 's'}`;
 }
 
-function Meter({ label, pct, reset }) {
+function Window({ label, pct, reset }) {
   const value = Number.isFinite(pct) ? pct : null;
+  // Colour only once it matters; a quiet bar for most of its life.
   const tone = value === null ? '' : value >= 90 ? ' bad' : value >= 70 ? ' warn' : '';
 
   return (
     <div className="meter">
       <div className="row space">
         <span>{label}</span>
-        <span className="muted">{value === null ? '—' : `${value}%`}</span>
+        <span className="usage-figure">
+          {value === null ? '—' : `${value}%`}
+          {reset ? <span className="muted">, resets {until(reset)}</span> : null}
+        </span>
       </div>
       <div className="meter-track">
         <div className={`meter-fill${tone}`} style={{ width: `${value ?? 0}%` }} />
       </div>
-      {reset ? (
+    </div>
+  );
+}
+
+function WorkerCard({ worker }) {
+  const usage = worker.claude_usage;
+  const running = worker.tasks || [];
+
+  return (
+    <div className="worker-card">
+      <div className="row space">
+        <span className="row">
+          <span className={`dot ${worker.online ? 'ok' : 'bad'}`} />
+          <strong>{worker.hostname || worker.id}</strong>
+          <span className="machine-id">{worker.id}</span>
+        </span>
+        <span className="muted">
+          {worker.online
+            ? `${worker.running ?? 0} of ${worker.max_concurrent ?? '?'} busy`
+            : 'offline'}
+        </span>
+      </div>
+
+      {usage?.available ? (
+        <>
+          <Window label="5-hour window" pct={usage.session_5h_pct} reset={usage.reset_5h} />
+          <Window label="7-day window" pct={usage.weekly_7d_pct} reset={usage.reset_7d} />
+          {usage.stale ? (
+            <p className="error">
+              Last heard {Math.round(usage.age_hours / 24)} days ago, so these are out of date.
+              Claude Code only rewrites these figures during an interactive session; the worker
+              runs headless, which leaves them untouched.
+            </p>
+          ) : (
+            <p className="muted">Updated {when(usage.written_at)}.</p>
+          )}
+        </>
+      ) : (
+        <p className="muted">{usage?.reason || 'No usage figures reported yet.'}</p>
+      )}
+
+      {/* Real and live, unlike the percentages: this is what the worker is
+          doing right now, refreshed every ten seconds. */}
+      {running.length ? (
         <p className="muted">
-          resets {until(reset)} <span title={when(reset)}>({when(reset)})</span>
+          Working on {running.map((t) => String(t.uid).slice(0, 8)).join(', ')}
         </p>
       ) : null}
     </div>
@@ -44,95 +99,41 @@ function Meter({ label, pct, reset }) {
 }
 
 /**
- * What is left of the Claude subscription, and what this machine has spent.
+ * Every worker that has registered, and what is left of the Claude subscription.
  *
- * Two different kinds of number, kept apart on purpose. The percentages come
- * from Claude Code's own cache of what the API told it, which only changes when
- * a run comes back carrying limit headers — so it can be badly out of date, and
- * says so rather than being shown as current. The spend underneath is measured
- * by the worker on every task it runs, so it is always true, but it is money
- * rather than quota.
+ * Not scoped to the machine selected above. A worker is told which machines to
+ * work for and normally runs on none of them, so there is no machine branch it
+ * belongs under — looking for it there showed nothing while a worker was running
+ * perfectly well.
  */
-export default function ClaudeUsage({ machine, tasks }) {
-  const [worker, setWorker] = useState(null);
+export default function ClaudeUsage() {
+  const [workers, setWorkers] = useState(null);
 
-  useEffect(() => {
-    if (!machine) return undefined;
-    setWorker(null);
-    return watchWorker(machine, setWorker);
-  }, [machine]);
-
-  const spend = useMemo(() => {
-    const now = Date.now();
-    const day = 24 * 3600 * 1000;
-    let today = 0;
-    let week = 0;
-    let total = 0;
-    let runs = 0;
-
-    for (const task of tasks || []) {
-      const cost = Number(task.worker_cost_usd);
-      if (!Number.isFinite(cost) || cost <= 0) continue;
-      runs++;
-      total += cost;
-      const at = new Date(task.worker_finished_at || task.updated_at || 0).getTime();
-      if (!Number.isFinite(at)) continue;
-      if (now - at < day) today += cost;
-      if (now - at < 7 * day) week += cost;
-    }
-    return { today, week, total, runs };
-  }, [tasks]);
-
-  const usage = worker?.claude_usage;
-  const money = (n) => `$${n.toFixed(2)}`;
+  useEffect(() => watchWorkers(setWorkers), []);
 
   return (
     <section className="card">
       <div className="row space">
-        <h2>Claude usage</h2>
-        {worker ? (
-          <span className={`pill${worker.online ? '' : ' muted'}`}>
-            <span className={`dot ${worker.online ? 'ok' : 'bad'}`} />
-            worker {worker.online ? 'online' : 'offline'}
-          </span>
-        ) : (
-          <span className="muted">no worker on this machine</span>
-        )}
+        <h2>
+          Claude usage{' '}
+          {workers?.length ? (
+            <span className="muted">
+              {workers.length} worker{workers.length === 1 ? '' : 's'}
+            </span>
+          ) : null}
+        </h2>
       </div>
 
-      {usage?.available ? (
-        <>
-          <Meter label="5-hour window" pct={usage.session_5h_pct} reset={usage.reset_5h} />
-          <Meter label="7-day window" pct={usage.weekly_7d_pct} reset={usage.reset_7d} />
-          {usage.stale ? (
-            <p className="error">
-              These figures are {Math.round(usage.age_hours / 24)} days old. Claude Code only
-              rewrites them when a run comes back carrying limit information, so treat them as the
-              last thing it heard rather than as the position now.
-            </p>
-          ) : (
-            <p className="muted">Last updated {when(usage.written_at)}.</p>
-          )}
-        </>
+      {workers === null ? (
+        <p className="muted">Loading…</p>
+      ) : workers.length ? (
+        workers.map((worker) => <WorkerCard key={worker.id} worker={worker} />)
       ) : (
         <p className="muted">
-          {worker
-            ? usage?.reason || 'The worker has not reported any usage figures yet.'
-            : 'Start the worker on this machine to see the subscription windows.'}
+          No worker has registered yet. Start snorkel_worker on any machine — it does not have to be
+          one of the machines above.
         </p>
       )}
-
-      {/* Measured by the worker itself, so unlike the percentages above this is
-          always current — it just answers a different question. */}
-      <h4 className="group-title">Spent by this bot</h4>
-      <div className="pills">
-        <span className="pill">last 24 h {money(spend.today)}</span>
-        <span className="pill">last 7 days {money(spend.week)}</span>
-        <span className="pill">all time {money(spend.total)}</span>
-        <span className="pill muted">
-          {spend.runs} run{spend.runs === 1 ? '' : 's'}
-        </span>
-      </div>
     </section>
   );
 }
