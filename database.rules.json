@@ -107,6 +107,8 @@
           "submit_check_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "worker_max_concurrent": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "static_fix_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
+          "send_to_reviewer": { ".validate": "!newData.exists() || newData.isBoolean()" },
+          "auto_submit": { ".validate": "!newData.exists() || newData.isBoolean()" },
           "$other": { ".validate": true }
         },
 

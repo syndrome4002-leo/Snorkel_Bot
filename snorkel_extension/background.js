@@ -749,12 +749,21 @@ async function submitCheck(requestId, options) {
   if (checks.passed) {
     if (options.answers && Object.keys(options.answers).length) {
       progress(requestId, 'fill_form', 'both checks passed — writing the answers onto the form');
-      form = await askTab(tab.id, { type: 'SUBMIT_FILL_FORM', answers: options.answers });
+      form = await askTab(tab.id, {
+        type: 'SUBMIT_FILL_FORM',
+        answers: options.answers,
+        times: options.times || null,
+        // Passed through as given. The extension does not decide policy; it is
+        // told, so one dashboard governs every machine.
+        send_to_reviewer: options.send_to_reviewer !== false,
+        auto_submit: options.auto_submit === true,
+      });
       progress(
         requestId,
         'form_filled',
         `${form.filled.length} field(s) filled` +
-          (form.skipped.length ? `, ${form.skipped.length} skipped` : '')
+          (form.skipped.length ? `, ${form.skipped.length} skipped` : '') +
+          (form.submitted ? ' — SUBMITTED' : '')
       );
     } else {
       progress(requestId, 'fill_form_skipped', 'both checks passed but no stored answers were sent');

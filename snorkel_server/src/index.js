@@ -1136,6 +1136,25 @@ const FORM_TIME_ADDITIONAL = 20;
 const FORM_TIME_REVISIONS_BASE = 185;
 const FORM_TIME_REVISIONS_STEP = 20;
 
+/*
+ * The two switches that decide how far the bot goes on the form.
+ *
+ * Separate on purpose. Ticking "Send to Reviewer" only says where the task
+ * should go when it is eventually handed in; submitting is the act of handing it
+ * in. Wanting the first without the second is the normal case — the form is
+ * ready, a person reads it, one click sends it.
+ *
+ * Defaults differ for the same reason. Ticking the box is harmless on its own,
+ * so it is on. Submitting cannot be taken back, so it is off until asked for.
+ */
+function sendToReviewer() {
+  return settings.send_to_reviewer !== false;
+}
+
+function autoSubmit() {
+  return settings.auto_submit === true;
+}
+
 function formTimesFor(task) {
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
   return {
@@ -1245,6 +1264,8 @@ async function maybeSubmitCheck() {
           // checks pass, while the page is already open on the right task.
           answers: task.answers && !Array.isArray(task.answers) ? task.answers : null,
           times: formTimesFor(task),
+          send_to_reviewer: sendToReviewer(),
+          auto_submit: autoSubmit(),
         },
       },
       // Two platform builds back to back, on a zip this size.

@@ -227,7 +227,11 @@
       buttons.find((b) => SnorkelBot.normText(SnorkelBot.text(b)) === wanted) ||
       // Falling back on the danger styling, since that is what a destructive
       // confirmation is: whatever it is called, it is not Cancel.
-      buttons.find((b) => /button-danger/.test(b.className || ''));
+      buttons.find((b) => /button-danger/.test(b.className || '')) ||
+      // Last resort: anything that is plainly not a way out. Matched by name so
+      // a dialog whose confirm button is worded differently still gets
+      // answered, without Cancel ever being clickable by accident.
+      buttons.find((b) => !/^(cancel|close|no|back)$/i.test(SnorkelBot.normText(SnorkelBot.text(b))));
 
     if (!confirm) {
       throw new Error(
@@ -493,6 +497,15 @@
   /** Everything in this one gets ticked; it is a list of things to affirm. */
   const CONFIRM_ALL = 'confirm your task meets all the following requirements';
 
+  /**
+   * Marks the submission to go to a reviewer once it is handed in.
+   *
+   * Ticking it does not send anything — the form still has to be submitted, and
+   * the bot does not do that. It only means the Submit that a person eventually
+   * clicks will route the task to a reviewer rather than saving it quietly.
+   */
+  const SEND_TO_REVIEWER = 'field-checkbox-send_to_reviewer';
+
   const fieldByTestid = (prefix) =>
     $$('[data-testid]').find((el) => (el.getAttribute('data-testid') || '').startsWith(prefix));
 
@@ -670,7 +683,66 @@
       await SnorkelBot.sleep(200);
     }
 
-    return { filled, skipped, filled_at: new Date().toISOString(), page_url: location.href };
+    /*
+     * Last, so it is set on a form that is already complete rather than on one
+     * that turned out to be missing half its answers.
+     *
+     * Absent means yes: a command from an older server, or one sent before the
+     * setting was ever saved, should behave the way it always has.
+     */
+    const wantReviewer = msg.send_to_reviewer !== false;
+    const reviewerField = fieldByTestid(SEND_TO_REVIEWER);
+    const reviewerBox = reviewerField && $('[role="checkbox"]', reviewerField);
+
+    if (!wantReviewer) {
+      skipped.push('send to reviewer (turned off in settings)');
+    } else if (!reviewerBox) {
+      skipped.push('send to reviewer (checkbox not on this page)');
+    } else if (reviewerBox.getAttribute('aria-checked') === 'true') {
+      filled.push('send to reviewer (already ticked)');
+    } else {
+      SnorkelBot.click(reviewerBox);
+      await SnorkelBot.waitFor(() => reviewerBox.getAttribute('aria-checked') === 'true' || null, {
+        timeout: 5000,
+        label: 'send to reviewer to tick',
+      }).catch(() => null);
+
+      const ticked = reviewerBox.getAttribute('aria-checked') === 'true';
+      (ticked ? filled : skipped).push(`send to reviewer${ticked ? '' : ' (would not tick)'}`);
+    }
+
+    /*
+     * Handing it in, if that has been asked for.
+     *
+     * Only ever on an explicit true. This is the one action in the whole system
+     * that cannot be undone — after it, a reviewer has the task — so it does not
+     * happen because a field was missing from a message.
+     */
+    let submitted = false;
+    if (msg.auto_submit === true) {
+      const button = $$('button').find((b) => SnorkelBot.normText(SnorkelBot.text(b)).toLowerCase() === 'submit');
+      if (!button) {
+        skipped.push('submit (no Submit button found)');
+      } else if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+        skipped.push('submit (the button is disabled, so the form is not complete)');
+      } else {
+        SnorkelBot.click(button);
+        // Some builds ask to confirm; some do not. Either is fine.
+        const confirmed = await confirmDialog('Submit', { timeout: 6000 });
+        submitted = true;
+        filled.push(`submitted${confirmed.appeared ? ' and confirmed' : ''}`);
+        await SnorkelBot.sleep(1500);
+      }
+    }
+
+    return {
+      filled,
+      skipped,
+      submitted,
+      send_to_reviewer: wantReviewer,
+      filled_at: new Date().toISOString(),
+      page_url: location.href,
+    };
   });
 
   /** The UID shown on this page, so the caller can confirm it is the right task. */

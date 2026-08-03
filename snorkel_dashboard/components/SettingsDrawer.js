@@ -51,6 +51,22 @@ const FIELDS = [
     placeholder: '3',
   },
   {
+    group: 'Submitting',
+    key: 'send_to_reviewer',
+    type: 'checkbox',
+    label: 'Tick "Send to Reviewer"',
+    help: 'Ticks the box on the form once both platform checks pass. Nothing is sent by ticking it; it decides where the task goes when the form is finally submitted.',
+    fallback: true,
+  },
+  {
+    group: 'Submitting',
+    key: 'auto_submit',
+    type: 'checkbox',
+    label: 'Submit automatically',
+    help: 'Clicks Submit after filling the form. Off means the bot fills everything in and stops, leaving the last click to you. On means a task can reach a reviewer with nobody having read it.',
+    fallback: false,
+  },
+  {
     group: 'Worker',
     key: 'static_fix_limit',
     label: 'Static check fix attempts',
@@ -92,7 +108,12 @@ export default function SettingsDrawer({ machine, onClose }) {
         const next = { ...current };
         for (const field of FIELDS) {
           if (document.activeElement?.id === field.key) continue;
-          next[field.key] = value?.[field.key] ?? '';
+          // A checkbox that has never been saved shows its documented default
+          // rather than off, so the box matches what the bot will actually do.
+          next[field.key] =
+            field.type === 'checkbox'
+              ? (value?.[field.key] ?? field.fallback ?? false)
+              : (value?.[field.key] ?? '');
         }
         return next;
       });
@@ -106,6 +127,14 @@ export default function SettingsDrawer({ machine, onClose }) {
     try {
       const patch = {};
       for (const field of FIELDS) {
+        if (field.type === 'checkbox') {
+          // Written as a real boolean rather than left unset, so "off" is a
+          // decision on the record instead of an absence the reader has to
+          // guess a default for.
+          patch[field.key] = Boolean(values[field.key]);
+          continue;
+        }
+
         const raw = String(values[field.key] ?? '').trim();
         if (raw === '') {
           patch[field.key] = null;
@@ -143,24 +172,41 @@ export default function SettingsDrawer({ machine, onClose }) {
             {GROUPS.map((group) => (
               <div key={group}>
                 <h4 className="group-title">{group}</h4>
-                {FIELDS.filter((field) => field.group === group).map((field) => (
-                  <div key={field.key} className="setting">
-                    <label htmlFor={field.key}>{field.label}</label>
-                    <p className="muted">{field.help}</p>
-                    <input
-                      id={field.key}
-                      type="number"
-                      min={field.min}
-                      step="1"
-                      style={{ width: '8rem' }}
-                      value={values[field.key] ?? ''}
-                      onChange={(event) =>
-                        setValues((current) => ({ ...current, [field.key]: event.target.value }))
-                      }
-                      placeholder={field.placeholder}
-                    />
-                  </div>
-                ))}
+                {FIELDS.filter((field) => field.group === group).map((field) =>
+                  field.type === 'checkbox' ? (
+                    <div key={field.key} className="setting">
+                      <label className="switch" htmlFor={field.key}>
+                        <input
+                          id={field.key}
+                          type="checkbox"
+                          checked={Boolean(values[field.key])}
+                          onChange={(event) =>
+                            setValues((current) => ({ ...current, [field.key]: event.target.checked }))
+                          }
+                        />
+                        <span>{field.label}</span>
+                      </label>
+                      <p className="muted">{field.help}</p>
+                    </div>
+                  ) : (
+                    <div key={field.key} className="setting">
+                      <label htmlFor={field.key}>{field.label}</label>
+                      <p className="muted">{field.help}</p>
+                      <input
+                        id={field.key}
+                        type="number"
+                        min={field.min}
+                        step="1"
+                        style={{ width: '8rem' }}
+                        value={values[field.key] ?? ''}
+                        onChange={(event) =>
+                          setValues((current) => ({ ...current, [field.key]: event.target.value }))
+                        }
+                        placeholder={field.placeholder}
+                      />
+                    </div>
+                  )
+                )}
               </div>
             ))}
 

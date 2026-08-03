@@ -454,3 +454,7 @@ button.machine {
   padding: 10px 12px;
 }
 .badge.static-check-fail { border-color: var(--bad); color: var(--bad); }
+
+/* A boolean setting reads better as a switch line than as a labelled box. */
+.switch { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; }
+.switch input { width: 16px; height: 16px; cursor: pointer; }
