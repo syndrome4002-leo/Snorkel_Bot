@@ -65,6 +65,7 @@ import {
   TASK_STATUS_READY,
   saveStaticCheck,
   markTaken,
+  patchTask,
   findReadyToSubmit,
   markSent,
   addFeedback,
@@ -1116,6 +1117,35 @@ function scheduleAutoTry() {
 let submitInFlight = null;
 
 const DEFAULT_SUBMIT_EVERY = 3;
+
+/*
+ * The handling-time answers, which are policy rather than measurement.
+ *
+ * Three are the same on every task. The fourth is cumulative: the form asks for
+ * the time spent on *all* revisions and says to update it each time another one
+ * is done, so it grows by a fixed step per round.
+ *
+ * `feedbacks.length` is the round counter, because that is literally the number
+ * of times a reviewer has sent the task back. Nothing separate has to be kept in
+ * step, and a static-check fix — which is the same round being corrected, not a
+ * new one — quite rightly does not move it.
+ */
+const FORM_TIME_REVIEW = 45;
+const FORM_TIME_REWRITE = 120;
+const FORM_TIME_ADDITIONAL = 20;
+const FORM_TIME_REVISIONS_BASE = 185;
+const FORM_TIME_REVISIONS_STEP = 20;
+
+function formTimesFor(task) {
+  const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
+  return {
+    review: FORM_TIME_REVIEW,
+    rewrite: FORM_TIME_REWRITE,
+    additional: FORM_TIME_ADDITIONAL,
+    revisions: FORM_TIME_REVISIONS_BASE + FORM_TIME_REVISIONS_STEP * rounds,
+    rounds,
+  };
+}
 let submitTimer = null;
 
 /**
@@ -1211,6 +1241,10 @@ async function maybeSubmitCheck() {
           is_new_task: task.is_new_task === true,
           file_url: fileUrl,
           file_name: task.file_name || `${uid}.zip`,
+          // Sent up front so the extension can fill the form the moment both
+          // checks pass, while the page is already open on the right task.
+          answers: task.answers && !Array.isArray(task.answers) ? task.answers : null,
+          times: formTimesFor(task),
         },
       },
       // Two platform builds back to back, on a zip this size.
@@ -1239,7 +1273,21 @@ async function maybeSubmitCheck() {
     await saveStaticCheck(uid, result);
 
     if (result.passed) {
-      logEvent('✅', 'submit_pass', `${uid} passed both checks — ready for you to submit`, { uid });
+      const form = result.form;
+      logEvent(
+        '✅',
+        'submit_pass',
+        `${uid} passed both checks` +
+          (form ? ` — ${form.filled.length} form field(s) filled, ready for you to submit` : ' — ready for you to submit'),
+        { uid }
+      );
+      if (form?.skipped?.length) {
+        logEvent('⚠️', 'form_gaps', `${uid}: not filled — ${form.skipped.join('; ')}`, {
+          uid,
+          level: 'warn',
+        });
+      }
+      if (form) await patchTask(uid, { form_filled: { ...form, times: formTimesFor(task) } });
     } else {
       const failed = (result.results || []).filter((r) => r.verdict !== 'pass').map((r) => r.label);
       logEvent('🚫', 'submit_fail', `${uid} failed ${failed.join(' and ')} — "${TASK_STATUS_STATIC_FAIL}"`, {
@@ -1337,7 +1385,26 @@ function pushCheckInterval() {
   const every = minutes(settings.check_revise_every_min, DEFAULT_CHECK_EVERY);
   hub
     .command('snorkel', { type: 'configure', revisionEveryMinutes: every })
-    .then(() => logEvent('⚙️', 'settings', `extension will check the revise list every ${every} min`))
+    .then((result) => {
+      logEvent('⚙️', 'settings', `extension will check the revise list every ${every} min`);
+
+      /*
+       * Take the new schedule from the reply.
+       *
+       * This used to be discarded, which left the ticker quoting the schedule
+       * from before the change. Raise the interval and the old next-check time
+       * is immediately in the past, so the line read "due now" and stayed there
+       * — looking exactly like a check that had stopped working, when in fact
+       * one had simply been moved further away.
+       */
+      if (result && result.next_check_at) {
+        lastRevisionReport = {
+          ...(lastRevisionReport || {}),
+          next_check_at: result.next_check_at,
+        };
+        updateTicker();
+      }
+    })
     .catch((err) => logEvent('⚠️', 'settings', `could not set the check interval: ${err.message}`, { level: 'warn' }));
 }
 

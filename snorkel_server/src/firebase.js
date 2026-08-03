@@ -373,6 +373,15 @@ export async function markUploaded(uid, extra = {}) {
   return patch;
 }
 
+/** Merges a patch into one task. The generic escape hatch. */
+export async function patchTask(uid, patch) {
+  if (!db) throw new Error(describe(initError));
+  await db
+    .collection(config.firebase.collection)
+    .doc(String(uid))
+    .set({ ...patch, updated_at: new Date().toISOString() }, { merge: true });
+}
+
 /** Marks a task as submitted and awaiting review. */
 export async function markSent(uid) {
   if (!db) throw new Error(describe(initError));

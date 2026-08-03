@@ -73,8 +73,8 @@
   },
 
   "senior_estimated_time": {
-    "question": "5 of the reviewer form",
-    "stages": ["revision"],
+    "question": "6",
+    "stages": ["build", "revision"],
     "enum": ["<10 minutes", "10-20 minutes", "20-40 minutes", "40+ minutes"]
   },
 

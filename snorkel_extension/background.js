@@ -154,9 +154,32 @@ async function handleServerMessage(msg) {
       const every = Number(msg.revisionEveryMinutes);
       if (Number.isFinite(every) && every >= 1) {
         await chrome.alarms.clear(REVISION_ALARM);
-        chrome.alarms.create(REVISION_ALARM, { periodInMinutes: every });
+
+        /*
+         * The first fire is anchored to the LAST check, not to now.
+         *
+         * `chrome.alarms.create` with only a period starts counting from this
+         * moment, so changing 5 minutes to 30 would mean 30 minutes of silence
+         * however long ago the last check was. Anchoring means raising the
+         * interval simply spaces the checks out, rather than adding a gap the
+         * size of the whole new interval on top of the wait already served.
+         *
+         * Already overdue by the new schedule, it goes almost immediately.
+         */
+        const { lastRevisionCheckAt } = await chrome.storage.local.get('lastRevisionCheckAt');
+        const due = lastRevisionCheckAt
+          ? new Date(lastRevisionCheckAt).getTime() + every * 60000
+          : Date.now() + every * 60000;
+        // Chrome clamps anything under ~30s, so a due-now alarm is asked for
+        // explicitly rather than left to round down to nothing.
+        const when = Math.max(Date.now() + 10000, due);
+
+        chrome.alarms.create(REVISION_ALARM, { when, periodInMinutes: every });
         await chrome.storage.local.set({ revisionEveryMinutes: every });
-        log(`revision check interval set to ${every} min`);
+        log(
+          `revision check interval set to ${every} min; next at ${new Date(when).toISOString()}` +
+            (lastRevisionCheckAt ? ` (last checked ${lastRevisionCheckAt})` : '')
+        );
       }
       send({
         type: 'result',
@@ -559,6 +582,9 @@ async function reportRevisions() {
   busy = true;
   try {
     const { revisions, checked_at } = await listRevisions();
+    // Remembered so a later change of interval can be measured from the last
+    // real check rather than from the moment the setting was saved.
+    await chrome.storage.local.set({ lastRevisionCheckAt: checked_at || new Date().toISOString() });
     send({
       type: 'revisions',
       uids: revisions.map((r) => r.uid),
@@ -711,7 +737,31 @@ async function submitCheck(requestId, options) {
     checks.results.map((r) => `${r.label}: ${r.verdict}`).join(', ')
   );
 
-  return { uid, page_uid: page.uid || null, prepared, attached, ...checks };
+  /*
+   * Both checks passed, so the stored answers go onto the form while the page is
+   * already open and already scrolled to the right task.
+   *
+   * Filling and stopping. Nothing ticks "Send to Reviewer" and nothing clicks
+   * Submit — a person reads it first, which is the whole reason the bot stops
+   * here rather than finishing the job.
+   */
+  let form = null;
+  if (checks.passed) {
+    if (options.answers && Object.keys(options.answers).length) {
+      progress(requestId, 'fill_form', 'both checks passed — writing the answers onto the form');
+      form = await askTab(tab.id, { type: 'SUBMIT_FILL_FORM', answers: options.answers });
+      progress(
+        requestId,
+        'form_filled',
+        `${form.filled.length} field(s) filled` +
+          (form.skipped.length ? `, ${form.skipped.length} skipped` : '')
+      );
+    } else {
+      progress(requestId, 'fill_form_skipped', 'both checks passed but no stored answers were sent');
+    }
+  }
+
+  return { uid, page_uid: page.uid || null, prepared, attached, form, ...checks };
 }
 
 async function collectFeedback(requestId, uids, options) {
