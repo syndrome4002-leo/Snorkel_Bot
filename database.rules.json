@@ -135,6 +135,9 @@
           "worker_max_concurrent": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "static_fix_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
           "send_to_reviewer": { ".validate": "!newData.exists() || newData.isBoolean()" },
+          "sheet_owner": { ".validate": "!newData.exists() || newData.isString()" },
+          "sheet_csv_url": { ".validate": "!newData.exists() || newData.isString()" },
+          "sheet_webhook_url": { ".validate": "!newData.exists() || newData.isString()" },
           "auto_submit": { ".validate": "!newData.exists() || newData.isBoolean()" },
           "$other": { ".validate": true }
         },

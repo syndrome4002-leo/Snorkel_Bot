@@ -387,6 +387,16 @@ export async function markSent(uid) {
   if (!db) throw new Error(describe(initError));
   const patch = {
     task_status: TASK_STATUS_SENT,
+    /*
+     * Submitted, so it is no longer the new task the account is holding — the
+     * slot is free and the next one can start.
+     *
+     * "sent" is already outside the set of statuses that block a start, so this
+     * is belt and braces. It matters anyway: the flag is what the guard reads,
+     * and leaving it true would mean one wrong status elsewhere silently
+     * reintroduced the block.
+     */
+    is_new_task: false,
     sent_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };

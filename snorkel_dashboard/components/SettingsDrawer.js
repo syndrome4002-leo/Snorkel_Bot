@@ -43,6 +43,30 @@ const FIELDS = [
     placeholder: '3',
   },
   {
+    group: 'Tracking sheet',
+    key: 'sheet_owner',
+    type: 'text',
+    label: 'Owner ID',
+    help: 'Goes in the "Task Owner" column, exactly as the sheet spells it. For example: Syndrome',
+    placeholder: 'Syndrome',
+  },
+  {
+    group: 'Tracking sheet',
+    key: 'sheet_csv_url',
+    type: 'text',
+    label: 'Sheet URL (published CSV)',
+    help: 'Read only, to check whether a task is already listed before adding it again. File > Share > Publish to web > CSV.',
+    placeholder: 'https://docs.google.com/spreadsheets/d/e/.../pub?output=csv',
+  },
+  {
+    group: 'Tracking sheet',
+    key: 'sheet_webhook_url',
+    type: 'text',
+    label: 'Append webhook URL',
+    help: 'Where rows are actually written. A published CSV link cannot be written to, so this is the Apps Script web app URL — see SHEET_SETUP.md. Without it nothing is added to the sheet.',
+    placeholder: 'https://script.google.com/macros/s/.../exec',
+  },
+  {
     group: 'Worker',
     key: 'worker_max_concurrent',
     label: 'Max tasks at once',
@@ -127,6 +151,12 @@ export default function SettingsDrawer({ machine, onClose }) {
     try {
       const patch = {};
       for (const field of FIELDS) {
+        if (field.type === 'text') {
+          const raw = String(values[field.key] ?? '').trim();
+          patch[field.key] = raw || null;
+          continue;
+        }
+
         if (field.type === 'checkbox') {
           // Written as a real boolean rather than left unset, so "off" is a
           // decision on the record instead of an absence the reader has to
@@ -173,7 +203,22 @@ export default function SettingsDrawer({ machine, onClose }) {
               <div key={group}>
                 <h4 className="group-title">{group}</h4>
                 {FIELDS.filter((field) => field.group === group).map((field) =>
-                  field.type === 'checkbox' ? (
+                  field.type === 'text' ? (
+                    <div key={field.key} className="setting">
+                      <label htmlFor={field.key}>{field.label}</label>
+                      <p className="muted">{field.help}</p>
+                      <input
+                        id={field.key}
+                        type="text"
+                        style={{ width: '100%' }}
+                        value={values[field.key] ?? ''}
+                        onChange={(event) =>
+                          setValues((current) => ({ ...current, [field.key]: event.target.value }))
+                        }
+                        placeholder={field.placeholder}
+                      />
+                    </div>
+                  ) : field.type === 'checkbox' ? (
                     <div key={field.key} className="setting">
                       <label className="switch" htmlFor={field.key}>
                         <input

@@ -42,6 +42,7 @@ import {
   deleteFile,
 } from './dropbox.js';
 import { updateEnvFile, ENV_PATH } from './envfile.js';
+import { recordSubmission } from './sheet.js';
 import {
   initRtdb,
   rtdbStatus,
@@ -1384,6 +1385,45 @@ async function maybeSubmitCheck() {
         });
       }
       if (form) await patchTask(uid, { form_filled: { ...form, times: formTimesFor(task) } });
+
+      /*
+       * A submitted task is with a reviewer, so it stops being the new task this
+       * account is holding and gets written into the tracking sheet.
+       *
+       * Only when the bot actually pressed Submit. With auto-submit off the form
+       * is merely filled in and waiting for you, and calling that "sent" would
+       * be a lie the rest of the system then acts on.
+       */
+      if (form?.submitted) {
+        await markSent(uid);
+        logEvent('📮', 'task_sent', `${uid} submitted — status "sent", no longer a new task`, { uid });
+
+        const sheet = await recordSubmission(task, {
+          csvUrl: settings.sheet_csv_url,
+          webhookUrl: settings.sheet_webhook_url,
+          owner: settings.sheet_owner,
+        });
+
+        if (sheet.appended) {
+          logEvent(
+            '📗',
+            'sheet_row',
+            `${uid} added to the sheet as ${settings.sheet_owner || 'no owner'}` +
+              // Unverified means the row was sent and the sheet had not caught
+              // up yet. Not a failure, but worth knowing which of the two it is.
+              (sheet.verified === false ? ' (sent, but not visible in the sheet yet)' : ''),
+            { uid }
+          );
+        } else if (sheet.failed) {
+          // Never fails the submission: the task really is submitted, and a
+          // missing tracking row is a note to write, not work to redo.
+          logEvent('⚠️', 'sheet_row', `${uid}: could not add the sheet row — ${sheet.reason}`, {
+            uid,
+            level: 'warn',
+          });
+        }
+        await patchTask(uid, { sheet_row: sheet });
+      }
     } else {
       const failed = (result.results || []).filter((r) => r.verdict !== 'pass').map((r) => r.label);
       logEvent('🚫', 'submit_fail', `${uid} failed ${failed.join(' and ')} — "${TASK_STATUS_STATIC_FAIL}"`, {
