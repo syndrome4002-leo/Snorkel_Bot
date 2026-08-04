@@ -1,5 +1,612 @@
-<body data-project-id="daas-v2" data-new-gr-c-s-check-loaded="14.1317.0" data-gr-ext-installed="" style=""
-    class="monaco-enable-motion underline-links">
+<html lang="en" data-theme="strata" data-mode="light" data-build="5d55614">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome back, Husam. | Snorkel AI Experts Portal</title>
+    <link rel="icon" type="image/x-icon" href="https://snorkel.ai/favicon.ico">
+    <script type="text/javascript" async="" data-fs-namespace="FS"
+        src="https://ux.snorkel-ai.com/datalayer/v4/latest.js"></script>
+    <script async="" crossorigin="anonymous" src="https://ux.snorkel-ai.com/s/fs.js"></script>
+    <script>
+        window.config = {
+            appEnv: '' || 'production',
+            authProvider: 'cognito',
+            awsCognitoDomain: '' || 'https://experts-snorkel-ai.auth.us-west-2.amazoncognito.com',
+            awsCognitoUserPoolId:
+                '' || 'us-west-2_k4LGsKOuy',
+            awsCognitoAppClientId:
+                '' || '556c93qj9djvert45dlhigg71r',
+            auth0Domain: '' || 'login.snorkel-ai.com',
+            auth0ClientId: '' || 'fQxqMNmBpmd3x9v9tx8DUZii0i1hoPNo',
+            auth0Audience: '' || 'https://experts.snorkel-ai.com',
+            forceIdp: (function (viteSub, nginxSub) {
+                // Pick whichever substitution mechanism actually ran:
+                //   - `pnpm dev`: Vite replaces %VITE_FORCE_IDP%; ${VITE_FORCE_IDP} stays literal.
+                //   - docker-compose frontend: vite build (prod mode) leaves %VITE_FORCE_IDP%
+                //     literal; nginx envsubst replaces ${VITE_FORCE_IDP} at container start.
+                // Reject any un-substituted placeholder so window.config.forceIdp is always
+                // exactly '', 'auth0', or 'cognito'.
+                if (viteSub && viteSub.charAt(0) !== '%') return viteSub;
+                if (nginxSub && nginxSub.charAt(0) !== '$') return nginxSub;
+                return '';
+            })('%VITE_FORCE_IDP%', '${VITE_FORCE_IDP}'),
+            launchDarklyClientId:
+                '' ||
+                '676069e6e00b830cee4dea55',
+        };
+        (function (viteSub, nginxSub) {
+            // Pick whichever substitution mechanism actually ran:
+            //   - `pnpm dev`: Vite replaces ; https://snorkel.ai/favicon.ico stays literal.
+            //   - docker/k8s: vite build (prod mode) leaves  literal;
+            //     nginx envsubst replaces https://snorkel.ai/favicon.ico at container start.
+            // Reject any un-substituted placeholder so the href is only overridden when a
+            // real value is available (keeps the <link> fallback above otherwise, avoiding
+            // a favicon flash for production users).
+            if (viteSub && viteSub.charAt(0) !== '%') {
+                document.querySelector('link[rel="icon"]').href = viteSub;
+            } else if (nginxSub && nginxSub.charAt(0) !== '$') {
+                document.querySelector('link[rel="icon"]').href = nginxSub;
+            }
+        })('', 'https://snorkel.ai/favicon.ico');
+    </script>
+    <script>
+        window['_fs_asset_map_id'] =
+            'sha256:8d3c8c3775ebecfe1d9483f0fb58a2754b6ed402aacd811fdad71317b5326499' || '';
+    </script>
+    <script>
+        window['_fs_host'] = 'ux.snorkel-ai.com';
+        window['_fs_script'] = 'ux.snorkel-ai.com/s/fs.js';
+        window['_fs_app_host'] = 'app.fullstory.com';
+        window['_fs_org'] =
+            '' || '17N11F';
+        window['_fs_namespace'] = 'FS';
+        !(function (m, n, e, t, l, o, g, y) {
+            // window.config.appEnv is the runtime-resolved value (set above via
+            // '' || 'production'). Production-mode builds bake
+            //  to '', so the nginx envsubst fallback supplies the
+            // actual environment at container start.
+            if (window.config.appEnv === 'development') return;
+
+            var s,
+                f,
+                a = (function (h) {
+                    return (
+                        !(h in m) ||
+                        (m.console &&
+                            m.console.log &&
+                            m.console.log(
+                                'FullStory namespace conflict. Please set window["_fs_namespace"].',
+                            ),
+                            !1)
+                    );
+                })(e);
+            function p(b) {
+                var h,
+                    d = [];
+                function j() {
+                    h &&
+                        (d.forEach(function (b) {
+                            var d;
+                            try {
+                                d = b[h[0]] && b[h[0]](h[1]);
+                            } catch (h) {
+                                return void (b[3] && b[3](h));
+                            }
+                            d && d.then ? d.then(b[2], b[3]) : b[2] && b[2](d);
+                        }),
+                            (d.length = 0));
+                }
+                function r(b) {
+                    return function (d) {
+                        h || ((h = [b, d]), j());
+                    };
+                }
+                return (
+                    b(r(0), r(1)),
+                    {
+                        then: function (b, h) {
+                            return p(function (r, i) {
+                                (d.push([b, h, r, i]), j());
+                            });
+                        },
+                    }
+                );
+            }
+            a &&
+                ((g = m[e] =
+                    (function () {
+                        var b = function (b, d, j, r) {
+                            function i(i, c) {
+                                h(b, d, j, i, c, r);
+                            }
+                            r = r || 2;
+                            var c,
+                                u = /Async$/;
+                            return u.test(b)
+                                ? ((b = b.replace(u, '')),
+                                    'function' == typeof Promise ? new Promise(i) : p(i))
+                                : h(b, d, j, c, c, r);
+                        };
+                        function h(h, d, j, r, i, c) {
+                            return b._api
+                                ? b._api(h, d, j, r, i, c)
+                                : (b.q && b.q.push([h, d, j, r, i, c]), null);
+                        }
+                        return ((b.q = []), b);
+                    })()),
+                    (y = function (b) {
+                        function h(h) {
+                            'function' == typeof h[4] && h[4](new Error(b));
+                        }
+                        var d = g.q;
+                        if (d) {
+                            for (var j = 0; j < d.length; j++) h(d[j]);
+                            ((d.length = 0), (d.push = h));
+                        }
+                    }),
+                    (function () {
+                        (((o = n.createElement(t)).async = !0),
+                            (o.crossOrigin = 'anonymous'),
+                            (o.src = 'https://' + l),
+                            (o.onerror = function () {
+                                y('Error loading ' + l);
+                            }));
+                        var b = n.getElementsByTagName(t)[0];
+                        b && b.parentNode
+                            ? b.parentNode.insertBefore(o, b)
+                            : n.head.appendChild(o);
+                    })(),
+                    (function () {
+                        function b() { }
+                        function h(b, h, d) {
+                            g(b, h, d, 1);
+                        }
+                        function d(b, d, j) {
+                            h('setProperties', { type: b, properties: d }, j);
+                        }
+                        function j(b, h) {
+                            d('user', b, h);
+                        }
+                        function r(b, h, d) {
+                            (j({ uid: b }, d), h && j(h, d));
+                        }
+                        ((g.identify = r),
+                            (g.setUserVars = j),
+                            (g.identifyAccount = b),
+                            (g.clearUserCookie = b),
+                            (g.setVars = d),
+                            (g.event = function (b, d, j) {
+                                h('trackEvent', { name: b, properties: d }, j);
+                            }),
+                            (g.anonymize = function () {
+                                r(!1);
+                            }),
+                            (g.shutdown = function () {
+                                h('shutdown');
+                            }),
+                            (g.restart = function () {
+                                h('restart');
+                            }),
+                            (g.log = function (b, d) {
+                                h('log', { level: b, msg: d });
+                            }),
+                            (g.consent = function (b) {
+                                h('setIdentity', { consent: !arguments.length || b });
+                            }));
+                    })(),
+                    (s = 'fetch'),
+                    (f = 'XMLHttpRequest'),
+                    (g._w = {}),
+                    (g._w[f] = m[f]),
+                    (g._w[s] = m[s]),
+                    m[s] &&
+                    (m[s] = function () {
+                        return g._w[s].apply(this, arguments);
+                    }),
+                    (g._v = '2.0.0'));
+        })(window, document, window._fs_namespace, 'script', window._fs_script);
+    </script>
+    <!-- FreshDesk Widget -->
+    <script>
+        window.fwSettings = { widget_id: 157000001457, locale: 'en' };
+        !(function () {
+            if (typeof window.FreshworksWidget !== 'function') {
+                var n = function () {
+                    n.q.push(arguments);
+                };
+                n.q = [];
+                window.FreshworksWidget = n;
+            }
+        })();
+        // Hide the default launcher button - we'll trigger from TopBar
+        window.FreshworksWidget('hide', 'launcher');
+    </script>
+    <!--
+      Security Note: This script loads from Freshworks CDN.
+      SRI (Subresource Integrity) cannot be used as the script may be updated by Freshworks.
+      Ensure FRESHDESK_WIDGET_SHARED_SECRET is properly configured with a secure random value.
+    -->
+    <script src="https://widget.freshworks.com/widgets/157000001457.js" async="" defer=""></script>
+    <script type="module" crossorigin="" src="/assets/index-Db2NY6Tc.js"></script>
+    <link rel="modulepreload" crossorigin="" href="/assets/rolldown-runtime-B0Z9INg1.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/monaco-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~nky7tpov-CUdNIagt.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/richtext-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~te~pe1lwkoq-IvSXCttz.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/compiler-runtime-DFFuUo7D.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dist-B8U7Fiyg.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/charts-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~l09pn1n9-Dk9-a3sa.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/charts-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~cesn263x-0VLMlp1o.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~fonamq3k--2baYPKC.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/utils-BA_Z3cbx.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/richtext-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~te~kr6y1rg4-C9KRVsvd.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/richtext-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~te~ic02ku92-BuFzUOwk.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useStore-CX8ORJuP.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/pdf-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~rx850jpf-B74pBk57.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/ClientOnly-vMqDGNOL.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/redirect-CeqMsKIL.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useRouter-DAvZ-5tn.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/matchContext-DejQUggN.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~nnuax4cj-DXnPOh37.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/link-GAQ2Kuc2.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useMatch-COkIQuzL.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useParams-QQ4uO_Sl.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useSearch-D4uCD8Rw.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useNavigate-uqFovidO.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/lazyRouteComponent-C0kBNyIs.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useLocation-C_IiYuBU.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/monaco-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~o8949qzo-Czpn1I53.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/logger-CMzkRJRI.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~jc4o16kk-Ck8woSmy.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/replayStats-C6TwcZID.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~eepgjccu-qYLJuZ1n.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/datadog-logger-Beww1q5r.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/generated-DlRbEOh-.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/iterators-4WEw3-ZR.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~baqom5kb-CreP-oBV.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/selectors-DnVXOGD3.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/pdf-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~d0umgn8n-CjueKrWZ.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~j1ljpv6c-CGEkkbPF.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/cn-DNG-9M-Y.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/button-BbZAVsX9.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Button-CRzZHiPe.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/charts-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~dhjzlcgs-D77DqVkZ.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/fullstoryContext-CCMbkFf-.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/datadog-BwAPpbBL.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/pendingAcquisitionEntry-D6BnjCfH.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/auth-C7MDNr7v.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/config-CqULb3_V.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/urls-Cqi3kQTl.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/api-D60sr6Ql.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/charts-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~k8i7l2yx-CRqwqRD6.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/charts-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~n45law53-BNJABqC7.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/i18nInstance-CZ6SuJbU.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~ktkl0ic6-iFeLpYnF.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/profileStatusDispatch-BkCk1qgF.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/jsonSchemaValidation-CT4V4g2E.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/fullstoryEnhanced-DpysYFc-.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~kpm18r36-Cy-OrZx5.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/tz-CkWudTPM.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/toast-DZY58n1-.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/pkce-BayozVsZ.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/constants-BhD-cRx3.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/paths-DQHtXSVo.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/flow-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testin~mrjqykrb-CXVSuncy.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/actions-CpO4IYe_.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useTranslation--cBhDUnP.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useLDFeatureFlag-D2tZLSBA.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Spinner-DxAZN5LJ.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/validation-M_hrhMWQ.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/gitbookDocs-C9LN3IWn.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/useRouterState-BPae1sn8.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~f1al3ovq-DtsC-EX4.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/AnimatePresence-D7BN2ofG.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/IconButton-DM-lekqu.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/buttons-C4lzHwZg.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/elements-D-6X_byN.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Skeleton-DDou1oU-.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Pill-B2RSDZfE.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dist-z_Pf3WnY.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dist-DO_ysbJu.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dist-62untMzS.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dist-Ckcn9ld6.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~e0btbk2l-Egi07fyy.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dist-4nFTB_D3.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Tooltip-DX4SjDlK.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/settingsPaths-CS1cb-GU.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~hdowo2o3-Bpf353Ow.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Icon-BdhxIv-g.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dist-va8hGLE3.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~ocqb5xuc-DO9rfYOT.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/dist-Bp4CCnpO.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/shared-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~nc3e86qi-BdZBQcgw.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Checkbox-BCMnGBHE.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/RadioGroup-BRBaoFx9.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/menu-BK1_61v4.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Menu-DtORsJlg.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/TopBar-DHmrg7Co.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/ErrorPage-BqV186Qd.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/onboardingPaths-Nwy75ygc.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/esm-HIckD1RD.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/authenticate-rtLUH-vN.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/redirect-DwgqZUVH.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/join-BkECsa4y.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/domains-CuqIxERY.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/projects_._projectId-Cda6j-3q.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/route-BiQKQyyz.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/completion-DLng4-Wh.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/intro-Bv2a-r1i.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/profile-setup-D9ZXmpJC.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/questions-7NRscdLP.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/route-DUSlgdHF.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/static-assets-BgURzYpz.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/_staticAssetId-CQSgDmR8.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/field-config-CFUoPVHC.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/_revisionId-CC0dytvm.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/schema-changes-DbGV0y82.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/router-cxKEXkSv.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/Card-DJ9HavEK.js">
+    <link rel="modulepreload" crossorigin=""
+        href="/assets/charts-vendor~index~index~dashboard~delivery~evaluation~general-info~marketplace~rates~test~ffey876k-DUEZAQOW.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/store-mPeLFhoh.js">
+    <link rel="modulepreload" crossorigin="" href="/assets/localStorage-DDlP2t7D.js">
+    <link rel="stylesheet" crossorigin="" href="/assets/index-Byo3NJks.css">
+    <style id="_goober">
+        @keyframes go2264125279 {
+            from {
+                transform: scale(0) rotate(45deg);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1) rotate(45deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes go3020080000 {
+            from {
+                transform: scale(0);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes go463499852 {
+            from {
+                transform: scale(0) rotate(90deg);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1) rotate(90deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes go1268368563 {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes go1310225428 {
+            from {
+                transform: scale(0) rotate(45deg);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1) rotate(45deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes go651618207 {
+            0% {
+                height: 0;
+                width: 0;
+                opacity: 0;
+            }
+
+            40% {
+                height: 0;
+                width: 6px;
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 1;
+                height: 10px;
+            }
+        }
+
+        @keyframes go901347462 {
+            from {
+                transform: scale(0.6);
+                opacity: 0.4;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .go4109123758 {
+            z-index: 9999;
+        }
+
+        .go4109123758>* {
+            pointer-events: auto;
+        }
+    </style>
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/init-Dlg84Zy_.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/CFImageRenderer-xSJG9G5e.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/Input-DGW9Hpqt.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/MessageContent-BhF0e_Jg.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/CopyButton-BCemXqx6.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/RichDocRenderer-DdatH_Ep.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/markdown-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~~hccbqznt-B87ArVCU.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/markdown-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~~bzd5rjnd-UIcw75wD.js">
+    <link rel="stylesheet" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/markdown-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~~bzd5rjnd-ClQbWekD.css">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/Textarea-BGB46hBF.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/FieldLabel-CZHgTfFV.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/MonacoCodeBlock-DRm1pr9E.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/monaco-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~lpwmpwle-CnpacLBT.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/monaco-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~pba5j4xl-BcnXbNam.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/monaco-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~n7fsb6lx-BpTqaMK4.js">
+    <link rel="stylesheet" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/monaco-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~n7fsb6lx-jjEx9u7D.css">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/monaco-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~m1gn3s56-K6jhhpeP.js">
+    <link rel="stylesheet" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/monaco-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~m1gn3s56--ixms01u.css">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/monaco-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~eh9vu8d8-tW0lrOyG.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/omitAdditionalDataForDisplay-Bq5JSsZH.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/Table-BLFb2FgR.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/sanitize-BMT07FGE.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/shared-vendor~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~index~ro~dfr8fibv-CaHOtzI7.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/registry-GRd5dxNn.js">
+    <script data-fs-namespace="FS" async=""
+        src="https://ux.snorkel-ai.com/rec/integrations?OrgId=17N11F&amp;isInFrame=false&amp;isNative=false"></script>
+    <link id="freshworks-frame-styles" rel="stylesheet"
+        href="https://widget.freshworks.com/widgetBase/static/media/frame.d7ae132c.css">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/route-DW2Vm7cd.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/FormBlocks-CZv-bR26.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/useDocumentReviewFormState-B6qr_7l0.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/charts-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~nz94hmt6-DfWX-B3x.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/Modal-CGr0-om5.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/DataTable-Bn-hnLUs.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/Pagination-8NlTYHTo.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/shared-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~h7xyokmp-V4ZnvsXI.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/time-nd7HGXH3.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/useDebounced-DjU4lc3n.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/utils-CgFelqzz.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/Trans-BVvZJzHP.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/baselineSeed-B9U3D9k5.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/AudioPlayer-BH5Qjvu3.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/useConfirmationDialog-DJ0D-rLT.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/shared-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~en6bcdnd-D76I5Qa_.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/AdjudicationPreview-C4ZNI1oR.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/Accordion-4ieeCX36.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/dist-CPag9c3N.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/shared-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~k4f20tsl-DQgeY95Z.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/Switch-qzOGHVSj.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/Select-DBagrO2q.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/shared-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~kg2fnjez-DkbWT75a.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/shared-vendor~index~dashboard~delivery~evaluation~general-info~marketplace~rates~testing~in~bsrlrvwx-BGMWac86.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/calcTaskDocument-C7QJRKJR.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/ErrorBoundary-DiN8T0BT.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/formState-CIkcLlqV.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/containerFieldTypes-zSVhiB7y.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/index-Db2NY6Tc.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/AlertDialog-B2mVhtX5.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/useIsAdmin-D6r3tZrV.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/useMarketplaceAccess-CX6ST_zZ.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/useQuery-DSXC74JM.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/useProfileSetupNeeded-DkAery05.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/CopyField-C7SqUPK1.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/useIsSignedIn-DBkr2sRR.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/route-Bg47ZxCW.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/ErrorDisplay-B7bdJuKY.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/home-BeEyG4EG.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/Note-CXiVYdv-.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/PageContentContainer-4WNJy_U7.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/ExternalLink-Bjli_vGd.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/calcIsHrefSafe-DWA8dmjd.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/domainTree-sQQx6c_3.js">
+    <link rel="modulepreload" as="script" crossorigin="" href="https://experts.snorkel-ai.com/assets/Link-Ceyz8r8p.js">
+    <link rel="modulepreload" as="script" crossorigin=""
+        href="https://experts.snorkel-ai.com/assets/ProjectsFilters-BF3xTofY.js">
+</head>
+
+<body data-project-id="daas-v2" data-new-gr-c-s-check-loaded="14.1317.0" data-gr-ext-installed="">
     <script>
         // Sync theme mode before any CSS is processed to prevent FOUC (Flash of Unstyled Content).
         (function () {
@@ -14,7 +621,7 @@
             <header class="border-divider bg-default px-md py-sm flex h-11 w-full items-center justify-between border-b"
                 role="banner">
                 <nav class="gap-xl flex flex-1 items-center" aria-label="Top navigation">
-                    <div class="pl-sm flex shrink-0 items-center"><a href="/home" class="active" data-status="active"
+                    <div class="pl-sm flex shrink-0 items-center"><a class="active" href="/home" data-status="active"
                             aria-current="page"><img alt="Snorkel Logo" class="w-auto dark:hidden"
                                 src="/static/images/logo_header.svg" style="height: 26px;"><img alt="Snorkel Logo"
                                 class="hidden w-auto dark:block" src="/static/images/logo_header_dark.svg"
@@ -69,10 +676,10 @@
                                     <ul data-orientation="vertical" class="flex flex-col gap-xl" dir="ltr">
                                         <li class="gap-md flex flex-col">
                                             <ul class="gap-sm flex flex-col">
-                                                <li><a data-testid="sidebar-nav-home" tabindex="0"
+                                                <li><a data-testid="sidebar-nav-home" aria-current="page" tabindex="0"
                                                         data-radix-collection-item=""
                                                         class="flex w-full cursor-pointer items-center gap-sm rounded-sm px-sm py-xs text-sm-normal outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 [&amp;.active_[data-side-navigation-icon]]:drop-shadow-stroke-bold text-color-primary hover:bg-menu-hover [&amp;.active]:bg-menu-selected [&amp;.active]:text-color-primary [&amp;.active]:text-sm-semibold [&amp;.active]:hover:bg-menu-selected active"
-                                                        href="/home" aria-current="page" data-status="active"><span
+                                                        href="/home" data-status="active"><span
                                                             class="text-icon-primary flex h-16 w-16 shrink-0 items-center justify-center"
                                                             data-side-navigation-icon="true" aria-hidden="true"><span
                                                                 class="in-[.active]:hidden"><svg
@@ -166,6 +773,17 @@
                                 </div>
                             </div>
                             <div class="gap-md flex w-full flex-col">
+                                <div id="snorkel-owner-filter">
+                                    <div id="snorkel-input-row">
+                                        <input id="snorkel-owner-input" type="text" placeholder="Filter by owner…"
+                                            autocomplete="off" spellcheck="false">
+                                        <div id="snorkel-dropdown" hidden=""></div>
+                                    </div>
+                                    <div id="snorkel-badge" hidden="">
+                                        <span id="snorkel-badge-label"></span>
+                                        <button id="snorkel-clear-btn" title="Clear filter">×</button>
+                                    </div>
+                                </div>
                                 <table data-testid="tasks-needing-revision-table"
                                     class="w-full border-collapse text-color-primary">
                                     <thead class="">
@@ -192,7 +810,13 @@
                                                 61545f1c-7750-4f16-a4bd-c7fc418c2dad</td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                CDG_Sentinel_Ultra_00000</td>
+                                                CDG_Sentinel_Ultra_00000<div class="snorkel-card-meta"><span
+                                                        class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 252, 163); color: rgb(17, 95, 30);">Rabidon</span><span
+                                                        class="snorkel-card-task"
+                                                        title="20260723_030521__basecamp_kamal__1679">20260723_030521__basecamp_kamal__1679</span>
+                                                </div>
+                                            </td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
                                                 8/10/2026, 5:25:12 PM</td>
@@ -212,7 +836,13 @@
                                                 0cb4eb47-ea97-4ab8-a541-c4828399407b</td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                CDG_Sentinel_Ultra_00000</td>
+                                                CDG_Sentinel_Ultra_00000<div class="snorkel-card-meta"><span
+                                                        class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 234, 252); color: rgb(17, 82, 95);">Syndrome</span><span
+                                                        class="snorkel-card-task"
+                                                        title="[Sentinel] - 0cb4eb47-ea97-4ab8-a541-c4828399407b">[Sentinel]
+                                                        - 0cb4eb47-ea97-4ab8-a541-c4828399407b</span></div>
+                                            </td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
                                                 8/11/2026, 1:20:09 PM</td>
@@ -232,7 +862,13 @@
                                                 4418f8ec-a367-4a41-a3ca-914c31b0d67d</td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                CDG_Sentinel_Ultra_00000</td>
+                                                CDG_Sentinel_Ultra_00000<div class="snorkel-card-meta"><span
+                                                        class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 234, 252); color: rgb(17, 82, 95);">Syndrome</span><span
+                                                        class="snorkel-card-task"
+                                                        title="[Sentinel] - 4418f8ec-a367-4a41-a3ca-914c31b0d67d">[Sentinel]
+                                                        - 4418f8ec-a367-4a41-a3ca-914c31b0d67d</span></div>
+                                            </td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
                                                 8/11/2026, 1:52:08 PM</td>
@@ -252,7 +888,13 @@
                                                 1d7966d2-8a38-400c-bf1b-c78cd9c3b5ee</td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                CDG_Sentinel_Ultra_00000</td>
+                                                CDG_Sentinel_Ultra_00000<div class="snorkel-card-meta"><span
+                                                        class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 234, 252); color: rgb(17, 82, 95);">Syndrome</span><span
+                                                        class="snorkel-card-task"
+                                                        title="[Sentinel] - 1d7966d2-8a38-400c-bf1b-c78cd9c3b5ee">[Sentinel]
+                                                        - 1d7966d2-8a38-400c-bf1b-c78cd9c3b5ee</span></div>
+                                            </td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
                                                 8/11/2026, 2:07:42 PM</td>
@@ -269,78 +911,24 @@
                                         <tr class="group border-b border-table-border bg-table-body-background">
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                0322c33f-3a9d-4d7a-ac05-964775e99915</td>
+                                                41fd93c0-79fa-452c-827c-360e1ea363b6</td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                Geranium-Production</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                8/25/2026, 11:42:49 AM</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                <div class="inline-block"><a
-                                                        data-testid="revise-task-17baed1c-a52e-439a-af1c-90392f6bc43b"
-                                                        href="/projects/ce103e15-7882-4ddf-a295-e9840e84307e/submission-f00e81f7-bc71-4bf1-94ab-4ada2ed66bfe/review?assignmentId=17baed1c-a52e-439a-af1c-90392f6bc43b"
-                                                        class="flex items-center no-underline"><button type="button"
-                                                            class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-secondary bg-button-secondary-enabled text-button-secondary hover:bg-button-secondary-hover active:bg-button-secondary-pressed border-transparent">Revise
-                                                            task</button></a></div>
+                                                CDG_Sentinel_Ultra_00000<div class="snorkel-card-meta"><span
+                                                        class="snorkel-card-owner"
+                                                        style="background-color: rgb(146, 252, 234); color: rgb(17, 95, 82);">Dmon</span><span
+                                                        class="snorkel-card-task"
+                                                        title="[Sentinel] - 7c7220b0-3d42-4950-86c7-3d98f22dda71_submission">[Sentinel]
+                                                        - 7c7220b0-3d42-4950-86c7-3d98f22dda71_submission</span></div>
                                             </td>
-                                        </tr>
-                                        <tr class="group border-b border-table-border bg-table-body-background">
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                19223eb6-8012-43aa-bab1-5a86b542374a</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                Geranium-Production</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                8/25/2026, 11:42:50 AM</td>
+                                                8/11/2026, 3:50:54 PM</td>
                                             <td
                                                 class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
                                                 <div class="inline-block"><a
-                                                        data-testid="revise-task-c1ec6afe-3d99-4edf-ba5c-29aa426cce96"
-                                                        href="/projects/ce103e15-7882-4ddf-a295-e9840e84307e/submission-f00e81f7-bc71-4bf1-94ab-4ada2ed66bfe/review?assignmentId=c1ec6afe-3d99-4edf-ba5c-29aa426cce96"
-                                                        class="flex items-center no-underline"><button type="button"
-                                                            class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-secondary bg-button-secondary-enabled text-button-secondary hover:bg-button-secondary-hover active:bg-button-secondary-pressed border-transparent">Revise
-                                                            task</button></a></div>
-                                            </td>
-                                        </tr>
-                                        <tr class="group border-b border-table-border bg-table-body-background">
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                47715d7f-beb3-4a7d-8ccd-c2433b6e28ea</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                Geranium-Production</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                8/25/2026, 11:42:53 AM</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                <div class="inline-block"><a
-                                                        data-testid="revise-task-d2aac0e2-3c9e-4650-b94d-0b5adcfbcfdf"
-                                                        href="/projects/ce103e15-7882-4ddf-a295-e9840e84307e/submission-f00e81f7-bc71-4bf1-94ab-4ada2ed66bfe/review?assignmentId=d2aac0e2-3c9e-4650-b94d-0b5adcfbcfdf"
-                                                        class="flex items-center no-underline"><button type="button"
-                                                            class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-secondary bg-button-secondary-enabled text-button-secondary hover:bg-button-secondary-hover active:bg-button-secondary-pressed border-transparent">Revise
-                                                            task</button></a></div>
-                                            </td>
-                                        </tr>
-                                        <tr class="group border-b border-table-border bg-table-body-background">
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                b3aa4209-4174-46eb-a57f-b99407682837</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                Geranium-Production</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                8/25/2026, 11:42:55 AM</td>
-                                            <td
-                                                class="text-sm-normal text-color-primary px-table-row-px py-table-row-py text-left">
-                                                <div class="inline-block"><a
-                                                        data-testid="revise-task-dcfaeff3-f0ab-4df4-8246-03f0b3374ce9"
-                                                        href="/projects/ce103e15-7882-4ddf-a295-e9840e84307e/submission-f00e81f7-bc71-4bf1-94ab-4ada2ed66bfe/review?assignmentId=dcfaeff3-f0ab-4df4-8246-03f0b3374ce9"
+                                                        data-testid="revise-task-ef4ba1be-4f01-4472-be93-7e15f9f3053a"
+                                                        href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff/submission-efa51f15-91a5-430b-8362-85be0d89c7ee/review?assignmentId=ef4ba1be-4f01-4472-be93-7e15f9f3053a"
                                                         class="flex items-center no-underline"><button type="button"
                                                             class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-secondary bg-button-secondary-enabled text-button-secondary hover:bg-button-secondary-hover active:bg-button-secondary-pressed border-transparent">Revise
                                                             task</button></a></div>
@@ -348,6 +936,16 @@
                                         </tr>
                                     </tbody>
                                 </table>
+                                <div class="flex justify-center"><button type="button"
+                                        class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed border-button-tertiary-border-enabled hover:border-button-tertiary-border-hover active:border-button-tertiary-border-pressed"
+                                        aria-expanded="false" data-testid="show-more-revision-tasks">Show more<span
+                                            class="flex shrink-0 items-center justify-center"><svg
+                                                xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                                                fill="currentColor" viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                <path
+                                                    d="M205.66,149.66l-72,72a8,8,0,0,1-11.32,0l-72-72a8,8,0,0,1,11.32-11.32L120,196.69V40a8,8,0,0,1,16,0V196.69l58.34-58.35a8,8,0,0,1,11.32,11.32Z">
+                                                </path>
+                                            </svg></span></button></div>
                             </div>
                         </div>
                         <div class="gap-xl flex flex-col">
@@ -523,6 +1121,44 @@
                                 </div>
                                 <div class="col-span-1">
                                     <div class="p-16 hover:shadow-sm transition-all duration-200 border-card min-h-card-md border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl flex flex-col justify-between cursor-pointer"
+                                        data-testid="ec-project-card-CDG_Beaver_Prod_vFYAR">
+                                        <div class="flex items-start justify-between gap-16">
+                                            <div class="gap-xs flex min-w-0 flex-col"><span
+                                                    class="text-eyebrow text-color-secondary">Project</span><span
+                                                    dir="auto"
+                                                    class="text-base-semibold text-color-primary break-words">CDG_Beaver_Prod_vFYAR</span>
+                                            </div><button type="button"
+                                                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-sm-px h-btn-sm text-xs-normal rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed border-button-tertiary-border-enabled hover:border-button-tertiary-border-hover active:border-button-tertiary-border-pressed">Go
+                                                to project<span class="flex shrink-0 items-center justify-center"><svg
+                                                        xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                                                        fill="currentColor" viewBox="0 0 256 256" class=""
+                                                        aria-hidden="true">
+                                                        <path
+                                                            d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z">
+                                                        </path>
+                                                    </svg></span></button>
+                                        </div>
+                                        <div data-testid="ec-project-card-domain-pills"
+                                            class="gap-xs flex w-full flex-wrap overflow-hidden max-h-48"
+                                            data-state="closed"><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Computer
+                                                        Vision</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Machine
+                                                        Learning</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Python</span></span></span></div>
+                                    </div>
+                                </div>
+                                <div class="col-span-1">
+                                    <div class="p-16 hover:shadow-sm transition-all duration-200 border-card min-h-card-md border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl flex flex-col justify-between cursor-pointer"
                                         data-testid="ec-project-card-Terminus-3-Prod">
                                         <div class="flex items-start justify-between gap-16">
                                             <div class="gap-xs flex min-w-0 flex-col"><span
@@ -540,6 +1176,45 @@
                                                         </path>
                                                     </svg></span></button>
                                         </div>
+                                        <div data-testid="ec-project-card-domain-pills"
+                                            class="gap-xs flex w-full flex-wrap overflow-hidden max-h-48"
+                                            data-state="closed"><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Bash/Shell</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">C</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">C++</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">GO</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Java</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Node.js</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Python</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Ruby</span></span></span><span
+                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
+                                                data-testid="ec-project-card-domain-pill"><span
+                                                    class="gap-xs flex items-center min-w-0"><span
+                                                        class="min-w-0 truncate">Rust</span></span></span></div>
                                     </div>
                                 </div>
                                 <div class="col-span-1">
@@ -703,44 +1378,6 @@
                                                         </path>
                                                     </svg></span></button>
                                         </div>
-                                    </div>
-                                </div>
-                                <div class="col-span-1">
-                                    <div class="p-16 hover:shadow-sm transition-all duration-200 border-card min-h-card-md border bg-card rounded-sm hover:bg-card-hover-background hover:rounded-2xl flex flex-col justify-between cursor-pointer"
-                                        data-testid="ec-project-card-CDG_Beaver_Prod_vFYAR">
-                                        <div class="flex items-start justify-between gap-16">
-                                            <div class="gap-xs flex min-w-0 flex-col"><span
-                                                    class="text-eyebrow text-color-secondary">Project</span><span
-                                                    dir="auto"
-                                                    class="text-base-semibold text-color-primary break-words">CDG_Beaver_Prod_vFYAR</span>
-                                            </div><button type="button"
-                                                class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-sm-px h-btn-sm text-xs-normal rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed border-button-tertiary-border-enabled hover:border-button-tertiary-border-hover active:border-button-tertiary-border-pressed">Go
-                                                to project<span class="flex shrink-0 items-center justify-center"><svg
-                                                        xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                                                        fill="currentColor" viewBox="0 0 256 256" class=""
-                                                        aria-hidden="true">
-                                                        <path
-                                                            d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z">
-                                                        </path>
-                                                    </svg></span></button>
-                                        </div>
-                                        <div data-testid="ec-project-card-domain-pills"
-                                            class="gap-xs flex w-full flex-wrap overflow-hidden max-h-48"
-                                            data-state="closed"><span
-                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
-                                                data-testid="ec-project-card-domain-pill"><span
-                                                    class="gap-xs flex items-center min-w-0"><span
-                                                        class="min-w-0 truncate">Computer
-                                                        Vision</span></span></span><span
-                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
-                                                data-testid="ec-project-card-domain-pill"><span
-                                                    class="gap-xs flex items-center min-w-0"><span
-                                                        class="min-w-0 truncate">Machine
-                                                        Learning</span></span></span><span
-                                                class="inline-flex min-h-5 items-center justify-center whitespace-nowrap rounded-pill border py-pill-py px-pill-px text-xs-normal min-w-0 max-w-full bg-pill-neutral border-pill text-pill-neutral"
-                                                data-testid="ec-project-card-domain-pill"><span
-                                                    class="gap-xs flex items-center min-w-0"><span
-                                                        class="min-w-0 truncate">Python</span></span></span></div>
                                     </div>
                                 </div>
                                 <div class="col-span-1">
@@ -948,11 +1585,6 @@
     </div>
 
 
-    <div id="freshworks-container" data-html2canvas-ignore="true"
-        style="width: 0px; height: 0px; bottom: 0px; right: 0px; z-index: 2147483647;">
-        <div aria-live="polite"></div>
-    </div><iframe title="FreshworksWidget" id="freshworks-frame" data-html2canvas-ignore="true"
-        style="display: none;"></iframe>
     <div id="stc-nav"><button id="stc-nav-copy" type="button" class="stc-icon-btn" title="Copy title + summaries"
             aria-label="Copy title + summaries"><span class="stc-label">C</span></button><button id="stc-jump-feedback"
             type="button" class="stc-icon-btn" title="Go to Check feedback" aria-label="Go to Check feedback"><span
@@ -962,11 +1594,37 @@
             title="Scroll to top" aria-label="Scroll to top"><span class="stc-label">▲</span></button><button
             id="stc-scroll-down" type="button" class="stc-icon-btn" title="Scroll to bottom"
             aria-label="Scroll to bottom"><span class="stc-label">▼</span></button></div>
-    <div class="context-view" aria-hidden="true" style="display: none;"></div>
-    <div class="monaco-aria-container">
-        <div class="monaco-alert" role="alert" aria-atomic="true"></div>
-        <div class="monaco-alert" role="alert" aria-atomic="true"></div>
-        <div class="monaco-status" aria-live="polite" aria-atomic="true"></div>
-        <div class="monaco-status" aria-live="polite" aria-atomic="true"></div>
-    </div>
-</body>
+    <div id="freshworks-container" data-html2canvas-ignore="true"
+        style="width: 0px; height: 0px; bottom: 0px; right: 0px; z-index: 2147483647;">
+        <div aria-live="polite"></div>
+    </div><iframe title="FreshworksWidget" id="freshworks-frame" data-html2canvas-ignore="true"
+        style="display: none;"></iframe>
+</body><grammarly-desktop-integration data-grammarly-shadow-root="true"
+    style="visibility: visible !important;"><template shadowrootmode="open">
+        <style>
+            div.grammarly-desktop-integration {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+                -moz-user-select: none;
+                -webkit-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+            }
+
+            div.grammarly-desktop-integration:before {
+                content: attr(data-content);
+            }
+        </style>
+        <div aria-label="grammarly-integration" role="group" tabindex="-1" class="grammarly-desktop-integration"
+            data-content="{&quot;mode&quot;:&quot;full&quot;,&quot;isActive&quot;:true,&quot;isUserDisabled&quot;:false}">
+        </div>
+    </template></grammarly-desktop-integration>
+
+</html>

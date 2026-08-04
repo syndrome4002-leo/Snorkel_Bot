@@ -38,8 +38,36 @@
   const PROJECT_CARDS = '[data-testid^="ec-project-card-"]';
   const REVISION_TABLE = '[data-testid="tasks-needing-revision-table"]';
   const REVISE_ANCHOR = 'a[data-testid^="revise-task-"]';
+  const ATTENTION_BANNER = '[data-testid="needs-attention-banner"]';
+
+  const SHOW_MORE = '[data-testid="show-more-revision-tasks"]';
+  /** A fallback for when that testid changes, matched on what it reads. */
+  const MORE_BUTTON = /^(show|view|see|load)\s+(more|all)(\s+tasks?)?$/i;
 
   const text = (el) => (el ? SnorkelBot.text(el) : '');
+
+  /**
+   * A cell's OWN text, ignoring anything nested inside it.
+   *
+   * The Project Name cell is a bare text node followed by an annotation block:
+   *
+   *   <td>CDG_Sentinel_Ultra_00000<div class="snorkel-card-meta">
+   *         <span>Syndrome</span><span>[Sentinel] - 0cb4eb47-…</span></div></td>
+   *
+   * Read whole, that runs together as "CDG_Sentinel_Ultra_00000Syndrome[…]" —
+   * textContent puts no space between elements — so neither an equality test nor
+   * a "starts with the key and a space" test matches. The direct text node is
+   * the project name and nothing else.
+   */
+  const ownText = (el) =>
+    !el
+      ? ''
+      : SnorkelBot.normText(
+          Array.from(el.childNodes)
+            .filter((n) => n.nodeType === 3)
+            .map((n) => n.nodeValue || '')
+            .join(' ')
+        );
   const same = (a, b) => SnorkelBot.normText(a).toLowerCase() === SnorkelBot.normText(b).toLowerCase();
 
   const buttonBy = (root, re) =>
@@ -65,44 +93,152 @@
   // ------------------------------------------------------ the revise table ----
 
   /**
-   * One row, read by what its cells contain rather than by their position.
+   * Which column is which, read from the header rather than assumed.
    *
-   * The UID is found by scanning for a UUID and the project by matching the name
-   * against every cell, so a column inserted in front of either does not silently
-   * shift what gets read — which, for the UID, would mean acting on the wrong
-   * task.
+   * Position alone is not safe any more: the Project Name cell now carries the
+   * submission's title, and that title contains a UUID of its own —
+   *
+   *   Task ID       41fd93c0-79fa-452c-827c-360e1ea363b6
+   *   Project Name  CDG_Sentinel_Ultra_00000 Dmon [Sentinel] - 7c7220b0-…
+   *
+   * — so "the first cell holding a UUID" is one inserted column away from
+   * quietly returning the wrong task.
    */
-  function rowInfo(tr) {
+  function columnsOf(table) {
+    const heads = Array.from(table.querySelectorAll('thead th')).map((th) =>
+      SnorkelBot.normText(text(th)).toLowerCase()
+    );
+    return {
+      uid: heads.findIndex((h) => /task\s*id/.test(h)),
+      project: heads.findIndex((h) => /project/.test(h)),
+      due: heads.findIndex((h) => /due/.test(h)),
+    };
+  }
+
+  const firstUuid = (s) => (String(s || '').match(SnorkelBot.UUID_RE) || [])[0] || null;
+
+  function rowInfo(tr, cols = {}) {
     const cells = Array.from(tr.querySelectorAll('td'));
     if (!cells.length) return null;
 
     const texts = cells.map((cell) => SnorkelBot.normText(text(cell)));
-    const uid = texts.map((t) => (t.match(SnorkelBot.UUID_RE) || [])[0]).find(Boolean) || null;
+    // The named column when the header gave one, and only then a scan — which
+    // takes the first UUID in row order, so the Task ID column still wins.
+    const uid =
+      (cols.uid >= 0 ? firstUuid(texts[cols.uid]) : null) || texts.map(firstUuid).find(Boolean) || null;
     const anchor = tr.querySelector(REVISE_ANCHOR) || tr.querySelector('a[href*="/review"]');
     const href = anchor ? anchor.getAttribute('href') || '' : '';
 
     return {
       uid,
       texts,
+      project: cols.project >= 0 ? ownText(cells[cols.project]) || texts[cols.project] : '',
+      projectFull: cols.project >= 0 ? texts[cols.project] : '',
       anchor,
       href,
       // The assignment id, kept because it is what the platform's own URL uses
       // and what any support conversation about a stuck row will quote.
       assignmentId: (href.match(/assignmentId=([0-9a-f-]{36})/i) || [])[1] || null,
-      due: texts[2] || null,
+      due: cols.due >= 0 ? texts[cols.due] : texts[2] || null,
     };
+  }
+
+  /**
+   * Does this row belong to the project we are working?
+   *
+   * The project cell's own text is the name exactly, so that is an equality
+   * test. The prefix test on the whole cell is the fallback for a row with no
+   * annotation block, where the two are the same string — anchored at the start
+   * rather than merely contained, because a submission's title routinely
+   * mentions another project.
+   */
+  function belongsTo(row, projectKey) {
+    const key = SnorkelBot.normText(projectKey).toLowerCase();
+    if (!key) return false;
+    if (row.project && row.project.toLowerCase() === key) return true;
+
+    const candidates = row.projectFull ? [row.projectFull] : row.texts;
+    return candidates.some((cell) => {
+      const value = SnorkelBot.normText(cell).toLowerCase();
+      return value === key || value.startsWith(key);
+    });
   }
 
   const rowsFor = (projectKey) => {
     const table = document.querySelector(REVISION_TABLE);
     if (!table) return [];
+    const cols = columnsOf(table);
     return Array.from(table.querySelectorAll('tbody tr'))
-      .map(rowInfo)
-      .filter((row) => row && row.uid && row.texts.some((t) => same(t, projectKey)));
+      .map((tr) => rowInfo(tr, cols))
+      .filter((row) => row && row.uid && belongsTo(row, projectKey));
   };
 
   /** The button inside the row's link; React binds to it, not to the anchor. */
   const clickTarget = (anchor) => (anchor && anchor.querySelector('button')) || anchor;
+
+  const tableRows = () => document.querySelectorAll(`${REVISION_TABLE} tbody tr`).length;
+
+  /**
+   * How many the page says there are: "You have 8 tasks that require revision".
+   *
+   * The banner is the only honest total. The table shows a first page and hides
+   * the rest behind a "Show more", so counting rows answers "how many are on
+   * screen", which is a different question — and the difference is silent.
+   */
+  function statedTotal() {
+    const banner = document.querySelector(ATTENTION_BANNER);
+    if (!banner) return null;
+    const match = SnorkelBot.normText(text(banner)).match(/\b(\d+)\s+tasks?\b/i);
+    return match ? Number(match[1]) : null;
+  }
+
+  /**
+   * Opens the rest of the list, however many pages deep it goes.
+   *
+   * Driven by the banner's count rather than by finding the button: the button
+   * only exists when the list is long enough to need it, so its absence proves
+   * nothing, whereas "the banner says 23 and I can see 10" is unambiguous.
+   * Clicking continues while the rows grow, so a control that adds a page at a
+   * time works the same as one that reveals everything at once.
+   */
+  async function expandRevisionTable({ timeout = 20000 } = {}) {
+    const wanted = statedTotal();
+    let clicks = 0;
+
+    for (let i = 0; i < 20; i++) {
+      const before = tableRows();
+      if (wanted != null && before >= wanted) break;
+
+      const table = document.querySelector(REVISION_TABLE);
+      if (!table) break;
+
+      /*
+       * The page names this control, so take it by name. The text search below
+       * is the fallback for when it is renamed — searched from the table
+       * upwards so it belongs to this list rather than some other section, and
+       * never from inside the table, where "Revise task" lives.
+       */
+      let button = document.querySelector(SHOW_MORE);
+      let host = table.parentElement;
+      for (let up = 0; up < 4 && host && !button; up++) {
+        button = Array.from(host.querySelectorAll('button')).find(
+          (b) => !table.contains(b) && MORE_BUTTON.test(SnorkelBot.normText(text(b)))
+        );
+        host = host.parentElement;
+      }
+      if (!button || button.disabled) break;
+
+      SnorkelBot.click(button);
+      clicks++;
+
+      // Rows are fetched, so they arrive a moment after the click.
+      const deadline = Date.now() + Math.min(timeout, 8000);
+      while (Date.now() < deadline && tableRows() === before) await SnorkelBot.sleep(300);
+      if (tableRows() === before) break; // clicked, nothing came — stop asking
+    }
+
+    return { clicks, rows: tableRows(), expected: wanted };
+  }
 
   // ------------------------------------------------------- starting a task ----
 
@@ -212,8 +348,12 @@
       }
     }
 
+    // Everything past the first page is behind "Show more" — without this the
+    // sweep silently reports only what happened to fit on screen.
+    const expansion = appeared ? await expandRevisionTable() : { clicks: 0, rows: 0, expected: null };
+
     const rows = rowsFor(projectKey);
-    const allRows = document.querySelectorAll(`${REVISION_TABLE} tbody tr`).length;
+    const allRows = tableRows();
 
     return {
       revisions: rows.map((row) => ({
@@ -229,6 +369,11 @@
       // is full of another project's work".
       cards: allRows,
       rendered: Boolean(appeared),
+      // What the banner claims, so a list that would not open all the way is
+      // visible as a number rather than as a quietly short answer.
+      expected: expansion.expected,
+      expanded: expansion.clicks,
+      truncated: expansion.expected != null && allRows < expansion.expected,
     };
   });
 
@@ -237,6 +382,14 @@
     const projectKey = msg.projectKey || 'CDG_Sentinel_Ultra_00000';
     const wanted = String(msg.uid || '').toLowerCase();
     assertSignedIn();
+
+    /*
+     * Open the whole list first. A task on the second page has no row to click,
+     * and the failure reads exactly like a task that has been taken off the
+     * list — which is a different thing entirely.
+     */
+    await SnorkelBot.waitFor(() => tableRows() || null, { timeout: 30000, interval: 400 }).catch(() => 0);
+    await expandRevisionTable();
 
     const row = await SnorkelBot.waitFor(
       () => rowsFor(projectKey).find((r) => (r.uid || '').toLowerCase() === wanted) || null,
@@ -258,9 +411,14 @@
       testid: card.getAttribute('data-testid'),
       button: SnorkelBot.normText(text(card.querySelector('button'))) || null,
     })),
-    revisions: Array.from(document.querySelectorAll(`${REVISION_TABLE} tbody tr`))
-      .map(rowInfo)
-      .filter(Boolean)
-      .map((row) => ({ uid: row.uid, project: row.texts[1] || null, href: row.href })),
+    revisions: (() => {
+      const table = document.querySelector(REVISION_TABLE);
+      if (!table) return [];
+      const cols = columnsOf(table);
+      return Array.from(table.querySelectorAll('tbody tr'))
+        .map((tr) => rowInfo(tr, cols))
+        .filter(Boolean)
+        .map((row) => ({ uid: row.uid, project: row.project || null, href: row.href }));
+    })(),
   }));
 })();
