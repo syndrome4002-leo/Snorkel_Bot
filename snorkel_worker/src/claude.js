@@ -133,33 +133,77 @@ function runTurn(prompt, { cwd, sessionId, resume, addDirs = [], timeoutMs, onLo
  * the task and the answers it wrote. Starting fresh would mean paying to read all
  * of that again and hoping for the same conclusions.
  */
-export function openSession({ cwd, addDirs = [], timeoutMs, onLog, label = '', resume = null } = {}) {
-  const sessionId = resume || randomUUID();
+export function openSession({
+  cwd,
+  addDirs = [],
+  timeoutMs,
+  onLog,
+  label = '',
+  resume = null,
+  preamble = null,
+} = {}) {
+  let sessionId = resume || randomUUID();
   const started = Date.now();
   const turns = [];
   let resumed = Boolean(resume);
 
   if (onLog) onLog(`session ${sessionId}${resume ? ' (resumed)' : ''}${label ? ` (${label})` : ''}`);
 
+  const left = () => (timeoutMs ? timeoutMs - (Date.now() - started) : 0);
+  const run = (prompt) =>
+    runTurn(prompt, { cwd, sessionId, resume: resumed, addDirs, timeoutMs: left(), onLog });
+
+  /**
+   * The first turn, which is the only one that can find the conversation gone.
+   *
+   * Claude Code keeps sessions on disk per project, so an id recorded days ago
+   * may no longer resolve — the store was cleared, or the folder moved. That is
+   * a reason to start again, not to fail the task, so a resume that does not
+   * take becomes a fresh session with `preamble` (the documents) sent first,
+   * which is exactly what a session that was never resumed does.
+   *
+   * A timeout is excluded: Claude working for an hour and being cut off says
+   * nothing about whether the session existed, and re-running the whole thing
+   * on that basis would spend another hour to reach the same place.
+   */
+  async function firstTurn(prompt) {
+    if (resumed) {
+      try {
+        return await run(prompt);
+      } catch (err) {
+        if (/still working after/i.test(String(err?.message || ''))) throw err;
+        if (onLog) onLog(`could not resume ${sessionId} (${err.message}) — starting a fresh session`);
+        sessionId = randomUUID();
+        resumed = false;
+      }
+    }
+
+    if (preamble) {
+      const text = typeof preamble === 'function' ? await preamble() : preamble;
+      if (text) {
+        turns.push(await run(text));
+        resumed = true;
+      }
+    }
+    return run(prompt);
+  }
+
   return {
-    id: sessionId,
+    get id() {
+      return sessionId;
+    },
+    get resumed() {
+      return resumed && Boolean(resume) && sessionId === resume;
+    },
     turns,
 
     async send(prompt) {
       // The budget is for the whole session, so each turn gets what is left.
-      const remaining = timeoutMs ? timeoutMs - (Date.now() - started) : 0;
-      if (timeoutMs && remaining <= 0) {
+      if (timeoutMs && left() <= 0) {
         throw new Error(`Ran out of time before turn ${turns.length + 1}.`);
       }
 
-      const turn = await runTurn(prompt, {
-        cwd,
-        sessionId,
-        resume: resumed,
-        addDirs,
-        timeoutMs: remaining,
-        onLog,
-      });
+      const turn = turns.length === 0 ? await firstTurn(prompt) : await run(prompt);
       resumed = true;
       turns.push(turn);
       return turn;

@@ -574,6 +574,9 @@ function logEvent(emoji, event, message, extra = {}) {
 let lastRevisionReport = null;
 let lastReviseCount = null;
 let nextAutoTryAt = null;
+/** When the upload sweep next runs, and what it found the last time it did. */
+let nextSubmitCheckAt = null;
+let lastSubmitScan = null;
 /** Refreshed alongside the ticker so the countdown can say why it will not run. */
 let inBuildUid = null;
 
@@ -588,8 +591,11 @@ function updateTicker() {
   if (!systemEnabled) {
     setTicker('checks', { emoji: '⏹️', message: 'System disabled — nothing is being started' });
     setTicker('tries', { emoji: '⏹️', message: 'System disabled — enable it on the dashboard to resume' });
+    setTicker('submits', { emoji: '⏹️', message: 'System disabled — nothing is being uploaded' });
     return;
   }
+
+  updateSubmitTicker();
 
   // --- when the revise list is next read ---
   if (!lastRevisionReport) {
@@ -648,6 +654,44 @@ function updateTicker() {
     emoji: when === 'due now' ? '🤖' : '⏳',
     message: when ? `try new task ${when} — ${countText}` : `try new task pending — ${countText}`,
   });
+}
+
+/*
+ * The third line: when the built tasks are next looked at.
+ *
+ * Written from here rather than from the sweep itself, so it counts down between
+ * runs instead of freezing on whatever the last one happened to say. The sweep
+ * leaves its findings in `lastSubmitScan` and this turns them into a sentence.
+ */
+function updateSubmitTicker() {
+  const say = (emoji, message) => setTicker('submits', { emoji, message });
+
+  if (submitInFlight) {
+    return say('📤', `uploading ${submitInFlight.uid} — running the platform checks`);
+  }
+  if (!hub.isConnected('snorkel')) {
+    return say('🔌', 'no browser connected — nothing can be uploaded');
+  }
+  // The same tab does all of this, so a task being started or read is not
+  // something the upload sweep can work around.
+  if (currentRun()) return say('🖐️', 'busy with another task — the upload sweep waits for the tab');
+
+  const when = humanIn(nextSubmitCheckAt);
+  const head = when ? `check tasks to upload ${when}` : 'check tasks to upload pending';
+
+  if (!lastSubmitScan) return say('⏳', `${head} — nothing looked at yet`);
+
+  const { eligible, waiting, heldByCap, cap } = lastSubmitScan;
+  const bits = [];
+  if (eligible) bits.push(`${eligible} ready`);
+  if (waiting) bits.push(`${waiting} waiting on Dropbox`);
+  if (heldByCap) {
+    bits.push(
+      `${heldByCap} held until tomorrow` + (cap ? ` (${cap.used} of ${cap.limit} submitted today)` : '')
+    );
+  }
+
+  return say(when === 'due now' ? '📤' : '⏳', `${head} — ${bits.join(', ') || 'nothing ready'}`);
 }
 
 // ------------------------------------------------------------ settings ----
@@ -1458,22 +1502,18 @@ async function maybeSubmitCheck() {
   });
   if (!found) return;
 
+  // What the ticker turns into a sentence a minute from now, and the minute
+  // after that, rather than only at the moment of the sweep.
+  lastSubmitScan = {
+    at: new Date().toISOString(),
+    eligible: found.eligible || 0,
+    waiting: found.waiting || 0,
+    heldByCap: found.heldByCap || 0,
+    cap: capped.limited ? { used: capped.used, limit: capped.limit } : null,
+  };
+
   if (!found.task) {
-    if (found.heldByCap) {
-      setTicker('submits', {
-        emoji: '🛑',
-        message:
-          `${capped.used} of ${capped.limit} new tasks submitted today — ` +
-          `${found.heldByCap} built and waiting until tomorrow`,
-      });
-      return;
-    }
-    if (found.waiting) {
-      setTicker('submits', {
-        emoji: '⏸️',
-        message: `${found.waiting} task(s) ready to submit but their file is not in Dropbox yet`,
-      });
-    }
+    updateTicker();
     return;
   }
 
@@ -1705,7 +1745,18 @@ async function adoptTakenTask(taken, pageUid) {
 function scheduleSubmitSweep() {
   const every = minutes(settings.submit_check_every_min, DEFAULT_SUBMIT_EVERY);
   if (submitTimer) clearInterval(submitTimer);
+
+  // Stamped here and again on every firing, so the dashboard counts down to a
+  // real moment instead of to an assumed interval that a settings change or a
+  // restart would have moved.
+  const stamp = () => {
+    nextSubmitCheckAt = new Date(Date.now() + every * 60000).toISOString();
+  };
+  stamp();
+
   submitTimer = setInterval(() => {
+    stamp();
+    updateTicker();
     maybeSubmitCheck().catch((err) => console.warn('[server] submit sweep failed:', err.message));
   }, every * 60000);
   submitTimer.unref?.();

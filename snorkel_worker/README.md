@@ -32,9 +32,23 @@ Anything more than that is a later, human-driven step.
 **`needs revision`** — the folder is already on disk; nothing is downloaded.
 
 1. Find `<UID>_submission/`.
-2. Two turns with Claude: the reference documents, then every feedback round.
-3. Save what Claude wrote to `answers`.
-4. Repack, upload, `task_status: "ready to submit"`.
+2. Continue the conversation that built the task, by its recorded session id, and
+   hand it the newest feedback round: the reviewer's note and the automated check
+   panes, kept apart because they carry different weight. Only that round — the
+   earlier ones appear as a list of notes already dealt with, because their
+   corrections are in the folder and re-reading the text invites redoing them.
+3. Save whatever answers changed to `answers`, merged over the ones already
+   there; anything Claude leaves out is still correct and stays as it was.
+4. Repack, upload, `task_status: "ready to submit"` — from here it is the same
+   road as a new task: the server hands the zip to the browser, the extension
+   uploads it and runs the two platform checks, and a failure comes back as
+   `static check fail` for the worker to answer.
+
+The worker records a fingerprint of the reviewer's note in
+`revision_notes_applied` once the round is safely uploaded. A note that comes
+back unchanged is then labelled as already worked on rather than presented as new
+work, which is the difference between "the reviewer is repeating themselves" and
+"do all of that again".
 
 While a task is open its status is **`Working..`**, so the dashboard shows what
 Claude has in hand.
@@ -233,23 +247,38 @@ task — no restart, no rebuild.
 
 | file | when |
 | --- | --- |
-| `intro.txt` | turn one of every session: the reference documents |
-| `build.txt` | turn two for `in build` — the submitter form questionnaire |
-| `revision.txt` | turn two for `needs revision` |
+| `intro.txt` | turn one of any session that is not a resumed one: the reference documents |
+| `triage.txt` | turn two for `in build` — fixable, invalid, or valid-as-is |
+| `fix.txt` | turn three for `in build`, only when triage said fixable: the corrections and the submitter form |
+| `revision.txt` | turn two for `needs revision` — the reviewer's note and the automated checks |
+| `staticfix.txt` | after a platform check came back FAIL, with its build logs |
+| `lesson.txt` | after a fix worked: what should the next task have known? |
+| `extract.txt` | the last turn of every run: the same answers again, as JSON |
+| `build.txt` | the old single-turn build, kept for reference; nothing sends it |
 
-`build.txt` is the form itself, verbatim, ending with the instruction to keep
-answers short, human-sounding, and free of markdown. Reword it there rather than
-in code.
+`fix.txt` is the submitter form itself, verbatim, ending with the instruction to
+keep answers short, human-sounding, and free of markdown. Reword it there rather
+than in code.
 
 Placeholders: `{{docs}}`, `{{task_dir}}`, `{{uid}}`, `{{initial_infos}}`,
-`{{feedbacks}}`. An unrecognised one is left alone rather than blanked.
+`{{logs}}`, `{{lessons}}`, `{{fields}}`, and — in `revision.txt` —
+`{{note_status}}`, `{{reviewer_notes}}`, `{{automated_checks}}`, `{{history}}`.
+An unrecognised one is left alone rather than blanked.
 
 The documents are handed over as **paths**, not contents — Claude Code reads files
 itself, and pasting seven guides inline would spend most of the context window
 before the task is even mentioned.
 
-Every feedback round goes into the prompt, not just the newest. A reviewer's
-second note routinely assumes you still remember the first.
+`revision.txt` gets the newest round only, split in two: the reviewer's note and
+the automated check panes. They are kept apart because they are not equal — a
+person looked at the task, the checks did not — and the prompt says to follow the
+reviewer where the two disagree.
+
+Earlier rounds appear as a one-line list of notes already dealt with, not as more
+work. Their corrections are already in the folder, and putting the text back in
+front of the model is how a revision quietly undoes the round before it. Whether
+a note is new is decided by the worker from `revision_notes_applied`, not by
+asking the model to remember a conversation it may not have had.
 
 ## Running one task by hand
 

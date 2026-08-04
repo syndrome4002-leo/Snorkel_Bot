@@ -1,6 +1,45 @@
 The task folder is your current working directory: {{task_dir}}
 Task UID: {{uid}}
 
-Got following feedbacks, pls fix these all and write here full answer only for updated answers in this round ( It does not mean append, Just combine. but each answer should be not long.(just like written by human)). write full answer ( Not all fields answers ) for updated answer fields, so I can replace.
+This task has come back from review. Got following feedbacks:
 
-{{feedbacks}}
+=================================================================================
+
+Reviewer Notes:
+
+{{note_status}}
+
+{{reviewer_notes}}
+
+---------------------------------------------------------------------------------
+
+Automated Checks ( maybe all could be passed ):
+
+{{automated_checks}}
+
+=================================================================================
+{{history}}
+Pls fix all issues that is addressed in the Automated Checks above, and update the
+task based on the Reviewer Note if this is the first time with that note.
+
+How to work:
+
+1. Read the Automated Checks in full before changing anything. Each one names the
+   file and the requirement it is unhappy about. A check that reports no problem
+   needs no change — do not touch working parts of the task just to make a report
+   read differently.
+2. Where the reviewer's note and a check disagree, follow the reviewer. A person
+   looked at this task; the checks did not.
+3. Work in the task folder itself. Do not start again from scratch — this folder
+   holds the earlier round's work, and everything the feedback does not mention
+   should come through this round unchanged.
+4. Run the task's own tests after your changes and make sure they still pass.
+5. Then rebuild the zip inside the task folder, named after the Original Directory
+   Name exactly as in the earlier round, replacing the zip already there.
+
+When you are done, write out the answers to the submission questions that have
+CHANGED because of this round. Write each changed one out in full — the whole new
+answer for that field, not an addition to the old one and not a diff — because it
+replaces what is stored. Leave out any answer that is still correct as it stands.
+Keep each answer short and in plain language, the way a person filling in a form
+writes.

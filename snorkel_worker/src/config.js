@@ -108,10 +108,10 @@ export const config = {
     /**
      * Whether to pick up tasks a reviewer sent back.
      *
-     * Off while the first-build path is the one being watched. Turning it on is
-     * the only change needed — nothing about revisions has been removed.
+     * On. It was off for a while so that the first-build path could be watched
+     * on its own; set HANDLE_REVISIONS=false to put it back that way.
      */
-    handleRevisions: bool(process.env.HANDLE_REVISIONS, false),
+    handleRevisions: bool(process.env.HANDLE_REVISIONS, true),
 
     /**
      * Take work belonging to any machine rather than only this one. Off by

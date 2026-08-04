@@ -26,7 +26,9 @@ import {
   extractPrompt,
   fixPrompt,
   introPrompt,
+  noteFingerprint,
   revisionPrompt,
+  reviewerNotes,
   lessonPrompt,
   staticFixPrompt,
   triagePrompt,
@@ -36,6 +38,7 @@ import { lessonsBlock, recordLesson } from './lessons.js';
 import {
   TASK_STATUS_BUILD,
   TASK_STATUS_INVALID,
+  TASK_STATUS_NEEDS_REVISION,
   TASK_STATUS_STATIC_FAIL,
   TASK_STATUS_VALID_AS_IS,
   markDownloaded,
@@ -341,6 +344,18 @@ export async function workOnTask(task, { log, onSession } = {}) {
    * means something. Starting fresh would pay to read all of it again and hope
    * for the same conclusions.
    */
+  /*
+   * A revision continues the conversation too, for the same reason: it already
+   * holds the task, the corrections it made and the answers it wrote, so "the
+   * reviewer says this is still wrong" lands against work it remembers doing.
+   *
+   * Unlike a failed check, though, a revision can arrive days later, and Claude
+   * Code keeps sessions on disk per project — one cleared out, or a folder moved
+   * between machines, means the id no longer resolves. So it is an attempt, not
+   * a requirement, and `usedSession` records which way it went, because a fresh
+   * conversation needs the documents and a resumed one already has them.
+   */
+  const resumable = from === TASK_STATUS_STATIC_FAIL || from === TASK_STATUS_NEEDS_REVISION;
   const session = openSession({
     cwd: taskDir,
     // The documents sit outside the task folder, so Claude has to be allowed to
@@ -348,17 +363,31 @@ export async function workOnTask(task, { log, onSession } = {}) {
     addDirs: config.docsDir ? [config.docsDir] : [],
     timeoutMs,
     label: uid,
-    resume: from === TASK_STATUS_STATIC_FAIL ? task.worker_session_id || null : null,
+    resume: resumable ? task.worker_session_id || null : null,
+    // Sent before the first turn of any conversation that is not a resumed one,
+    // including a resume that turned out to be dead. Nothing below has to know
+    // which of those happened.
+    preamble: () => introPrompt(docs),
     onLog: (line) => onSession && onSession(line),
   });
 
   let stage = 'revision';
   let triage = null;
+  // The reviewer note this round is answering, so the next round can tell an
+  // unchanged note from a new one instead of asking Claude to remember.
+  const applied = Array.isArray(task.revision_notes_applied) ? task.revision_notes_applied : [];
+  let noteHash = '';
 
   try {
     if (from === TASK_STATUS_STATIC_FAIL) {
       // ---- the platform rejected the last upload -------------------------
-      stage = 'build';
+      /*
+       * Which set of answer keys this run may write depends on what the upload
+       * was, not on the failure. A check that fails on a revision is still a
+       * revision, and asking it for the build's keys would leave the reviewer's
+       * own questions out of anything it wants to change.
+       */
+      stage = rounds > 0 ? 'revision' : 'build';
       const logs = failedCheckLogs(task);
       if (!logs) {
         throw new Error(`${uid} is at "${from}" but has no static_check_result logs to work from.`);
@@ -367,8 +396,6 @@ export async function workOnTask(task, { log, onSession } = {}) {
       const attempt = Number(task.static_fix_attempts || 0) + 1;
       say('🔁', 'static_fix', `${uid} failed the platform checks — fixing (attempt ${attempt})`);
 
-      // Only intro if this is not a resumed conversation; a resumed one has it.
-      if (!task.worker_session_id) await session.send(await introPrompt(docs));
       await session.send(await staticFixPrompt({ uid, taskDir, logs, lessons: await lessonsBlock() }));
       await patchTask(uid, { static_fix_attempts: attempt });
 
@@ -386,7 +413,6 @@ export async function workOnTask(task, { log, onSession } = {}) {
       stage = 'build';
       say('🧠', 'claude_start', `building ${uid} with ${docs.length} document(s) attached`);
 
-      await session.send(await introPrompt(docs));
       const verdict = await session.send(
         await triagePrompt({ uid, taskDir, initialInfos: task.initial_infos })
       );
@@ -419,9 +445,27 @@ export async function workOnTask(task, { log, onSession } = {}) {
       await session.send(await fixPrompt({ uid, taskDir, lessons: await lessonsBlock() }));
     } else {
       // ---- a reviewer sent it back ---------------------------------------
-      say('🧠', 'claude_start', `revising ${uid} from ${rounds} feedback round(s)`);
-      await session.send(await introPrompt(docs));
-      await session.send(await revisionPrompt({ uid, taskDir, feedbacks: task.feedbacks }));
+      const latest = Array.isArray(task.feedbacks) ? task.feedbacks[task.feedbacks.length - 1] : null;
+      const notes = reviewerNotes(latest);
+      noteHash = noteFingerprint(notes);
+      const seen = noteHash && applied.some((entry) => entry?.hash === noteHash);
+
+      say(
+        '🧠',
+        'claude_start',
+        `revising ${uid} — round ${rounds}, ` +
+          (notes ? (seen ? 'the reviewer note repeats an earlier one' : 'a new reviewer note') : 'no reviewer note') +
+          `, ${(latest?.checks || []).filter((c) => c.text).length} check pane(s)`
+      );
+
+      /*
+       * The counter belongs to an upload, not to a task. Leaving the build's
+       * tally in place would let one round's spent attempts stop the platform's
+       * checks from ever being answered on the next.
+       */
+      if (Number(task.static_fix_attempts || 0)) await patchTask(uid, { static_fix_attempts: 0 });
+
+      await session.send(await revisionPrompt({ uid, taskDir, feedbacks: task.feedbacks, applied }));
     }
 
     // The answers as prose are what a person reads; this turn is the same thing
@@ -484,12 +528,24 @@ export async function workOnTask(task, { log, onSession } = {}) {
   // folder and is what the next round starts from.
   if (!madeByClaude) await rm(outZip, { force: true });
 
+  /*
+   * Written only now, with the zip uploaded and the answers stored.
+   *
+   * Recording it any earlier would mark a note as dealt with on a round that
+   * then failed, and the next round would be told to skip the very thing that
+   * never happened. Bounded, because only the recent rounds are ever compared.
+   */
+  const notesApplied = noteHash
+    ? [...applied.filter((entry) => entry?.hash !== noteHash), { hash: noteHash, at: new Date().toISOString(), round: rounds }].slice(-20)
+    : applied;
+
   await markReady(uid, {
     file_name: zipName,
     dropbox_path: uploaded.dropbox_path,
     local_path: taskDir,
     worker_session_id: session.id,
     worker_cost_usd: session.costUsd || null,
+    ...(noteHash ? { revision_notes_applied: notesApplied } : {}),
   });
 
   say('🏁', 'ready', `${uid} is ready to submit (answers round ${saved.round})`);

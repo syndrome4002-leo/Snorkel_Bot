@@ -109,11 +109,13 @@ export default function SystemLogs({ machine }) {
       </div>
 
       {/* Pinned beneath the stream, overwritten in place — these are statuses,
-          not events, so they never become history. Order is fixed so the two
-          lines do not swap places as they update. */}
+          not events, so they never become history. Order is fixed so the lines
+          do not swap places as they update, and it follows the order the work
+          happens in: read the revise list, start a task, upload what is built —
+          then the worker, which writes its own line. */}
       {ticker ? (
         <div className="tickers">
-          {['checks', 'tries'].map((key) =>
+          {['checks', 'tries', 'submits', 'worker'].map((key) =>
             ticker[key] ? (
               <div key={key} className="ticker">
                 <span className="log-emoji">{ticker[key].emoji || '⏳'}</span>

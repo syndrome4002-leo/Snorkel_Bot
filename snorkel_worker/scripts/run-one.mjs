@@ -14,8 +14,17 @@ import { initFirebase, claimTask, getTask, releaseTask, WORKABLE } from '../src/
 import { initRtdb } from '../src/rtdb.js';
 import { workOnTask, findTaskDir } from '../src/task.js';
 import { lockHolder } from '../src/lock.js';
-import { buildPrompt, documentPaths, introPrompt, revisionPrompt } from '../src/prompts.js';
-import { TASK_STATUS_BUILD } from '../src/firebase.js';
+import {
+  documentPaths,
+  fixPrompt,
+  introPrompt,
+  revisionPrompt,
+  staticFixPrompt,
+  triagePrompt,
+} from '../src/prompts.js';
+import { lessonsBlock } from '../src/lessons.js';
+import { failedCheckLogs } from '../src/task.js';
+import { TASK_STATUS_BUILD, TASK_STATUS_STATIC_FAIL } from '../src/firebase.js';
 
 const args = process.argv.slice(2);
 const uid = args.find((a) => !a.startsWith('-'));
@@ -60,19 +69,49 @@ if (!WORKABLE.includes(task.task_status)) {
 if (dry) {
   const taskDir = (await findTaskDir(uid)) || '(would be downloaded and unpacked)';
   const docs = await documentPaths();
-  const second =
-    task.task_status === TASK_STATUS_BUILD
-      ? await buildPrompt({ uid, taskDir, initialInfos: task.initial_infos })
-      : await revisionPrompt({ uid, taskDir, feedbacks: task.feedbacks });
+  const lessons = await lessonsBlock();
 
-  console.log('='.repeat(70));
-  console.log('TURN 1');
-  console.log('='.repeat(70));
-  console.log(await introPrompt(docs));
-  console.log('\n' + '='.repeat(70));
-  console.log(`TURN 2  (${task.task_status})`);
-  console.log('='.repeat(70));
-  console.log(second);
+  /*
+   * A revision and a static fix continue the conversation that built the task,
+   * so turn one is only sent when there is no session to go back to — and the
+   * dry run says which case this is rather than always printing it.
+   */
+  const resumes = task.task_status !== TASK_STATUS_BUILD && Boolean(task.worker_session_id);
+
+  const turns = [];
+  if (task.task_status === TASK_STATUS_BUILD) {
+    turns.push(['triage', await triagePrompt({ uid, taskDir, initialInfos: task.initial_infos })]);
+    turns.push(['fix (only if triage says fixable)', await fixPrompt({ uid, taskDir, lessons })]);
+  } else if (task.task_status === TASK_STATUS_STATIC_FAIL) {
+    turns.push(['static fix', await staticFixPrompt({ uid, taskDir, logs: failedCheckLogs(task), lessons })]);
+  } else {
+    turns.push([
+      'revision',
+      await revisionPrompt({
+        uid,
+        taskDir,
+        feedbacks: task.feedbacks,
+        applied: task.revision_notes_applied || [],
+      }),
+    ]);
+  }
+
+  if (resumes) {
+    console.log(`(resuming session ${task.worker_session_id} — the documents are already in it)\n`);
+  } else {
+    console.log('='.repeat(70));
+    console.log('TURN 1  intro');
+    console.log('='.repeat(70));
+    console.log(await introPrompt(docs));
+  }
+
+  let n = resumes ? 0 : 1;
+  for (const [label, text] of turns) {
+    console.log('\n' + '='.repeat(70));
+    console.log(`TURN ${++n}  ${label}  (${task.task_status})`);
+    console.log('='.repeat(70));
+    console.log(text);
+  }
   process.exit(0);
 }
 

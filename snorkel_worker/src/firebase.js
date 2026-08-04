@@ -40,13 +40,12 @@ export const TASK_STATUS_VALID_AS_IS = 'valid-as-is';
 /**
  * The statuses the worker picks up, and nothing else.
  *
- * Reviewer revisions are off by default. The first-build path — download, build,
- * then answer whatever the platform's checks say — is the part being used, and
- * a worker that also grabs revisions makes it harder to watch. Set
- * HANDLE_REVISIONS=true to turn them back on; the code for them is untouched.
+ * All three are on. Revisions were held back for a while so the first-build path
+ * could be watched on its own; HANDLE_REVISIONS=false puts them back on hold
+ * without removing anything.
  *
- * "static check fail" stays regardless: that is the first build being corrected,
- * not a reviewer's round.
+ * "static check fail" is not a reviewer's round — it is whatever was last
+ * uploaded being corrected, whether that came from a build or a revision.
  */
 export const WORKABLE = [
   TASK_STATUS_BUILD,

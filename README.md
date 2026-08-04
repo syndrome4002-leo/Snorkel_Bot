@@ -94,8 +94,9 @@ it through Dropbox, so it never needs to see machine A's disk.
 8. For `"in build"` it takes the zip back off Dropbox, **deletes it there**, sets
    `file_uploaded: false` and unpacks it. For `"needs revision"` the folder is
    already on disk and nothing is downloaded.
-9. Two turns with the Claude Code agent — the reference documents, then the task
-   or the feedback — running in the task folder with its own tools.
+9. Turns with the Claude Code agent, running in the task folder with its own
+   tools. A first build is triage then corrections; a revision continues the
+   conversation that built the task and hands it the newest feedback round.
 10. The answer is appended to `answers`, the folder is repacked and uploaded, and
     `task_status` becomes `"ready to submit"`.
 
