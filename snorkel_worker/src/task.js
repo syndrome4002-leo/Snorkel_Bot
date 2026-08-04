@@ -228,6 +228,44 @@ async function fetchAndUnpack(task, log) {
 }
 
 /**
+ * Puts a finished task's zip back in Dropbox, without involving Claude.
+ *
+ * For a task the server already handed to the browser and then deleted from
+ * Dropbox, where the browser failed before attaching it. The work is long done
+ * and the folder is still here; all that is missing is the file.
+ */
+export async function reuploadTask(task, { log } = {}) {
+  const uid = String(task.UID || task.id);
+  const say = log || (() => {});
+
+  const taskDir = await findTaskDir(uid);
+  if (!taskDir) {
+    const looked = [config.workDir, ...config.extraTaskDirs].join(', ');
+    throw new Error(
+      `No folder for ${uid}, so its zip cannot be rebuilt — looked in: ${looked}. ` +
+        `The task will need building again.`
+    );
+  }
+
+  const { path: outZip, name: zipName, madeByClaude } = await zipToUpload(task, taskDir);
+  say('⬆️', 'reupload', `putting ${zipName} back in Dropbox`);
+
+  const uploaded = await uploadFile(outZip, { fileName: zipName });
+  if (!madeByClaude) await rm(outZip, { force: true });
+
+  await markReady(uid, {
+    file_name: zipName,
+    dropbox_path: uploaded.dropbox_path,
+    local_path: taskDir,
+    // Cleared so this is not mistaken for another lost upload next time round.
+    submit_file_served_at: null,
+  });
+
+  say('🔁', 'reupload_done', `${uid} has a file again and can be submitted`);
+  return { uid, taskDir, zipName, dropboxPath: uploaded.dropbox_path };
+}
+
+/**
  * Runs one task through Claude and puts the result back.
  *
  * `task` is the record as it looked *before* being claimed, so `worked_from`

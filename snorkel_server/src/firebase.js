@@ -14,6 +14,7 @@ import admin from 'firebase-admin';
 import { config, serverRoot } from './config.js';
 import { machineId } from './machine.js';
 import { recordFailures, confirmLessons } from './lessons.js';
+import { deleteFile } from './dropbox.js';
 
 /**
  * Records that could not reach Firestore are appended here as one JSON object
@@ -453,6 +454,35 @@ export async function markSent(uid) {
   };
   await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
   console.log(`[firebase] ${config.firebase.collection}/${uid} -> task_status="${TASK_STATUS_SENT}"`);
+
+  /*
+   * Anything still in Dropbox has outlived its purpose.
+   *
+   * Normally the copy is gone before this — deleted the moment the browser
+   * collected it. But there are ways for one to survive: a task submitted by
+   * hand, so the server never served it, or a race where something put a copy
+   * back. Whatever the route, a zip sitting in Dropbox for a task that has been
+   * submitted is a stale build that a later retry could pick up and upload, and
+   * nothing else in the system removes it.
+   *
+   * Best effort, and never allowed to fail the send: the task really has been
+   * submitted, and reporting an error now would misrepresent that.
+   */
+  if (before.exists && before.data().dropbox_path) {
+    try {
+      await deleteFile(before.data().dropbox_path);
+      await db
+        .collection(config.firebase.collection)
+        .doc(String(uid))
+        .set({ dropbox_path: null, file_uploaded: false }, { merge: true });
+      console.log(`[firebase] ${uid} -> cleared its Dropbox copy on send`);
+      patch.dropbox_path = null;
+      patch.file_uploaded = false;
+    } catch (err) {
+      console.warn(`[firebase] ${uid}: could not clear the Dropbox copy on send: ${err.message}`);
+    }
+  }
+
   return patch;
 }
 

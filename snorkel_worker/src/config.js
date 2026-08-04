@@ -91,6 +91,21 @@ export const config = {
     maxStaticFixAttempts: num(process.env.MAX_STATIC_FIX_ATTEMPTS, 5),
 
     /**
+     * How long after the server hands a task's zip to the browser before that
+     * task counts as stranded.
+     *
+     * It has to be longer than a submission can legitimately take, because the
+     * state during a perfectly healthy run is indistinguishable from the state
+     * after a failed one: finished, served, and no file in Dropbox. Only time
+     * tells them apart. The server gives up on a submission after 25 minutes,
+     * so anything past 30 is genuinely over.
+     *
+     * Too low and the worker uploads a second copy underneath a browser that is
+     * still working.
+     */
+    lostUploadAfterMinutes: num(process.env.LOST_UPLOAD_AFTER_MINUTES, 30),
+
+    /**
      * Whether to pick up tasks a reviewer sent back.
      *
      * Off while the first-build path is the one being watched. Turning it on is

@@ -22,6 +22,7 @@ import {
   claimTask,
   findOrphanedTasks,
   findWorkableTasks,
+  findLostUploads,
   firebaseStatus,
   initFirebase,
   releaseTask,
@@ -40,7 +41,7 @@ import {
 import { startConnectServer } from './connect.js';
 import { checkClaude } from './claude.js';
 import { dropboxConfigured } from './dropbox.js';
-import { workOnTask } from './task.js';
+import { workOnTask, reuploadTask } from './task.js';
 import { readClaudeUsage } from './usage.js';
 import { acquireLock, releaseLock, releaseLockSync, workerProcessAlive } from './lock.js';
 
@@ -215,6 +216,45 @@ function updateTicker() {
   });
 }
 
+/**
+ * Re-uploads finished tasks whose zip was consumed but never attached.
+ *
+ * The server deletes a task's zip from Dropbox as soon as the browser has it,
+ * which is what stops a stale build being uploaded later. When the browser then
+ * fails before attaching — a section collapsed, a tab closed — the task is left
+ * finished with no file anywhere, and the submit sweep skips it forever because
+ * it requires `file_uploaded`.
+ *
+ * Nothing was lost, only misplaced: the unpacked folder is still on this
+ * machine.
+ */
+async function recoverLostUploads() {
+  let lost = [];
+  try {
+    lost = await findLostUploads(machines);
+  } catch (err) {
+    return log('⚠️', 'reupload', `could not look for lost uploads: ${err.message}`, { level: 'warn' });
+  }
+  if (!lost.length) return;
+
+  for (const task of lost) {
+    const uid = String(task.UID);
+    try {
+      log(
+        '🔁',
+        'reupload',
+        `${uid} has had no file in Dropbox for ${task.stranded_for_minutes} min — rebuilding it`,
+        { uid }
+      );
+      await reuploadTask(task, { log: (e, ev, m) => log(e, ev, m, { uid }) });
+    } catch (err) {
+      // Left as it is. Repeating the message every poll would be noise, but the
+      // alternative is a task that is quietly stuck, which is worse.
+      log('⚠️', 'reupload', `${uid}: ${err.message}`, { uid, level: 'warn' });
+    }
+  }
+}
+
 async function poll() {
   if (stopping) return;
   if (!systemEnabled) return;
@@ -229,6 +269,15 @@ async function poll() {
     // Silence would look identical to "nothing to do", so say it in the ticker
     // rather than in the log stream, where it would repeat every poll.
     if (!machines.length && !config.worker.anyMachine) return;
+
+    /*
+     * First, anything finished that has lost its file.
+     *
+     * Cheap and Claude-free — it only rebuilds a zip from a folder that is
+     * already here — so it runs before the real work rather than competing with
+     * it for a slot.
+     */
+    await recoverLostUploads();
 
     // Ask for more than there is room for: some will already be claimed by the
     // time we get to them, and a short list would leave slots idle.

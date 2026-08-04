@@ -291,7 +291,25 @@
   const looksLikeDocument = (k, v) =>
     typeof v === 'string' && !!v.trim() && !NOT_CONTENT.test(k) && (v.indexOf('\n') >= 0 || v.length >= 40);
 
-  function valueFromReact(edEl) {
+  /**
+   * The nearest ancestor React actually owns.
+   *
+   * Monaco builds its own DOM imperatively, so `.monaco-editor` and everything
+   * under it carry no `__reactFiber$` key — starting the fiber walk there found
+   * nothing and returned immediately, every time. The container React rendered
+   * is a few levels up.
+   */
+  function fiberHost(node) {
+    let el = node;
+    for (let up = 0; el && up < 20; up++) {
+      if (reactFiber(el)) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function valueFromReact(el) {
+    const edEl = fiberHost(el) || el;
     const named = fiberFindUp(edEl, (props) => {
       for (const k of CONTENT_KEYS) {
         const v = props[k];
@@ -312,76 +330,251 @@
     return v && v > 0 ? v : 19;
   };
 
-  function collectLines(host, lh, map) {
+  /*
+   * Lines are keyed by their pixel offset in the document, NOT by
+   * top / lineHeight as before. With word wrap on — which these report panes
+   * use — a `.view-line` is as tall as the number of rows it wraps to, so tops
+   * are not multiples of a single line height, and the old key collapsed
+   * several different lines onto the same slot, each overwriting the last.
+   */
+  function collectLines(host, map) {
     for (const vl of host.querySelectorAll('.view-line')) {
-      const top = parseFloat(vl.style.top || '0') || 0;
-      map.set(Math.round(top / lh), String(vl.textContent == null ? '' : vl.textContent).replace(/ /g, ' '));
+      const top = Math.round(parseFloat(vl.style.top || '0') || 0);
+      const height = Math.round(parseFloat(vl.style.height || '0') || 0);
+      map.set(top, {
+        height,
+        text: String(vl.textContent == null ? '' : vl.textContent).replace(/ /g, ' '),
+      });
     }
   }
 
-  function assemble(map) {
-    if (!map.size) return '';
-    const max = Math.max.apply(null, Array.from(map.keys()));
+  /**
+   * Joins the collected lines top to bottom, and counts the holes.
+   *
+   * A hole is a line that starts below where the previous one ended, meaning
+   * the scroll skipped a stretch that was never rendered. The text itself is
+   * unrecoverable here, but reporting it beats returning a join that reads as
+   * continuous prose with a chunk silently missing.
+   */
+  /**
+   * How far down the pane has been read without a hole.
+   *
+   * Counting from the topmost line collected, this walks the collected lines
+   * while each starts where the previous one ended, and returns where that run
+   * stops. It is what the scroll aims just above on the next pass, so a jump
+   * that skipped a stretch gets scrolled back to rather than left behind.
+   */
+  function coveredBottom(map, lh) {
+    if (!map.size) return 0;
+    const tops = Array.from(map.keys()).sort((a, b) => a - b);
+    let bottom = tops[0];
+    for (const top of tops) {
+      if (top > bottom + 2) break;
+      const row = map.get(top);
+      const end = top + (row.height || lh || 0);
+      if (end > bottom) bottom = end;
+    }
+    return bottom;
+  }
+
+  function assemble(map, lh) {
+    if (!map.size) return { text: '', gaps: 0 };
+    const tops = Array.from(map.keys()).sort((a, b) => a - b);
     const out = [];
-    for (let i = 0; i <= max; i++) out.push(map.has(i) ? map.get(i) : '');
-    return out.join('\n').replace(/\s+$/, '');
+    let gaps = 0;
+    let prevBottom = null;
+    for (const top of tops) {
+      const row = map.get(top);
+      if (prevBottom != null && top > prevBottom + 2) gaps++;
+      out.push(row.text);
+      prevBottom = top + (row.height || lh || 0);
+    }
+    return { text: out.join('\n').replace(/\s+$/, ''), gaps };
   }
 
-  function isScrollable(edEl) {
-    const sb = edEl.querySelector('.monaco-scrollable-element > .scrollbar.vertical');
-    if (!sb) return false;
-    const slider = sb.querySelector('.slider');
-    if (!slider) return false;
-    const sbH = parseFloat(sb.style.height) || sb.getBoundingClientRect().height;
-    const slH = parseFloat(slider.style.height) || slider.getBoundingClientRect().height;
-    return sbH > 4 && slH > 0 && slH < sbH - 2;
-  }
-
-  /** Monaco virtualises scrolling and reacts to WHEEL events, not scrollTop. */
+  /**
+   * Reads a Monaco editor in full by scrolling it and keeping what goes past.
+   *
+   * Monaco virtualises: only the lines on screen exist in the DOM, and it moves
+   * on WHEEL events rather than scrollTop, so the pane has to be walked down a
+   * screen at a time and the results stitched together.
+   */
   async function valueByScrolling(edEl, budgetMs) {
-    const deadline = Date.now() + (budgetMs || 2500);
+    const deadline = Date.now() + (budgetMs == null ? 2500 : budgetMs);
     const target =
       edEl.querySelector('.monaco-scrollable-element') || edEl.querySelector('.overflow-guard') || edEl;
     const host = edEl.querySelector('.view-lines');
-    if (!host) return { text: '', truncated: false };
+    if (!host) return { text: '', truncated: false, gaps: 0 };
 
     const lh = lineHeight(edEl);
-    const viewH = parseFloat(host.style.height) || edEl.getBoundingClientRect().height || 150;
-    const step = Math.max(lh, viewH - lh * 2);
+    /*
+     * The VISIBLE height of the editor, used only to size the jumps back to the
+     * top. It used to come from `.view-lines`' own style height and drive the
+     * downward step as well — but Monaco sets that to the height of the WHOLE
+     * document, not the viewport, so the step was as tall as the entire report:
+     * one wheel jumped from the first screenful straight to the last, and
+     * everything between was never rendered, never collected, and silently
+     * absent from the result. That is why a long report came back "scrolled" in
+     * ~130ms holding two screenfuls.
+     */
+    const clip = edEl.querySelector('.overflow-guard') || edEl;
+    const viewH = clip.clientHeight || clip.getBoundingClientRect().height || 150;
+    // The height of the whole document, which is what tells the loop below when
+    // it has actually reached the end rather than merely stopped moving.
+    const docH = parseFloat(host.style.height) || 0;
+
     const map = new Map();
     const wheel = (dy) =>
       target.dispatchEvent(
         new WheelEvent('wheel', { deltaY: dy, deltaX: 0, deltaMode: 0, bubbles: true, cancelable: true })
       );
+    const topmost = () => {
+      let min = Infinity;
+      for (const vl of host.querySelectorAll('.view-line')) {
+        const t = parseFloat(vl.style.top || '0') || 0;
+        if (t < min) min = t;
+      }
+      return min === Infinity ? 0 : min;
+    };
 
-    for (let i = 0; i < 80; i++) wheel(-4000);
-    await raf();
+    /*
+     * Back to the start, however far down the pane happens to be sitting. A
+     * pass that appears to change nothing is not proof of having arrived — a
+     * smooth-scrolling editor is simply still moving — so it takes several
+     * before giving up.
+     */
+    const toTop = async () => {
+      for (let i = 0, still = 0; i < 400 && still < 4; i++) {
+        const before = topmost();
+        if (before <= 0) return;
+        wheel(-Math.max(4000, viewH * 4));
+        await raf();
+        await sleep(8);
+        if (topmost() >= before) still++;
+        else still = 0;
+      }
+    };
+
+    await toTop();
     await sleep(8);
 
-    let lastMax = -1;
-    let stagnant = 0;
+    /*
+     * The descent is closed-loop, and it aims at where the scroll is GOING
+     * rather than where it currently is.
+     *
+     * A wheel event's deltaY is not a promise of pixels. Monaco scales it by
+     * mouseWheelScrollSensitivity, clamps it, and with smooth scrolling on, the
+     * position is still travelling several frames later. Aiming from the
+     * position measured mid-flight compounds: the pane is already heading
+     * somewhere, and another wheel adds to that, so it sails past a stretch of
+     * the report that is then never rendered and never read.
+     *
+     * So `expected` models where the scroll will come to rest, and each pass
+     * asks only for the difference between that and the next screen wanted.
+     * When there is nothing left to ask for, the loop waits; once the position
+     * stops changing it re-anchors on reality, learns this editor's actual
+     * pixels-per-delta from the round trip, and — if it overshot — simply aims
+     * back up at the hole it left.
+     */
     let ranOut = false;
-    for (let i = 0; i < 400 && stagnant < 3; i++) {
+    let scale = 1; // pixels travelled per pixel of deltaY, learned below
+    let idle = 0;
+    let stalls = 0;
+    let lastCovered = -1;
+    let expected = topmost();
+    let anchor = expected; // where the last settled measurement put us
+    let askedSince = 0; // deltaY asked for since that measurement
+    let coveredAtAnchor = -1;
+    /*
+     * How much of the aim to actually ask for. An editor whose scrolling is not
+     * proportional at all — a sensitivity that varies per event — cannot be hit
+     * by a learned scale, and each miss leaves a hole. Asking for less after
+     * every unproductive round shrinks the miss until it lands.
+     */
+    let caution = 1;
+
+    // A runaway guard only — the deadline and the checks below end this
+    // normally. At about a screen per pass, a long report needs hundreds.
+    for (let i = 0; i < 8000; i++) {
       if (Date.now() > deadline) {
         ranOut = true;
         break;
       }
-      collectLines(host, lh, map);
-      const mx = map.size ? Math.max.apply(null, Array.from(map.keys())) : -1;
-      if (mx <= lastMax) stagnant++;
-      else {
-        stagnant = 0;
-        lastMax = mx;
+      collectLines(host, map);
+
+      const covered = coveredBottom(map, lh);
+      // The whole document has gone past. `.view-lines` is as tall as the
+      // document, so this is exact rather than a guess.
+      if (docH > 0 && covered >= docH - 2) break;
+      if (covered > lastCovered) {
+        lastCovered = covered;
+        idle = 0;
       }
-      wheel(step);
+
+      const want = covered - lh; // the next screen, overlapping by one line
+      const delta = want - expected;
+      if (Math.abs(delta) >= 1) {
+        const ask = (delta / scale) * caution;
+        wheel(ask);
+        askedSince += ask;
+        expected += ask * scale;
+        idle = 0;
+        await raf();
+        await sleep(4);
+        continue;
+      }
+
+      // Everything wanted has been asked for; give the pane time to get there.
+      idle++;
       await raf();
-      await sleep(4);
+      await sleep(8);
+      if (idle < 4) continue;
+
+      // It has stopped moving. Re-anchor on where it really is, and learn.
+      const landed = topmost();
+      if (askedSince !== 0) {
+        const observed = (landed - anchor) / askedSince;
+        if (Number.isFinite(observed) && observed > 0.05 && observed < 20) {
+          scale = scale * 0.5 + observed * 0.5;
+        }
+        /*
+         * Asked to move and did not: synthetic wheel events are not reaching
+         * this editor, and no amount of asking will change that. Only counted
+         * when enough travel was asked for to shift the top line — `topmost`
+         * is quantised by line height, so a smaller move is invisible here and
+         * is not evidence of anything.
+         */
+        const meaningful = Math.abs(askedSince * scale) >= Math.max(lh, 4);
+        if (landed === anchor && meaningful && ++stalls >= 3) break;
+      }
+      // Did the last round actually read anything new? If not, aim smaller.
+      caution =
+        covered > coveredAtAnchor ? Math.min(1, caution * 1.5) : Math.max(0.15, caution * 0.5);
+      coveredAtAnchor = covered;
+      anchor = landed;
+      expected = landed;
+      askedSince = 0;
+      idle = 0;
     }
-    collectLines(host, lh, map);
-    for (let i = 0; i < 200; i++) wheel(-4000);
-    await raf();
-    return { text: assemble(map), truncated: ranOut };
+    collectLines(host, map);
+
+    const built = assemble(map, lh);
+
+    /*
+     * `.view-lines` is as tall as the whole document, which makes it a free
+     * answer to "did this reach the bottom?" — if the last line collected ends
+     * well above that, the read stopped short.
+     */
+    const deepest = map.size ? Math.max.apply(null, Array.from(map.keys())) : -1;
+    const bottom = deepest >= 0 ? deepest + ((map.get(deepest) || {}).height || lh) : 0;
+    const short = docH > 0 && bottom > 0 && bottom < docH - lh * 2;
+
+    // Leave the pane where it was found.
+    await toTop();
+
+    return { text: built.text, truncated: ranOut || short || built.gaps > 0, gaps: built.gaps, short, ranOut };
   }
+
 
   async function readCodeField(container, budgetMs) {
     const edEl =
@@ -394,28 +587,87 @@
       return { text: '', how: 'none' };
     }
 
-    let v = valueFromMonacoApi(edEl);
-    if (v != null && v.trim()) return { text: v, how: 'monaco model' };
-
-    v = valueFromReact(edEl);
-    if (v != null && v.trim()) return { text: v, how: 'react props' };
-
+    // What is on screen right now. Cheap, and it doubles as the yardstick for
+    // the two shortcuts below.
     const map = new Map();
     const host = edEl.querySelector('.view-lines');
-    if (host) collectLines(host, lineHeight(edEl), map);
-    const visible = assemble(map);
+    if (host) collectLines(host, map);
+    const lh = lineHeight(edEl);
+    const visible = assemble(map, lh).text;
 
-    if (!isScrollable(edEl)) return { text: visible, how: 'rendered lines' };
+    /*
+     * The shortcuts return a whole document from somewhere other than this
+     * pane's own DOM — Monaco's model registry, or a React prop found by
+     * walking up from here. Either can land on the WRONG editor: several of
+     * these panes are on the page at once, and the walk upwards passes through
+     * components that hold other people's text. So a shortcut is only believed
+     * if it actually contains what this pane is displaying.
+     */
+    const believable = matcher(visible, { docH: host ? parseFloat(host.style.height) || 0 : 0, lh });
+
+    let v = valueFromMonacoApi(edEl);
+    if (v != null && v.trim() && believable(v)) return { text: v, how: 'monaco model' };
+
+    v = valueFromReact(edEl);
+    if (v != null && v.trim() && believable(v)) return { text: v, how: 'react props' };
+
     if (budgetMs != null && budgetMs <= 0) {
       return { text: visible, how: 'rendered lines, out of time', truncated: true };
     }
 
+    /*
+     * The scroll used to be gated on isScrollable(), which looked for a
+     * rendered scrollbar slider — and Monaco hides those until a pane is
+     * hovered, so an untouched pane holding hundreds of lines reported
+     * "nothing to scroll" and only its first screenful was kept. It is now
+     * always attempted; on a pane that genuinely fits, it costs a few hundred
+     * milliseconds and returns the same text.
+     */
     const started = Date.now();
     const stitched = await valueByScrolling(edEl, budgetMs);
     const ms = Date.now() - started;
-    if (stitched.text.length < visible.length) return { text: visible, how: 'rendered lines' };
-    return { text: stitched.text, how: `scrolled lines in ${ms}ms`, truncated: stitched.truncated };
+    if (stitched.text.length <= visible.length) {
+      return { text: visible, how: `rendered lines (scroll added nothing, ${ms}ms)` };
+    }
+    const notes = [`scrolled lines in ${ms}ms`];
+    if (stitched.gaps) notes.push(`${stitched.gaps} gap(s)`);
+    if (stitched.short) notes.push('stopped above the last line');
+    if (stitched.ranOut) notes.push('out of time');
+    return { text: stitched.text, how: notes.join(', '), truncated: stitched.truncated };
   }
+
+  /**
+   * Builds a test for "does this text belong to the pane showing `sample`?".
+   *
+   * Two signals, because either alone is beatable:
+   *
+   *   - the longest line currently on screen has to appear in the candidate,
+   *     with runs of whitespace flattened (the model keeps tabs where the DOM
+   *     renders spaces, and Monaco pads with non-breaking spaces);
+   *   - the candidate cannot have more lines than the pane has rows. Monaco
+   *     sizes `.view-lines` to the whole document, and every line takes at
+   *     least one row, so that height is a hard ceiling. Sibling panes running
+   *     the same report format defeat the line check on their own — this is
+   *     what separates them.
+   */
+  function matcher(sample, { docH = 0, lh = 0 } = {}) {
+    const flat = (s) => String(s).replace(/\s+/g, ' ').trim();
+    const longest = String(sample || '')
+      .split('\n')
+      .map(flat)
+      .reduce((a, b) => (b.length > a.length ? b : a), '');
+    const maxLines = docH > 0 && lh > 0 ? Math.round(docH / lh) + 2 : Infinity;
+    const needle = longest.length >= 12 ? longest.slice(0, 120) : null;
+    // Nothing to check against: an empty pane, or one line of "OK", in an
+    // editor that did not say how tall it is. Then a candidate has to be taken
+    // on trust.
+    if (!needle && maxLines === Infinity) return () => true;
+    return (candidate) => {
+      if (String(candidate).split('\n').length > maxLines) return false;
+      return needle ? flat(candidate).includes(needle) : true;
+    };
+  }
+
 
   // ------------------------------------------------------- the F button ----
 
@@ -423,7 +675,12 @@
     const notes = [];
     const checks = [];
     const missing = [];
-    let left = budgetMs || 12000;
+    /*
+     * Every pane is now scrolled to its end rather than read off the screen, so
+     * the old 12s for all four is not enough — a long Agentic Judge report alone
+     * can take that. The isolated side waits 90s, leaving room for this.
+     */
+    let left = budgetMs || 60000;
 
     const openedSections = await expandAllSections();
 
@@ -435,16 +692,32 @@
       var noteExpansion = 0; // the sidebar is not always there
     }
 
-    for (const pane of FEEDBACK_PANES) {
+    const present = FEEDBACK_PANES.filter((pane) => {
+      if (fieldByTestId(pane.testid)) return true;
+      missing.push(pane.testid);
+      return false;
+    });
+
+    for (let i = 0; i < present.length; i++) {
+      const pane = present[i];
       const container = fieldByTestId(pane.testid);
-      if (!container) {
-        missing.push(pane.testid);
-        continue;
-      }
+      if (!container) continue; // it was there a moment ago; nothing to read now
       // Monaco lays out lazily; give the pane a moment before reading it.
       await sleep(PACE.betweenPanes);
       const started = Date.now();
-      const res = await readCodeField(container, left);
+      /*
+       * Each pane gets its own slice of what is left, so the first long one
+       * cannot eat the budget and leave the rest reading a single screenful —
+       * which is exactly the truncation this is meant to cure. A pane that
+       * finishes early hands its unused time to the ones after it.
+       */
+      const share = Math.max(4000, Math.floor(left / (present.length - i)));
+      /*
+       * The same reader the build logs use: the pane's own Copy button, the
+       * editor model, the rendered text and a scroll, whichever yields most.
+       * These panes are Monaco too, and they truncate the same way.
+       */
+      const res = await readLogRegion(container, share, { onePaneOnly: true });
       left -= Date.now() - started;
 
       const body = res.text && res.text.trim() ? cleanBlock(res.text) : '';
@@ -455,6 +728,9 @@
         via: body ? res.how : 'empty',
         chars: body.length,
         truncated: Boolean(res.truncated),
+        // What each reader returned, so a short capture can be diagnosed from
+        // the stored feedback instead of by reproducing it on the page.
+        tried: res.tried || [],
       });
     }
 
@@ -520,7 +796,8 @@
    * one.
    */
   async function readByScrollingPlain(box, budgetMs) {
-    const deadline = Date.now() + (budgetMs || 45000);
+    // `|| 45000` would turn an exhausted budget of 0 into a fresh 45 seconds.
+    const deadline = Date.now() + (budgetMs == null ? 45000 : budgetMs);
     const rows = new Map();
 
     const harvest = () => {
@@ -566,12 +843,16 @@
    * a `copy` listener catches the `execCommand` route. Both are put back
    * afterwards, and nothing ever reaches the real clipboard.
    */
-  async function readByCopyButton(region) {
+  async function readByCopyButton(region, { onePaneOnly = false } = {}) {
     let host = region;
     let button = null;
     // The button sits in the panel header, above the editor, so it is usually a
-    // sibling of the region rather than inside it.
+    // sibling of the region rather than inside it — hence walking up. But the
+    // check panes sit side by side, and walking up far enough reaches the NEXT
+    // pane's Copy button; its text would then win on length and be filed under
+    // the wrong check. So the walk stops as soon as the host spans two fields.
     for (let up = 0; up < 4 && host && !button; up++) {
+      if (onePaneOnly && up > 0 && host.querySelectorAll('[data-testid^="field-"]').length > 1) break;
       button = Array.from(host.querySelectorAll('button')).find(
         (b) => /^copy$/i.test((b.getAttribute('title') || '').trim()) || /^copy$/i.test(visibleText(b))
       );
@@ -617,34 +898,53 @@
     return { text: captured, how: 'copy button' };
   }
 
-  async function readLogRegion(region, budgetMs) {
+  async function readLogRegion(region, budgetMs, options = {}) {
     const attempts = [];
+    // One deadline for all the attempts together — passing the full budget to
+    // each of them separately would let a single region run three times over.
+    const deadline = Date.now() + (budgetMs || 45000);
+    const timeLeft = () => Math.max(0, deadline - Date.now());
 
     // The page's own Copy button, which already produces the whole log.
     try {
-      const viaCopy = await readByCopyButton(region);
+      const viaCopy = await readByCopyButton(region, options);
       if (viaCopy.text) attempts.push(viaCopy);
     } catch (err) {
       attempts.push({ text: '', how: `copy button failed: ${err.message}` });
     }
 
     // The editor-aware path: model, React props, or Monaco's own scrolling.
+    let gotCode = false;
     try {
-      const viaCode = await readCodeField(region, budgetMs);
-      if (viaCode && viaCode.text) attempts.push({ ...viaCode, how: `code field (${viaCode.how})` });
+      const viaCode = await readCodeField(region, timeLeft());
+      if (viaCode && viaCode.text) {
+        gotCode = true;
+        attempts.push({ ...viaCode, how: `code field (${viaCode.how})` });
+      }
     } catch (err) {
       attempts.push({ text: '', how: `code field failed: ${err.message}` });
     }
 
-    // Whatever happens to be rendered right now — the old behaviour, kept as a
-    // floor so this can never do worse than before.
-    attempts.push({ text: visibleText(region), how: 'rendered text' });
+    /*
+     * Whatever happens to be rendered right now — the old behaviour, kept as a
+     * floor so this can never do worse than before. It is skipped once the
+     * code-field path has produced something, because for an editor it reads
+     * the same lines plus the panel heading, and on a short pane that extra
+     * heading would win on length and end up inside the captured text.
+     */
+    const hasEditor = !!region.querySelector('.monaco-editor');
+    if (!gotCode || !hasEditor) attempts.push({ text: visibleText(region), how: 'rendered text' });
 
-    // A plain virtualised list, which the code-field path does not know about.
-    const box = scrollableIn(region);
+    /*
+     * A plain virtualised list, which the code-field path does not know about.
+     * Skipped for an editor that already read, for the same reason as the
+     * floor above: it harvests every leaf in the region, headings included, and
+     * on a short pane that would outweigh the real text.
+     */
+    const box = gotCode && hasEditor ? null : scrollableIn(region);
     if (box) {
       try {
-        const scrolled = await readByScrollingPlain(box, budgetMs);
+        const scrolled = await readByScrollingPlain(box, timeLeft());
         if (scrolled.text) attempts.push({ ...scrolled, how: 'scrolled the panel' });
       } catch (err) {
         attempts.push({ text: '', how: `scrolling failed: ${err.message}` });
@@ -705,7 +1005,9 @@
   window.addEventListener('snorkelbot:read-feedback', async () => {
     const token = document.documentElement.getAttribute(REQUEST_ATTR) || '';
     try {
-      publish({ token, ok: true, ...(await collectFeedback()) });
+      // Well inside the isolated side's 90s wait, with room for the section and
+      // note expansions that run before the panes are read.
+      publish({ token, ok: true, ...(await collectFeedback(60000)) });
     } catch (err) {
       publish({ token, ok: false, error: String((err && err.message) || err) });
     }

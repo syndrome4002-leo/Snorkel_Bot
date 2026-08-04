@@ -429,6 +429,58 @@ export async function getTask(uid) {
 }
 
 /**
+ * Tasks that are finished but have no file anywhere.
+ *
+ * The server hands a task's zip to the browser and deletes it from Dropbox in
+ * the same breath, which is what stops a stale build being uploaded later. If
+ * the browser then fails before attaching it — a collapsed section, a lost tab —
+ * the task is left at "ready to submit" with `file_uploaded` false and nothing
+ * in Dropbox. The submit sweep requires `file_uploaded`, so it skips it forever.
+ *
+ * Nothing is lost: the unpacked folder is still here. This finds those tasks so
+ * the zip can be put back, and no Claude session is involved — the work was done
+ * long ago.
+ */
+export async function findLostUploads(machineIds = []) {
+  if (!db) return [];
+
+  const found = new Map();
+  const base = db.collection(config.firebase.collection).where('task_status', '==', TASK_STATUS_READY);
+
+  const collect = async (query) => {
+    const snap = await query.limit(20).get();
+    for (const doc of snap.docs) {
+      const task = { id: doc.id, ...doc.data() };
+      // Only ones the server has already consumed. A task waiting for its first
+      // upload is the worker's ordinary business, not this.
+      if (task.file_uploaded === true) continue;
+      if (!task.submit_file_served_at) continue;
+
+      /*
+       * And only once the submission can no longer be in progress.
+       *
+       * A healthy run leaves the task in exactly this state for as long as it
+       * takes to upload a couple of hundred megabytes and wait on two platform
+       * builds. Re-uploading during that would put a second copy in Dropbox
+       * underneath a browser that is still working, and the worker has no way to
+       * see the browser — so the only thing separating "failed" from "still
+       * going" is how long ago it started.
+       */
+      const servedMs = new Date(task.submit_file_served_at).getTime();
+      const ageMinutes = (Date.now() - servedMs) / 60000;
+      if (!Number.isFinite(ageMinutes) || ageMinutes < config.worker.lostUploadAfterMinutes) continue;
+
+      found.set(doc.id, { ...task, stranded_for_minutes: Math.round(ageMinutes) });
+    }
+  };
+
+  if (config.worker.anyMachine) await collect(base);
+  else for (const machine of machineIds) await collect(base.where('machine_id', '==', machine));
+
+  return [...found.values()];
+}
+
+/**
  * Tasks left stuck in "Working.." by a worker that died.
  *
  * A status is a claim, and a claim outlives the process that made it. Without
