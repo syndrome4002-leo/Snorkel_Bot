@@ -1378,27 +1378,15 @@ const DEFAULT_SUBMIT_EVERY = 3;
 /*
  * The handling-time answers, which are policy rather than measurement.
  *
- * Three are the same on every task. The fourth is cumulative: the form asks for
- * the time spent on *all* revisions and says to update it each time another one
- * is done, so it grows by a fixed step per round — up to a ceiling, after which
- * it stays put.
- *
- * `feedbacks.length` is the round counter, because that is literally the number
- * of times a reviewer has sent the task back. Nothing separate has to be kept in
- * step, and a static-check fix — which is the same round being corrected, not a
- * new one — quite rightly does not move it.
+ * All four are the same on every task, on every round. The revisions figure used
+ * to climb with the round count — the form does ask for the time spent on *all*
+ * revisions — but a fixed answer is what is wanted, so a task on its sixth round
+ * reports the same 185 as one on its first.
  */
 const FORM_TIME_REVIEW = 45;
 const FORM_TIME_REWRITE = 120;
 const FORM_TIME_ADDITIONAL = 20;
-const FORM_TIME_REVISIONS_BASE = 185;
-const FORM_TIME_REVISIONS_STEP = 5;
-/*
- * And a ceiling. Past this the number stops being a plausible answer to "how
- * long did the revisions take", and a task that comes back six times would
- * otherwise keep climbing on its own.
- */
-const FORM_TIME_REVISIONS_MAX = 250;
+const FORM_TIME_REVISIONS = 185;
 
 /*
  * The two switches that decide how far the bot goes on the form.
@@ -1455,10 +1443,7 @@ function formTimesFor(task) {
     review: FORM_TIME_REVIEW,
     rewrite: FORM_TIME_REWRITE,
     additional: FORM_TIME_ADDITIONAL,
-    revisions: Math.min(
-      FORM_TIME_REVISIONS_MAX,
-      FORM_TIME_REVISIONS_BASE + FORM_TIME_REVISIONS_STEP * rounds
-    ),
+    revisions: FORM_TIME_REVISIONS,
     rounds,
   };
 }
