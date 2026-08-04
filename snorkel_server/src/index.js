@@ -664,20 +664,12 @@ let settings = {};
  */
 let systemEnabled = true;
 
-watchSystem((enabled) => {
-  if (enabled === systemEnabled) return;
-  systemEnabled = enabled;
-  logEvent(
-    enabled ? '▶️' : '⏹️',
-    'system',
-    enabled
-      ? 'System enabled — taking work again'
-      : 'System disabled from the dashboard — no new work will be started (anything running finishes)',
-    { level: enabled ? 'info' : 'warn' }
-  );
-  updateTicker();
-  publishNow();
-});
+/*
+ * Registered after initRtdb(), further down. Watching before the database is
+ * connected returns a no-op, which is exactly what happened here: the switch
+ * was written, the worker obeyed it, and the server never heard a thing.
+ */
+
 
 /**
  * Keeps starting tasks so long as fewer than `revise_limit` are waiting to be
@@ -1132,6 +1124,32 @@ if (queued) {
  */
 await initRtdb();
 
+watchSystem((enabled) => {
+  if (enabled === systemEnabled) return;
+  systemEnabled = enabled;
+  logEvent(
+    enabled ? '▶️' : '⏹️',
+    'system',
+    enabled
+      ? 'System enabled — taking work again'
+      : 'System disabled from the dashboard — no new work will be started (anything running finishes)',
+    { level: enabled ? 'info' : 'warn' }
+  );
+
+  /*
+   * The extension keeps its own alarm, so it only stops when told.
+   *
+   * Left running, it would carry on reloading the home page every few minutes —
+   * the one part of the system you can actually see moving, which would make a
+   * disabled system look like the switch did nothing. Enabling puts the alarm
+   * back on the configured interval.
+   */
+  pushCheckInterval();
+
+  updateTicker();
+  publishNow();
+});
+
 startStatusHeartbeat(async () => ({
   // Lets the dashboard block the button during the window where a run has
   // started but its task document does not exist yet.
@@ -1225,6 +1243,7 @@ let autoTryTimer = null;
 let askingForCount = false;
 
 async function requestReviseCount(why) {
+  if (!systemEnabled) return;
   if (askingForCount) return;
   if (!hub.isConnected('snorkel')) return;
   if (currentRun() || submitInFlight) return; // the tab is busy; it would refuse anyway
@@ -1692,14 +1711,28 @@ function scheduleSubmitSweep() {
   submitTimer.unref?.();
 }
 
-/** Tells the extension how often to re-read the revise list. */
+/**
+ * Tells the extension how often to re-read the revise list, and whether to at
+ * all.
+ *
+ * Both travel together because they decide the same thing. A disabled system
+ * that left the extension's alarm running would still reload the page every few
+ * minutes — which is exactly the part you can see, and the part that makes
+ * "disabled" look like it did nothing.
+ */
 function pushCheckInterval() {
   if (!hub.isConnected('snorkel')) return;
   const every = minutes(settings.check_revise_every_min, DEFAULT_CHECK_EVERY);
   hub
-    .command('snorkel', { type: 'configure', revisionEveryMinutes: every })
+    .command('snorkel', { type: 'configure', revisionEveryMinutes: every, enabled: systemEnabled })
     .then((result) => {
-      logEvent('⚙️', 'settings', `extension will check the revise list every ${every} min`);
+      logEvent(
+        '⚙️',
+        'settings',
+        systemEnabled
+          ? `extension will check the revise list every ${every} min`
+          : 'extension told to stop checking the revise list'
+      );
 
       /*
        * Take the new schedule from the reply.
@@ -1752,6 +1785,12 @@ watchSettings((value) => {
  */
 hub.onEvent((event) => {
   if (event.type !== 'connected' || event.role !== 'snorkel') return;
+
+  // An extension that connects while the system is off has to be told, or it
+  // carries on with whatever schedule it had before.
+  pushCheckInterval();
+
+  if (!systemEnabled) return;
   if (lastReviseCount !== null) return;
   // A moment for the extension to finish settling before it is asked to drive
   // the page.

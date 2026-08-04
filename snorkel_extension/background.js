@@ -44,6 +44,16 @@ const REVISION_EVERY_MINUTES = 5;
 
 let ws = null;
 let busy = false;
+
+/*
+ * The master switch, as last told to us by the server.
+ *
+ * Kept in memory and in storage: the service worker is unloaded when idle, and
+ * an alarm firing wakes it up again with no memory of anything. Reading the
+ * stored value is what stops a disabled system reloading the page on a timer
+ * nobody is watching.
+ */
+let systemEnabled = true;
 let reconnectDelay = 1000;
 let reconnectTimer = null;
 let lastRun = null; // surfaced in the popup
@@ -151,6 +161,26 @@ async function handleServerMessage(msg) {
   if (msg.type === 'configure') {
     const requestId = msg.requestId || String(Date.now());
     try {
+      /*
+       * The master switch travels with the interval, because both decide the
+       * same thing: whether an alarm should exist at all.
+       *
+       * Disabled clears the alarm outright rather than letting it fire and be
+       * ignored — the point of stopping is that the browser stops moving.
+       */
+      if (typeof msg.enabled === 'boolean' && msg.enabled !== systemEnabled) {
+        systemEnabled = msg.enabled;
+        await chrome.storage.local.set({ systemEnabled });
+        log(`system ${systemEnabled ? 'enabled' : 'disabled'} by the server`);
+      }
+
+      if (!systemEnabled) {
+        await chrome.alarms.clear(REVISION_ALARM);
+        log('system is disabled — revision checks are off until it is enabled again');
+        send({ type: 'result', requestId, ok: true, enabled: false, next_check_at: null });
+        return;
+      }
+
       const every = Number(msg.revisionEveryMinutes);
       if (Number.isFinite(every) && every >= 1) {
         await chrome.alarms.clear(REVISION_ALARM);
@@ -576,6 +606,15 @@ async function nextRevisionCheckAt() {
 
 /** Reports what is awaiting revision; the server decides what to do about it. */
 async function reportRevisions() {
+  // Storage rather than the variable: an alarm can wake a service worker that
+  // has been unloaded, and it comes back with defaults.
+  const { systemEnabled: stored } = await chrome.storage.local.get('systemEnabled');
+  if (stored === false) {
+    systemEnabled = false;
+    await chrome.alarms.clear(REVISION_ALARM);
+    return log('revision check skipped — the system is disabled');
+  }
+
   if (busy) return log('revision check skipped — a task is running');
   if (!ws || ws.readyState !== WebSocket.OPEN) return log('revision check skipped — not connected');
 
@@ -720,7 +759,7 @@ async function submitCheck(requestId, options) {
     requestId,
     'prepared',
     `${prepared.sections_opened} section(s) opened; ${prepared.chosen.join('; ')}; ` +
-      `upload control: ${prepared.upload_control}`
+      `upload control: ${prepared.upload_control}; check fields: ${prepared.check_fields || 'unknown'}`
   );
 
   progress(requestId, 'attach', options.file_name || 'the task zip');

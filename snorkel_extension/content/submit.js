@@ -67,14 +67,14 @@
    * can be slowed down from the server without touching the extension.
    */
   const PACE = {
-    section: [400, 900],      // opening one collapsed section
-    radio: [600, 1200],       // choosing a radio option
-    field: [700, 1600],       // moving from one answer to the next
-    option: [250, 650],       // ticking one checkbox in a list
-    number: [400, 900],       // typing a handling time
-    afterRemove: [900, 1600], // the file control swapping back to empty
-    beforeCheck: [1500, 2800],// before asking the platform to run a check
-    beforeSubmit: [2000, 3500],
+    section: [900, 1800],       // opening one collapsed section
+    radio: [1400, 2600],        // choosing a radio option
+    field: [1800, 3400],        // moving from one answer to the next
+    option: [600, 1300],        // ticking one checkbox in a list
+    number: [900, 1800],        // typing a handling time
+    afterRemove: [2000, 3500],  // the file control swapping back to empty
+    beforeCheck: [3500, 6000],  // before asking the platform to run a check
+    beforeSubmit: [5000, 8000], // the one click that cannot be taken back
   };
 
   let paceScale = 1;
@@ -104,7 +104,21 @@
    * closed section is therefore indistinguishable from a page that does not have
    * those buttons at all, which is exactly how it fails if you skip this.
    */
-  async function expandSections() {
+  async function expandSections({ timeout = 20000 } = {}) {
+    /*
+     * Wait for the accordions to render first.
+     *
+     * WAIT_READY is satisfied by the UID, the left panel and the download field,
+     * none of which are inside an accordion — so this used to run before the
+     * sections existed, open nothing, and report success. The failure then
+     * surfaced minutes later as a missing check field.
+     */
+    await SnorkelBot.waitFor(() => $$(SECTION).length || null, {
+      timeout,
+      interval: 300,
+      label: 'the form sections to render',
+    }).catch(() => null);
+
     let opened = 0;
 
     for (const section of $$(SECTION)) {
@@ -177,10 +191,13 @@
 
     // Setting the answers is what makes React render the upload field; it is not
     // instant, and attaching before it exists is the failure this waits out.
-    const field = await SnorkelBot.waitFor(() => $(OUTPUT_FIELD), {
-      timeout: msg.timeout || 30000,
-      label: 'the re-upload field to appear',
-    }).catch(() => null);
+    // Same treatment as the check fields: it lives in an accordion too, and
+    // setting the answers re-renders the form around it.
+    const { field } = await findFieldReopening(
+      OUTPUT_FIELD,
+      'the re-upload field',
+      msg.timeout || 30000
+    );
 
     if (!field) {
       throw new Error(
@@ -197,7 +214,22 @@
         ? 'a file is already attached'
         : 'no input — will need a drop';
 
-    return { sections_opened: opened, chosen, upload_control: control };
+    /*
+     * Reported, not thrown. The checks come later and the page has time to
+     * finish rendering; failing here would abandon a run that would have worked.
+     * But a missing field at this point is the first sign of the failure that
+     * shows up ten minutes later, so it is worth putting in the log now.
+     */
+    const missingChecks = Object.values(CHECKS)
+      .filter((c) => !$(c.field))
+      .map((c) => c.label);
+
+    return {
+      sections_opened: opened,
+      chosen,
+      upload_control: control,
+      check_fields: missingChecks.length ? `missing: ${missingChecks.join(', ')}` : 'both present',
+    };
   });
 
   // ------------------------------------------------------------ upload ----
@@ -503,9 +535,64 @@
    * The panel from a previous run is remembered and waited past, so a stale
    * PASS left over from last time cannot be read as this run's result.
    */
+  /**
+   * Finds a field, re-opening collapsed sections until it appears.
+   *
+   * A section can close again while the form re-renders, and Radix removes what
+   * it hides — so the field is not merely invisible, it is absent, and waiting
+   * alone would wait forever. Each pass re-opens whatever is collapsed and looks
+   * again.
+   *
+   * Only collapsed sections are touched: expandSections skips anything already
+   * open, so a section a person deliberately left open is never toggled.
+   */
+  async function findFieldReopening(selector, label, budgetMs = 60000) {
+    const deadline = Date.now() + budgetMs;
+    let passes = 0;
+    let opened = 0;
+
+    while (Date.now() < deadline) {
+      const found = $(selector);
+      if (found) return { field: found, passes, opened };
+
+      passes++;
+      opened += await expandSections({ timeout: 4000 });
+      await SnorkelBot.sleep(2000);
+    }
+
+    return { field: $(selector), passes, opened };
+  }
+
   async function runCheck(key, spec, timeoutMs) {
-    const field = $(spec.field);
-    if (!field) throw new Error(`Could not find the ${spec.label} field on this page.`);
+    let field = $(spec.field);
+
+    if (!field) {
+      // Give it a minute of re-opening rather than one attempt: the page is
+      // still settling after a large upload and sections come and go.
+      const found = await findFieldReopening(spec.field, spec.label, 60000);
+      field = found.field;
+      if (field) {
+        console.log(
+          `[snorkel-bot] ${spec.label} appeared after ${found.passes} pass(es), ` +
+            `${found.opened} section(s) re-opened`
+        );
+      }
+    }
+
+    if (!field) {
+      // Say what the page actually had, so this is diagnosable from the log
+      // rather than needing somebody to be watching the browser at the time.
+      const sections = $$(SECTION).map(
+        (el) =>
+          `${(el.getAttribute('data-testid') || '').replace(/^section-/, '')}` +
+          `[${$$('h3 > button[aria-expanded]', el)[0]?.getAttribute('aria-expanded') ?? '?'}]`
+      );
+      throw new Error(
+        `Could not find the ${spec.label} field after a minute of re-opening sections. ` +
+          `Sections present: ${sections.join(', ') || 'none'}. ` +
+          `A section shown as [false] is collapsed, and Radix removes what it hides.`
+      );
+    }
 
     const before = $(RESULT_PANEL, field);
     const beforeText = before ? SnorkelBot.text(before) : '';
@@ -551,6 +638,18 @@
     setPace(msg);
     const timeout = msg.checkTimeout || 600000;
     const results = [];
+
+    /*
+     * Open the sections again before reading them.
+     *
+     * Minutes pass between preparing the page and getting here — a couple of
+     * hundred megabytes go up in between — and the form re-renders as the upload
+     * settles. A section that was open at the start is not necessarily open now,
+     * and Radix removes the contents of a closed one from the DOM entirely, so a
+     * collapsed section looks exactly like a page that never had those buttons.
+     */
+    const reopened = await expandSections();
+    if (reopened) await SnorkelBot.sleep(600);
 
     for (const [key, spec] of Object.entries(CHECKS)) {
       await pause('beforeCheck');
