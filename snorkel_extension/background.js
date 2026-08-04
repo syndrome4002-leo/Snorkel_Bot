@@ -38,6 +38,12 @@ const DEFAULT_CONFIG = {
 };
 
 const REVIEW_URL_RE = /\/projects\/[^/]+\/submission-[^/]+\/review/i;
+/*
+ * The project overview page, which now sits between the home page and a task.
+ * Anchored at the end so it cannot also match a review URL, which starts the
+ * same way.
+ */
+const PROJECT_URL_RE = /\/projects\/[^/?#]+\/?(?:[?#].*)?$/i;
 const KEEPALIVE_ALARM = 'snorkel-bot-keepalive';
 const REVISION_ALARM = 'snorkel-bot-revision-check';
 const REVISION_EVERY_MINUTES = 5;
@@ -337,18 +343,20 @@ async function waitForTabComplete(tabId, timeout = 60000) {
   throw new Error('Timed out waiting for the page to finish loading.');
 }
 
-async function waitForUrl(tabId, regex, timeout = 60000) {
+/** `match` is a regex, or a predicate for "either of these two pages". */
+async function waitForUrl(tabId, match, timeout = 60000) {
+  const hit = typeof match === 'function' ? match : (url) => match.test(url);
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     const tab = await getTab(tabId);
     if (!tab) throw new Error('The Snorkel tab was closed.');
-    if (tab.url && regex.test(tab.url)) return tab;
+    if (tab.url && hit(tab.url)) return tab;
     if (tab.url && /\/login/i.test(tab.url)) {
       throw new Error('Redirected to the Snorkel login page — sign in and retry.');
     }
     await sleep(400);
   }
-  throw new Error(`Timed out waiting for the page to navigate to ${regex}`);
+  throw new Error(`Timed out waiting for the page to navigate to ${match}`);
 }
 
 /**
@@ -449,6 +457,60 @@ function basename(p) {
 
 // --------------------------------------------------------- the flow ----
 
+/**
+ * Home page -> a task, which is now two clicks and two pages.
+ *
+ * "Go to project" on the Sentinel card opens the project overview, and the task
+ * only comes from "Begin Submission" there. The platform used to hand one out
+ * from the home page directly, so this tolerates landing straight on a review
+ * page and skips the second click — a rollback should not need a code change.
+ *
+ * Refusing to hand out a task looks like staying put, on either page. That is a
+ * queue state rather than a fault (too many submissions waiting to be revised),
+ * so it is reported with its own code and the server waits instead of retrying
+ * against a door that is shut.
+ */
+async function openNewTaskPage(requestId, tab, { projectKey, mode, reviewTimeout = 90000 }) {
+  progress(requestId, 'click_start', `looking for project "${projectKey}" (${mode})`);
+  const start = await askTab(tab.id, { type: 'CLICK_START', projectKey, mode });
+  progress(requestId, 'clicked_start', start.href || 'opening the project page');
+
+  // Either page is a fine place to arrive at; only staying on /home is not.
+  await waitForUrl(tab.id, (url) => PROJECT_URL_RE.test(url) || REVIEW_URL_RE.test(url), 60000).catch(
+    () => {}
+  );
+
+  const onReview = await getTab(tab.id).then((t) => REVIEW_URL_RE.test((t && t.url) || ''));
+  if (!onReview) {
+    progress(requestId, 'click_begin', 'taking the task from the project page');
+    await sleep(1500); // the overview renders its own content before the button works
+    const begun = await askTab(tab.id, { type: 'CLICK_BEGIN_SUBMISSION' });
+    progress(requestId, 'clicked_begin', begun.buttonLabel || 'Begin Submission');
+  }
+
+  progress(requestId, 'await_review_page');
+  try {
+    await waitForUrl(tab.id, REVIEW_URL_RE, reviewTimeout);
+  } catch (err) {
+    const url = await getTab(tab.id).then((t) => (t && t.url) || '');
+    const failure = new Error(
+      /\/home/i.test(url)
+        ? 'Clicked through to the project but the site went back to the home page — no task ' +
+          'was handed out (daily limit, empty queue, or the assignment went to someone else).'
+        : PROJECT_URL_RE.test(url)
+          ? 'Clicked "Begin Submission" but the site stayed on the project page — the platform ' +
+            'is not handing out a task, usually because too many submissions are waiting to be ' +
+            'revised.'
+          : `Clicked Start but never reached a task page: ${err.message}`
+    );
+    failure.code = 'START_UNAVAILABLE';
+    throw failure;
+  }
+
+  return start;
+}
+
+
 async function runSentinelFlow(requestId, options) {
   const cfg = await getConfig();
   const projectKey = options.projectKey || cfg.projectKey;
@@ -459,34 +521,14 @@ async function runSentinelFlow(requestId, options) {
   progress(requestId, 'open_home', homeUrl);
   const tab = await openHome(homeUrl);
 
-  // 2 — click Start on the Sentinel card
-  progress(requestId, 'click_start', `looking for project "${projectKey}" (${mode})`);
-  const start = await askTab(tab.id, { type: 'CLICK_START', projectKey, mode });
-  progress(requestId, 'clicked_start', start.href || '');
+  // 2 and 3 — the project card, then "Begin Submission" on the project page
+  const start = await openNewTaskPage(requestId, tab, {
+    projectKey,
+    mode,
+    reviewTimeout: options.reviewTimeout || 90000,
+  });
 
-  // 3 — the SPA routes to the review page
-  //
-  // Clicking Start does not always get you a task: the platform can refuse
-  // (daily limit reached, nothing left in the queue, the assignment taken by
-  // somebody else) and simply leave you on /home. That is a normal outcome, not
-  // a broken extension, so it is reported with its own code rather than as a
-  // generic timeout.
-  progress(requestId, 'await_review_page');
-  let reviewTab;
-  try {
-    reviewTab = await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 90000);
-  } catch (err) {
-    const stillHome = await getTab(tab.id).then((t) => t && /\/home/i.test(t.url || ''));
-    const failure = new Error(
-      stillHome
-        ? 'Clicked Start but the site stayed on the home page — no task was handed out ' +
-          '(daily limit, empty queue, or the assignment went to someone else).'
-        : `Clicked Start but never reached a task page: ${err.message}`
-    );
-    failure.code = 'START_UNAVAILABLE';
-    throw failure;
-  }
-  await waitForTabComplete(reviewTab.id).catch(() => {}); // SPA routes stay 'complete'
+  await waitForTabComplete(tab.id).catch(() => {}); // SPA routes stay 'complete'
   await askTab(tab.id, { type: 'WAIT_READY', timeout: 90000 });
 
   return captureCurrentTask(requestId, options, tab, projectKey, start);
@@ -665,37 +707,36 @@ async function submitCheck(requestId, options) {
   await sleep(options.paceAfterLoadMs ?? cfg.paceAfterLoadMs);
 
   if (options.is_new_task) {
-    progress(requestId, 'click_start', `${uid} is a new task — taking the Start button`);
-    await askTab(tab.id, { type: 'CLICK_START', projectKey, mode: options.mode || cfg.mode });
+    progress(requestId, 'click_start', `${uid} is a new task — going through the project page`);
+    await openNewTaskPage(requestId, tab, {
+      projectKey,
+      mode: options.mode || cfg.mode,
+      reviewTimeout: options.reviewTimeout || 120000,
+    });
   } else {
     progress(requestId, 'click_revise', uid);
     await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey, timeout: 90000 });
-  }
 
-  /*
-   * The site can simply decline to open the task.
-   *
-   * With enough submissions already waiting to be revised, Start does nothing
-   * and the browser stays on /home — the platform will not hand out more work
-   * until some of the backlog is cleared. That is a queue state, not a fault,
-   * and it needs its own code so the server can wait for the backlog to drop
-   * instead of retrying every few minutes against a door that is shut.
-   */
-  try {
-    await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
-  } catch (err) {
-    const stillHome = await getTab(tab.id).then((t) => t && /\/home/i.test(t.url || ''));
-    if (!stillHome) throw err;
+    /*
+     * The site can simply decline to open the task. With enough submissions
+     * waiting to be revised the row's link does nothing and the browser stays
+     * on /home. That is a queue state, not a fault, and it needs its own code so
+     * the server can wait for the backlog to drop instead of retrying every few
+     * minutes against a door that is shut.
+     */
+    try {
+      await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
+    } catch (err) {
+      const stillHome = await getTab(tab.id).then((t) => t && /\/home/i.test(t.url || ''));
+      if (!stillHome) throw err;
 
-    const failure = new Error(
-      options.is_new_task
-        ? `Clicked Start for ${uid} but the site stayed on the home page — it is not handing ` +
-          `out the task, usually because too many submissions are waiting to be revised.`
-        : `Clicked Revise for ${uid} but the site stayed on the home page — the card may have ` +
-          `gone from the list.`
-    );
-    failure.code = 'START_UNAVAILABLE';
-    throw failure;
+      const failure = new Error(
+        `Clicked "Revise task" for ${uid} but the site stayed on the home page — the row may ` +
+          `have gone from the list.`
+      );
+      failure.code = 'START_UNAVAILABLE';
+      throw failure;
+    }
   }
   await askTab(tab.id, { type: 'WAIT_READY', timeout: 120000 });
   await sleep(options.paceBeforeCopyMs ?? cfg.paceBeforeCopyMs);

@@ -504,12 +504,23 @@ DOM parser.
 
 **Home page** — [snorkel_extension/content/homepage.js](snorkel_extension/content/homepage.js)
 
+The home page was redesigned and none of the old markup survived it. Starting a
+task now takes **two pages**: the card only opens the project, and the task comes
+from a button on the project overview.
+
 | Thing | Selector |
 | --- | --- |
-| Project cards | `[data-testid="project-card"]` |
-| Sentinel Start link | `a[data-testid$="-CDG_Sentinel_Ultra_00000"]` |
-| New vs. resume | resume cards are prefixed with an assignment UUID (`029c1c0c-…-CDG_Sentinel_Ultra_00000`); the new one is `Submission-CDG_Sentinel_Ultra_00000` |
-| Start button | the `<button>` inside that anchor |
+| Project cards | `[data-testid^="ec-project-card-"]`, matched on the key after the prefix |
+| Open the project | the `<button>` reading "Go to project" inside that card |
+| Take a task | `<button>` reading "Begin Submission" on `/projects/<projectId>` |
+| Revise list | `[data-testid="tasks-needing-revision-table"]` → `tbody tr` |
+| Task UID | the row cell that holds a UUID — **not** the anchor's testid |
+| Which project | the row cell whose text equals the project key; the table mixes projects |
+| Revise button | the `<button>` inside `a[data-testid^="revise-task-"]` in that row |
+
+⚠️ `revise-task-<uuid>` carries the **assignment** id, which is a different value
+from the Task ID in the row. The Task ID is what this system calls a UID; reading
+the testid instead hands the server ids it has never seen.
 
 **Review page** — [snorkel_extension/content/sentinel.js](snorkel_extension/content/sentinel.js)
 

@@ -1,0 +1,235 @@
+<body data-project-id="daas-v2" data-new-gr-c-s-check-loaded="14.1317.0" data-gr-ext-installed="">
+    <script>
+        // Sync theme mode before any CSS is processed to prevent FOUC (Flash of Unstyled Content).
+        (function () {
+            // Storage key below is substituted by the 'inject-build-metadata' Vite plugin (vite.config.ts).
+            var m = localStorage.getItem('daas-theme-mode');
+            if (m) document.documentElement.setAttribute('data-mode', m);
+        })();
+    </script>
+    <div id="root">
+        <div data-rht-toaster="" style="position: fixed; z-index: 9999; inset: 16px; pointer-events: none;"></div>
+        <div class="flex h-screen flex-col">
+            <header class="border-divider bg-default px-md py-sm flex h-11 w-full items-center justify-between border-b"
+                role="banner">
+                <nav class="gap-xl flex flex-1 items-center" aria-label="Top navigation">
+                    <div class="pl-sm flex shrink-0 items-center"><a href="/home"><img alt="Snorkel Logo"
+                                class="w-auto dark:hidden" src="/static/images/logo_header.svg"
+                                style="height: 26px;"><img alt="Snorkel Logo" class="hidden w-auto dark:block"
+                                src="/static/images/logo_header_dark.svg" style="height: 26px;"></a></div><button
+                        type="button"
+                        class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-sm h-icon-btn-sm rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                        aria-pressed="true" aria-label="Collapse sidebar"><span
+                            class="flex shrink-0 items-center justify-center"><svg xmlns="http://www.w3.org/2000/svg"
+                                width="16" height="16" fill="currentColor" viewBox="0 0 256 256" class=""
+                                aria-hidden="true">
+                                <path
+                                    d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM40,56H80V200H40ZM216,200H96V56H216V200Z">
+                                </path>
+                            </svg></span></button>
+                    <div class="px-md min-w-0 flex-1">
+                        <div class="relative flex min-w-0 flex-1 items-center">
+                            <div class="absolute inset-y-0 left-0 flex items-center" style="opacity: 1;"></div>
+                        </div>
+                    </div>
+                    <div class="gap-sm ml-auto flex shrink-0 items-center" role="toolbar" aria-label="Actions"><button
+                            type="button"
+                            class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-sm h-icon-btn-sm rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                            data-testid="topbar-help-trigger" aria-label="Help" id="radix-_r_2_" aria-haspopup="menu"
+                            aria-expanded="false" data-state="closed"><span
+                                class="flex shrink-0 items-center justify-center"><svg
+                                    xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                    <path
+                                        d="M140,180a12,12,0,1,1-12-12A12,12,0,0,1,140,180ZM128,72c-22.06,0-40,16.15-40,36v4a8,8,0,0,0,16,0v-4c0-11,10.77-20,24-20s24,9,24,20-10.77,20-24,20a8,8,0,0,0-8,8v8a8,8,0,0,0,16,0v-.72c18.24-3.35,32-17.9,32-35.28C168,88.15,150.06,72,128,72Zm104,56A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z">
+                                    </path>
+                                </svg></span></button><button type="button"
+                            class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 w-icon-btn-sm h-icon-btn-sm rounded-button-tertiary bg-transparent text-button-tertiary hover:bg-button-tertiary-hover active:bg-button-tertiary-pressed"
+                            data-testid="topbar-user-trigger" aria-label="gad21dann@gmail.com" id="radix-_r_5_"
+                            aria-haspopup="menu" aria-expanded="false" data-state="closed"><span
+                                class="flex shrink-0 items-center justify-center"><svg
+                                    xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                    <path
+                                        d="M230.92,212c-15.23-26.33-38.7-45.21-66.09-54.16a72,72,0,1,0-73.66,0C63.78,166.78,40.31,185.66,25.08,212a8,8,0,1,0,13.85,8c18.84-32.56,52.14-52,89.07-52s70.23,19.44,89.07,52a8,8,0,1,0,13.85-8ZM72,96a56,56,0,1,1,56,56A56.06,56.06,0,0,1,72,96Z">
+                                    </path>
+                                </svg></span></button></div>
+                </nav>
+            </header>
+            <div class="flex flex-1 overflow-hidden">
+                <aside
+                    class="flex h-full shrink-0 flex-row justify-start overflow-hidden text-xs-normal w-sidebar motion-safe:transition-[width,opacity] motion-safe:duration-300 motion-safe:ease-in-out">
+                    <div class="w-sidebar relative flex h-full shrink-0 flex-col" aria-hidden="false"
+                        style="pointer-events: auto;">
+                        <div
+                            class="flex min-h-0 flex-1 flex-col overflow-y-auto px-md my-xl border-divider border-r my-lg [&amp;&gt;nav&gt;div&gt;ul]:gap-lg motion-safe:transition-[width,opacity] motion-safe:duration-300 motion-safe:ease-in-out opacity-100">
+                            <nav aria-label="App navigation" data-orientation="vertical" dir="ltr">
+                                <div style="position: relative;">
+                                    <ul data-orientation="vertical" class="flex flex-col gap-xl" dir="ltr">
+                                        <li class="gap-md flex flex-col">
+                                            <ul class="gap-sm flex flex-col">
+                                                <li><a data-testid="sidebar-nav-home" tabindex="0"
+                                                        data-radix-collection-item="" href="/home"
+                                                        class="flex w-full cursor-pointer items-center gap-sm rounded-sm px-sm py-xs text-sm-normal outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 [&amp;.active_[data-side-navigation-icon]]:drop-shadow-stroke-bold text-color-primary hover:bg-menu-hover [&amp;.active]:bg-menu-selected [&amp;.active]:text-color-primary [&amp;.active]:text-sm-semibold [&amp;.active]:hover:bg-menu-selected"><span
+                                                            class="text-icon-primary flex h-16 w-16 shrink-0 items-center justify-center"
+                                                            data-side-navigation-icon="true" aria-hidden="true"><span
+                                                                class="in-[.active]:hidden"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M224,128a8,8,0,0,1-8,8H59.31l58.35,58.34a8,8,0,0,1-11.32,11.32l-72-72a8,8,0,0,1,0-11.32l72-72a8,8,0,0,1,11.32,11.32L59.31,120H216A8,8,0,0,1,224,128Z">
+                                                                    </path>
+                                                                </svg></span><span
+                                                                class="hidden in-[.active]:block"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M224,128a8,8,0,0,1-8,8H120v64a8,8,0,0,1-13.66,5.66l-72-72a8,8,0,0,1,0-11.32l72-72A8,8,0,0,1,120,56v64h96A8,8,0,0,1,224,128Z">
+                                                                    </path>
+                                                                </svg></span></span><span
+                                                            class="flex-1 truncate text-base-normal">Home</span></a>
+                                                </li>
+                                            </ul>
+                                        </li>
+                                        <li class="gap-md flex flex-col" data-testid="sidebar-section-project">
+                                            <div class="gap-sm flex flex-col">
+                                                <div class="border-default mx-sm border-t"></div>
+                                                <div class="gap-xs px-sm py-xs flex flex-col"><span
+                                                        class="text-color-secondary text-eyebrow">Project</span><span
+                                                        class="text-color-primary text-sm-semibold">CDG_Sentinel_Ultra_00000</span>
+                                                </div>
+                                            </div>
+                                            <ul class="gap-sm flex flex-col">
+                                                <li><a data-testid="sidebar-nav-overview" aria-current="page"
+                                                        tabindex="0" data-radix-collection-item=""
+                                                        class="flex w-full cursor-pointer items-center gap-sm rounded-sm px-sm py-xs text-sm-normal outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 [&amp;.active_[data-side-navigation-icon]]:drop-shadow-stroke-bold text-color-primary hover:bg-menu-hover [&amp;.active]:bg-menu-selected [&amp;.active]:text-color-primary [&amp;.active]:text-sm-semibold [&amp;.active]:hover:bg-menu-selected active"
+                                                        href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff"
+                                                        data-status="active"><span
+                                                            class="text-icon-primary flex h-16 w-16 shrink-0 items-center justify-center"
+                                                            data-side-navigation-icon="true" aria-hidden="true"><span
+                                                                class="in-[.active]:hidden"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z">
+                                                                    </path>
+                                                                </svg></span><span
+                                                                class="hidden in-[.active]:block"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M224,120v96a8,8,0,0,1-8,8H160a8,8,0,0,1-8-8V164a4,4,0,0,0-4-4H108a4,4,0,0,0-4,4v52a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V120a16,16,0,0,1,4.69-11.31l80-80a16,16,0,0,1,22.62,0l80,80A16,16,0,0,1,224,120Z">
+                                                                    </path>
+                                                                </svg></span></span><span
+                                                            class="flex-1 truncate">Overview</span></a></li>
+                                                <li><button type="button"
+                                                        class="flex w-full cursor-pointer items-center gap-sm rounded-sm px-sm py-xs text-sm-normal outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 [&amp;.active_[data-side-navigation-icon]]:drop-shadow-stroke-bold text-color-primary hover:bg-menu-hover [&amp;.active]:bg-menu-selected [&amp;.active]:text-color-primary [&amp;.active]:text-sm-semibold [&amp;.active]:hover:bg-menu-selected text-left"
+                                                        data-testid="sidebar-nav-documentation" tabindex="0"
+                                                        data-radix-collection-item=""><span
+                                                            class="text-icon-primary flex h-16 w-16 shrink-0 items-center justify-center"
+                                                            data-side-navigation-icon="true" aria-hidden="true"><span
+                                                                class="in-[.active]:hidden"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M168,152a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,152Zm-8-40H96a8,8,0,0,0,0,16h64a8,8,0,0,0,0-16Zm56-64V216a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V48A16,16,0,0,1,56,32H92.26a47.92,47.92,0,0,1,71.48,0H200A16,16,0,0,1,216,48ZM96,64h64a32,32,0,0,0-64,0ZM200,48H173.25A47.93,47.93,0,0,1,176,64v8a8,8,0,0,1-8,8H88a8,8,0,0,1-8-8V64a47.93,47.93,0,0,1,2.75-16H56V216H200Z">
+                                                                    </path>
+                                                                </svg></span><span
+                                                                class="hidden in-[.active]:block"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" fill="currentColor"
+                                                                    viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M200,32H163.74a47.92,47.92,0,0,0-71.48,0H56A16,16,0,0,0,40,48V216a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm-72,0a32,32,0,0,1,32,32H96A32,32,0,0,1,128,32Zm32,128H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Zm0-32H96a8,8,0,0,1,0-16h64a8,8,0,0,1,0,16Z">
+                                                                    </path>
+                                                                </svg></span></span><span
+                                                            class="flex-1 truncate">Documentation</span><span
+                                                            class="text-icon-secondary flex shrink-0"
+                                                            aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg"
+                                                                width="16" height="16" fill="currentColor"
+                                                                viewBox="0 0 256 256" class="" aria-hidden="true">
+                                                                <path
+                                                                    d="M200,64V168a8,8,0,0,1-16,0V83.31L69.66,197.66a8,8,0,0,1-11.32-11.32L172.69,72H88a8,8,0,0,1,0-16H192A8,8,0,0,1,200,64Z">
+                                                                </path>
+                                                            </svg></span></button></li>
+                                                <li><a data-testid="sidebar-nav-tasks" tabindex="0"
+                                                        data-radix-collection-item=""
+                                                        href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff/tasks"
+                                                        class="flex w-full cursor-pointer items-center gap-sm rounded-sm px-sm py-xs text-sm-normal outline-hidden transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 [&amp;.active_[data-side-navigation-icon]]:drop-shadow-stroke-bold text-color-primary hover:bg-menu-hover [&amp;.active]:bg-menu-selected [&amp;.active]:text-color-primary [&amp;.active]:text-sm-semibold [&amp;.active]:hover:bg-menu-selected"><span
+                                                            class="text-icon-primary flex h-16 w-16 shrink-0 items-center justify-center"
+                                                            data-side-navigation-icon="true" aria-hidden="true"><span
+                                                                class="in-[.active]:hidden"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" viewBox="0 0 16 16" fill="currentColor"
+                                                                    stroke-width="1.5" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M13.1465 9.47955C13.3417 9.28451 13.6583 9.28451 13.8535 9.47955C14.0487 9.67476 14.0486 9.99131 13.8535 10.1866L11.1865 12.8536C10.9912 13.0487 10.6747 13.0488 10.4795 12.8536L9.14648 11.5206C8.95128 11.3254 8.95139 11.0088 9.14648 10.8135C9.34175 10.6183 9.65825 10.6183 9.85352 10.8135L10.833 11.793L13.1465 9.47955ZM7.83301 10.3331C8.10904 10.3331 8.33283 10.5571 8.33301 10.8331C8.33301 11.1092 8.10915 11.3331 7.83301 11.3331H2.5C2.22386 11.3331 2 11.1092 2 10.8331C2.00018 10.5571 2.22397 10.3331 2.5 10.3331H7.83301ZM11.167 6.66705C11.443 6.66723 11.667 6.89102 11.667 7.16705C11.6668 7.44294 11.4429 7.66688 11.167 7.66705H2.5C2.22397 7.66705 2.00018 7.44305 2 7.16705C2 6.89091 2.22386 6.66705 2.5 6.66705H11.167ZM11.167 3.00006C11.443 3.00024 11.667 3.22403 11.667 3.50006C11.667 3.7761 11.443 3.99989 11.167 4.00006H2.5C2.22386 4.00006 2 3.7762 2 3.50006C2 3.22392 2.22386 3.00006 2.5 3.00006H11.167Z"
+                                                                        fill="currentColor"></path>
+                                                                </svg></span><span
+                                                                class="hidden in-[.active]:block"><svg
+                                                                    xmlns="http://www.w3.org/2000/svg" width="16"
+                                                                    height="16" viewBox="0 0 16 16" fill="currentColor"
+                                                                    stroke-width="1.5" class="" aria-hidden="true">
+                                                                    <path
+                                                                        d="M13 1C13.5522 1 13.9998 1.44786 14 2V14C14 14.5523 13.5523 15 13 15H3C2.44777 14.9999 2 14.5522 2 14V2C2.00017 1.4479 2.44787 1.00007 3 1H13ZM12.001 10.1777C11.8053 9.98392 11.4886 9.98397 11.293 10.1777L8.97363 12.4795L7.99121 11.5049C7.79555 11.3109 7.4789 11.311 7.2832 11.5049C7.08763 11.6992 7.08752 12.0138 7.2832 12.208L8.61914 13.5352C8.81483 13.7291 9.13247 13.7291 9.32812 13.5352L12.001 10.8809C12.1965 10.6866 12.1967 10.3719 12.001 10.1777ZM4.62988 11.0273C4.35317 11.0273 4.12908 11.2498 4.12891 11.5244C4.12891 11.7992 4.35307 12.0215 4.62988 12.0215H5.96582C6.24264 12.0215 6.4668 11.7992 6.4668 11.5244C6.46662 11.2498 6.24253 11.0273 5.96582 11.0273H4.62988ZM4.62988 7.37988C4.35307 7.37988 4.12892 7.60222 4.12891 7.87695C4.12908 8.15155 4.35317 8.37402 4.62988 8.37402H11.3135C11.5899 8.37363 11.8143 8.15131 11.8145 7.87695C11.8144 7.60246 11.59 7.38027 11.3135 7.37988H4.62988ZM4.62988 3.73145C4.35308 3.73145 4.12893 3.95379 4.12891 4.22852C4.12891 4.50326 4.35306 4.72559 4.62988 4.72559H11.3135C11.59 4.72519 11.8145 4.50302 11.8145 4.22852C11.8144 3.95403 11.5899 3.73184 11.3135 3.73145H4.62988Z"
+                                                                        fill="currentColor"></path>
+                                                                </svg></span></span><span
+                                                            class="flex-1 truncate">Tasks</span></a></li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </nav>
+                        </div>
+                    </div>
+                </aside>
+                <main class="w-full flex-1 overflow-auto p-24">
+                    <div class="gap-lg flex h-full w-full flex-col overflow-auto">
+                        <div class="gap-sm flex flex-col">
+                            <h1 class="text-heading">CDG_Sentinel_Ultra_00000</h1>
+                        </div>
+                        <section class="gap-md flex max-w-[720px] flex-col">
+                            <h2 class="text-lg-semibold">Overview</h2>
+                            <p class="text-sm-normal whitespace-pre-wrap" dir="auto">Sentinel Ultra is Snorkel AI's
+                                initiative to build a high-quality dataset of Harbor-format software-engineering tasks,
+                                drawn from real open-source pull requests, commits, and issues. The dataset is used to
+                                train and evaluate frontier coding agents and models on realistic engineering work.
+
+                                Because of that purpose, the thing that matters most is that every task is correct,
+                                complete, and impossible to game — no errors, no gaps in coverage, and no way for an
+                                agent to pass without doing the real engineering work. Difficulty matters too, but the
+                                platform's evals help confirm a task clears the difficulty bar; your focus is on the
+                                errors and gaps that automated checks can't catch.</p>
+                        </section>
+                        <div class="gap-md flex"><a href="/projects/1230ae8f-afc6-4705-abc7-fbe1c94250ff"
+                                class="flex items-center no-underline active" data-status="active"
+                                aria-current="page"><button type="button"
+                                    class="inline-flex items-center justify-center whitespace-nowrap motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 border gap-xs px-button-md-px h-btn-md text-sm-normal rounded-button-secondary bg-button-secondary-enabled text-button-secondary hover:bg-button-secondary-hover active:bg-button-secondary-pressed border-transparent">Begin
+                                    Submission</button></a></div>
+                    </div>
+                </main>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="freshworks-container" data-html2canvas-ignore="true"
+        style="width: 0px; height: 0px; bottom: 0px; right: 0px; z-index: 2147483647;">
+        <div aria-live="polite"></div>
+    </div><iframe title="FreshworksWidget" id="freshworks-frame" data-html2canvas-ignore="true"
+        style="display: none;"></iframe>
+    <div id="stc-nav"><button id="stc-nav-copy" type="button" class="stc-icon-btn" title="Copy title + summaries"
+            aria-label="Copy title + summaries"><span class="stc-label">C</span></button><button id="stc-jump-feedback"
+            type="button" class="stc-icon-btn" title="Go to Check feedback" aria-label="Go to Check feedback"><span
+                class="stc-label">F</span></button><button id="stc-jump-rubrics" type="button" class="stc-icon-btn"
+            title="Go to rubrics / judge report" aria-label="Go to rubrics / judge report"><span
+                class="stc-label">R</span></button><button id="stc-scroll-up" type="button" class="stc-icon-btn"
+            title="Scroll to top" aria-label="Scroll to top"><span class="stc-label">▲</span></button><button
+            id="stc-scroll-down" type="button" class="stc-icon-btn" title="Scroll to bottom"
+            aria-label="Scroll to bottom"><span class="stc-label">▼</span></button></div>
+</body>

@@ -67,22 +67,41 @@
    * can be slowed down from the server without touching the extension.
    */
   const PACE = {
-    section: [900, 1800],       // opening one collapsed section
-    radio: [1400, 2600],        // choosing a radio option
-    field: [1800, 3400],        // moving from one answer to the next
-    option: [600, 1300],        // ticking one checkbox in a list
-    number: [900, 1800],        // typing a handling time
-    afterRemove: [2000, 3500],  // the file control swapping back to empty
-    beforeCheck: [3500, 6000],  // before asking the platform to run a check
-    beforeSubmit: [5000, 8000], // the one click that cannot be taken back
+    section: [1500, 2200],      // opening one collapsed section
+    radio: [1600, 2400],        // choosing a radio option
+    field: [1700, 2600],        // moving from one answer to the next
+    option: [1500, 2100],       // ticking one checkbox in a list
+    number: [1600, 2300],       // typing a handling time
+    afterRemove: [1800, 2800],  // the file control swapping back to empty
+    beforeCheck: [2000, 2900],  // before asking the platform to run a check
+    beforeSubmit: [2200, 3000], // the one click that cannot be taken back
   };
+
+  /*
+   * The window every pause sits in: never snappier than 1.5s, never longer than
+   * 3s. The table above is written inside it; these are the guard rails, so a
+   * range edited to fall outside cannot quietly reintroduce a half-second click
+   * or an eight-second stare.
+   *
+   * The weightier moments keep the top of the window rather than a pause of
+   * their own — waiting for a platform check to finish, or for the page to
+   * settle, is a separate "wait until done" and is not paced from here.
+   */
+  const MIN_PAUSE_MS = 1500;
+  const MAX_PAUSE_MS = 3000;
 
   let paceScale = 1;
 
-  const jitter = ([min, max]) => min + Math.random() * (max - min);
-
   /** One human-sized pause. `SnorkelBot.sleep` stays for waits that are not pacing. */
-  const pause = (kind) => SnorkelBot.sleep(Math.round(jitter(PACE[kind] || PACE.field) * paceScale));
+  const pause = (kind) => {
+    const [min, max] = PACE[kind] || PACE.field;
+    const clamp = (n) => Math.min(MAX_PAUSE_MS, Math.max(MIN_PAUSE_MS, n));
+    const low = clamp(min);
+    const high = Math.max(low, clamp(max));
+    // Scaled afterwards, so the dashboard's pace dial can still slow the whole
+    // form down deliberately; at its default of 1 the window is exactly 1.5-3s.
+    return SnorkelBot.sleep(Math.round((low + Math.random() * (high - low)) * paceScale));
+  };
 
   /** Every handler takes the scale from its own command, so it can change mid-run. */
   function setPace(msg) {

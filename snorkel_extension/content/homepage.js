@@ -1,201 +1,266 @@
 /*
- * homepage.js — step 2 of the flow: find the Sentinel project card on
- * https://experts.snorkel-ai.com/home and click its "Start" button.
+ * homepage.js — step 2 of the flow: get from https://experts.snorkel-ai.com/home
+ * into a task, either a new one or one sent back for revision.
  *
- * Card markup (from snorkel_homepage.html):
+ * THE HOME PAGE WAS REDESIGNED, and none of the old markup survived it. What it
+ * looks like now (from snorkel_homepage.html):
  *
- *   <div data-testid="project-card">
- *     <h5>Submission</h5>
- *     <a data-testid="Submission-CDG_Sentinel_Ultra_00000"
- *        href="/projects/<projectId>/submission-<submissionId>/review">
- *       <button>Start</button>
- *     </a>
- *     ... <div>Project:</div> CDG_Sentinel_Ultra_00000
+ *   <div data-testid="ec-project-card-CDG_Sentinel_Ultra_00000">
+ *     Project  CDG_Sentinel_Ultra_00000
+ *     <button>Go to project</button>          <- no longer hands out a task
  *   </div>
  *
- * Two flavours of card exist for the same project:
- *   - "Submission-<projectKey>"     -> button says "Start", hands out a NEW task
- *   - "<submissionUid>-<projectKey>" -> button says "Revise", a task the
- *                                       reviewer has sent back
+ *   <table data-testid="tasks-needing-revision-table">
+ *     Task ID | Project Name | Due Date | Action
+ *     0cb4eb47-…  CDG_Sentinel_Ultra_00000  8/10/2026  <a
+ *        data-testid="revise-task-<assignmentId>"
+ *        href="/projects/<projectId>/submission-<submissionId>/review?assignmentId=…"
+ *        ><button>Revise task</button></a>
+ *   </table>
  *
- * The revise cards are titled with the submission UID, which is the same value
- * the review page shows as "UID:". That is what makes them findable later: the
- * server asks for feedback by UID and this clicks that card's Revise button.
+ * Two changes matter more than the rest:
+ *
+ * 1. STARTING A NEW TASK TAKES TWO PAGES. "Go to project" only opens the project
+ *    overview (snrokel_project_start_UI.html); the task comes from the "Begin
+ *    Submission" button there. The old card went straight to the review page.
+ *
+ * 2. THE UID IS IN THE ROW, NOT IN THE TESTID. `revise-task-<uuid>` carries the
+ *    ASSIGNMENT id, which is a different value from the Task ID in the first
+ *    cell — and the Task ID is what the rest of this system calls a UID. Reading
+ *    the testid, as the old code did for `<uid>-<projectKey>` anchors, would
+ *    hand the server eight ids it has never seen.
+ *
+ * The table also mixes projects — Geranium rows sit alongside Sentinel ones — so
+ * the project name is now a filter rather than something implied by the testid.
  */
 
 (function () {
-  const PROJECT_CARD = '[data-testid="project-card"]';
-  const ASSIGNMENTS_LIST = '[data-testid="assignments-list"]';
+  const PROJECT_CARDS = '[data-testid^="ec-project-card-"]';
+  const REVISION_TABLE = '[data-testid="tasks-needing-revision-table"]';
+  const REVISE_ANCHOR = 'a[data-testid^="revise-task-"]';
 
-  function anchorsForProject(projectKey) {
-    const suffix = `-${projectKey}`;
-    return Array.from(document.querySelectorAll('a[data-testid]')).filter((a) =>
-      a.getAttribute('data-testid').endsWith(suffix)
-    );
-  }
+  const text = (el) => (el ? SnorkelBot.text(el) : '');
+  const same = (a, b) => SnorkelBot.normText(a).toLowerCase() === SnorkelBot.normText(b).toLowerCase();
 
-  /** A card whose testid starts with a UUID is a revise card, not a fresh task. */
-  function isReviseAnchor(a) {
-    return SnorkelBot.UUID_RE.test(a.getAttribute('data-testid').slice(0, 36));
-  }
+  const buttonBy = (root, re) =>
+    Array.from(root.querySelectorAll('button')).find((b) => re.test(SnorkelBot.normText(text(b))));
 
-  /** The submission UID a revise card is for. */
-  function uidOf(a) {
-    const match = a.getAttribute('data-testid').match(SnorkelBot.UUID_RE);
-    return match ? match[0] : null;
-  }
-
-  /** Last-resort scan when the data-testid convention changes. */
-  function anchorByCardText(projectKey) {
-    for (const card of document.querySelectorAll(PROJECT_CARD)) {
-      if (!SnorkelBot.text(card).includes(projectKey)) continue;
-      const a = card.querySelector('a[href*="/review"]');
-      if (a) return a;
-    }
-    return null;
-  }
-
-  /**
-   * Only ever returns a card that hands out a NEW task.
-   *
-   * Revise cards are deliberately excluded: an earlier version treated them as
-   * "resume" cards, so asking for a task could click Revise on work that had
-   * been sent back — which is a different thing entirely.
+  /*
+   * Matched by walking the cards rather than by building a selector, because a
+   * project key goes into `data-testid` verbatim and CSS.escape is the only safe
+   * way to interpolate one — this needs no escaping at all, and picks up a key
+   * that differs only in case or surrounding space along the way.
    */
-  function pickAnchor(projectKey) {
-    const fresh = anchorsForProject(projectKey).filter((a) => !isReviseAnchor(a));
-    return fresh[0] || anchorByCardText(projectKey);
-  }
+  const projectCard = (key) =>
+    Array.from(document.querySelectorAll(PROJECT_CARDS)).find((card) =>
+      same((card.getAttribute('data-testid') || '').replace(/^ec-project-card-/, ''), key)
+    ) || null;
 
-  function startButton(anchor) {
-    // The <button>Start</button> lives inside the anchor; click the button when
-    // it is there (React binds to it) and fall back to the anchor itself.
-    const btn = anchor.querySelector('button');
-    if (btn) return btn;
-    return anchor;
-  }
-
-  SnorkelBot.on('CLICK_START', async (msg) => {
-    const projectKey = msg.projectKey || 'CDG_Sentinel_Ultra_00000';
-    const mode = msg.mode || 'new';
-
+  function assertSignedIn() {
     if (/\/login/i.test(location.pathname)) {
       throw new Error('Not signed in — the browser is on the Snorkel login page.');
     }
+  }
 
-    const anchor = await SnorkelBot.waitFor(() => pickAnchor(projectKey), {
+  // ------------------------------------------------------ the revise table ----
+
+  /**
+   * One row, read by what its cells contain rather than by their position.
+   *
+   * The UID is found by scanning for a UUID and the project by matching the name
+   * against every cell, so a column inserted in front of either does not silently
+   * shift what gets read — which, for the UID, would mean acting on the wrong
+   * task.
+   */
+  function rowInfo(tr) {
+    const cells = Array.from(tr.querySelectorAll('td'));
+    if (!cells.length) return null;
+
+    const texts = cells.map((cell) => SnorkelBot.normText(text(cell)));
+    const uid = texts.map((t) => (t.match(SnorkelBot.UUID_RE) || [])[0]).find(Boolean) || null;
+    const anchor = tr.querySelector(REVISE_ANCHOR) || tr.querySelector('a[href*="/review"]');
+    const href = anchor ? anchor.getAttribute('href') || '' : '';
+
+    return {
+      uid,
+      texts,
+      anchor,
+      href,
+      // The assignment id, kept because it is what the platform's own URL uses
+      // and what any support conversation about a stuck row will quote.
+      assignmentId: (href.match(/assignmentId=([0-9a-f-]{36})/i) || [])[1] || null,
+      due: texts[2] || null,
+    };
+  }
+
+  const rowsFor = (projectKey) => {
+    const table = document.querySelector(REVISION_TABLE);
+    if (!table) return [];
+    return Array.from(table.querySelectorAll('tbody tr'))
+      .map(rowInfo)
+      .filter((row) => row && row.uid && row.texts.some((t) => same(t, projectKey)));
+  };
+
+  /** The button inside the row's link; React binds to it, not to the anchor. */
+  const clickTarget = (anchor) => (anchor && anchor.querySelector('button')) || anchor;
+
+  // ------------------------------------------------------- starting a task ----
+
+  /**
+   * Step one of two: open the project.
+   *
+   * Still called CLICK_START because that is what it is for, but it no longer
+   * produces a task on its own — background.js follows it with
+   * CLICK_BEGIN_SUBMISSION on the page this lands on.
+   */
+  SnorkelBot.on('CLICK_START', async (msg) => {
+    const projectKey = msg.projectKey || 'CDG_Sentinel_Ultra_00000';
+    assertSignedIn();
+
+    const card = await SnorkelBot.waitFor(() => projectCard(projectKey), {
       timeout: msg.timeout || 90000,
-      label: `a Start card for project "${projectKey}"`,
+      label: `the "${projectKey}" project card`,
     });
 
-    const href = anchor.getAttribute('href') || '';
-    const testid = anchor.getAttribute('data-testid') || '';
-    const label = SnorkelBot.text(startButton(anchor)) || 'Start';
+    const button = buttonBy(card, /go to project/i) || card.querySelector('button');
+    if (!button) {
+      throw new Error(
+        `Found the "${projectKey}" card but it has no button to open the project — the home ` +
+          `page markup has changed again.`
+      );
+    }
 
-    SnorkelBot.click(startButton(anchor));
+    const anchor = button.closest('a');
+    const href = anchor ? anchor.getAttribute('href') || '' : '';
+    SnorkelBot.click(button);
 
     return {
       clicked: true,
-      buttonLabel: label,
-      testid,
+      buttonLabel: SnorkelBot.normText(text(button)),
+      testid: `ec-project-card-${projectKey}`,
       href,
       targetUrl: href ? new URL(href, location.origin).href : null,
+      // Says plainly that a task has not been handed out yet.
+      needsBeginSubmission: true,
     };
   });
 
   /**
+   * Step two of two, on the project overview page: take the task.
+   *
+   * The button sits inside an anchor pointing at the project page itself, so
+   * following the link would only reload where we already are — the button's own
+   * handler is what routes to the review page. Hence the button, never the link.
+   */
+  SnorkelBot.on('CLICK_BEGIN_SUBMISSION', async (msg) => {
+    assertSignedIn();
+
+    const button = await SnorkelBot.waitFor(() => buttonBy(document, /begin submission/i), {
+      timeout: msg.timeout || 60000,
+      label: 'the "Begin Submission" button on the project page',
+    });
+
+    if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+      const failure = new Error(
+        'The "Begin Submission" button is disabled — the platform is not handing out a task ' +
+          'right now, usually because too many submissions are waiting to be revised.'
+      );
+      failure.code = 'START_UNAVAILABLE';
+      throw failure;
+    }
+
+    SnorkelBot.click(button);
+    return { clicked: true, buttonLabel: SnorkelBot.normText(text(button)) };
+  });
+
+  // ------------------------------------------------------------ revisions ----
+
+  /**
    * Every submission the site is asking to have revised.
    *
-   * The card's <h5> is the submission UID; the button reads "Revise". Both are
-   * checked so a future card type with a UUID title but a different action is
-   * not mistaken for one of these.
+   * A timeout here is not an error. A home page with nothing to revise renders
+   * no table at all, and throwing would turn a legitimate zero into a failed
+   * check on every sweep.
    */
   SnorkelBot.on('LIST_REVISIONS', async (msg) => {
     const projectKey = msg.projectKey || 'CDG_Sentinel_Ultra_00000';
-
-    if (/\/login/i.test(location.pathname)) {
-      throw new Error('Not signed in — the browser is on the Snorkel login page.');
-    }
+    assertSignedIn();
 
     /*
      * The tab reports "complete" as soon as the document has loaded, which on a
-     * single-page app is well before React has drawn the assignments list.
-     * Reading straight away found an empty page and reported zero revisions
-     * every time.
+     * single-page app is well before React has drawn the table. Reading straight
+     * away found an empty page and reported zero revisions every time.
      *
-     * Waiting on the CARDS, not on the list container: the container is
-     * rendered first and sits empty for a moment, so waiting for it would have
-     * left the same hole a little narrower.
-     *
-     * A timeout here is not an error. A home page with no cards at all is a
-     * legitimate state, and throwing would make every check fail rather than
-     * report an honest zero.
+     * Waiting on the ROWS, not the table: the table renders with its header
+     * first and sits empty for a moment, so waiting for it would leave the same
+     * hole, only narrower.
      */
     const appeared = await SnorkelBot.waitFor(
-      () => document.querySelectorAll(PROJECT_CARD).length || null,
-      { timeout: msg.timeout || 90000, interval: 400, label: 'the assignment cards to render' }
+      () => document.querySelectorAll(`${REVISION_TABLE} tbody tr`).length || null,
+      { timeout: msg.timeout || 90000, interval: 400, label: 'the revision table to render' }
     ).catch(() => 0);
 
-    // Cards arrive in batches; the revise ones are not necessarily in the first
-    // paint. Let the list stop growing before counting it.
+    // Rows arrive in batches; let the table stop growing before counting it.
     if (appeared) {
       let seen = -1;
       const settleDeadline = Date.now() + (msg.settle || 8000);
       while (Date.now() < settleDeadline) {
-        const now = document.querySelectorAll(PROJECT_CARD).length;
+        const now = document.querySelectorAll(`${REVISION_TABLE} tbody tr`).length;
         if (now === seen) break;
         seen = now;
         await SnorkelBot.sleep(700);
       }
     }
 
-    const revisions = anchorsForProject(projectKey)
-      .filter(isReviseAnchor)
-      .filter((a) => /revise/i.test(SnorkelBot.text(a.querySelector('button') || a)))
-      .map((a) => ({
-        uid: uidOf(a),
-        href: a.getAttribute('href'),
-        title: SnorkelBot.text(a.closest(PROJECT_CARD)?.querySelector('h5')),
-      }))
-      .filter((entry) => entry.uid);
+    const rows = rowsFor(projectKey);
+    const allRows = document.querySelectorAll(`${REVISION_TABLE} tbody tr`).length;
 
-    const cards = document.querySelectorAll(PROJECT_CARD).length;
     return {
-      revisions,
-      count: revisions.length,
-      // `cards` tells "nothing to revise" apart from "the page never rendered".
-      cards,
+      revisions: rows.map((row) => ({
+        uid: row.uid,
+        href: row.href,
+        assignmentId: row.assignmentId,
+        due: row.due,
+        title: row.uid,
+      })),
+      count: rows.length,
+      // `cards` keeps the old name the server logs. It tells "nothing to revise"
+      // apart from "the page never rendered", and now also apart from "the table
+      // is full of another project's work".
+      cards: allRows,
       rendered: Boolean(appeared),
     };
   });
 
-  /** Opens one submission's review page by clicking its Revise button. */
+  /** Opens one submission's review page from its row in the table. */
   SnorkelBot.on('CLICK_REVISE', async (msg) => {
     const projectKey = msg.projectKey || 'CDG_Sentinel_Ultra_00000';
     const wanted = String(msg.uid || '').toLowerCase();
+    assertSignedIn();
 
-    const anchor = await SnorkelBot.waitFor(
-      () =>
-        anchorsForProject(projectKey)
-          .filter(isReviseAnchor)
-          .find((a) => (uidOf(a) || '').toLowerCase() === wanted),
-      { timeout: msg.timeout || 90000, label: `a Revise card for ${msg.uid}` }
+    const row = await SnorkelBot.waitFor(
+      () => rowsFor(projectKey).find((r) => (r.uid || '').toLowerCase() === wanted) || null,
+      { timeout: msg.timeout || 90000, label: `a "Revise task" row for ${msg.uid}` }
     );
 
-    const href = anchor.getAttribute('href') || '';
-    SnorkelBot.click(startButton(anchor));
-    return { clicked: true, uid: msg.uid, href };
+    if (!row.anchor) {
+      throw new Error(`The row for ${msg.uid} has no "Revise task" link to follow.`);
+    }
+
+    SnorkelBot.click(clickTarget(row.anchor));
+    return { clicked: true, uid: msg.uid, href: row.href, assignmentId: row.assignmentId };
   });
 
-  /** Diagnostic helper — lets the popup/server see what cards are on offer. */
+  /** Diagnostic helper — lets the popup/server see what the page is offering. */
   SnorkelBot.on('LIST_PROJECTS', () => ({
-    cards: Array.from(document.querySelectorAll(PROJECT_CARD)).map((card) => {
-      const a = card.querySelector('a[data-testid]');
-      return {
-        title: SnorkelBot.text(card.querySelector('h5')),
-        testid: a ? a.getAttribute('data-testid') : null,
-        href: a ? a.getAttribute('href') : null,
-      };
-    }),
+    cards: Array.from(document.querySelectorAll(PROJECT_CARDS)).map((card) => ({
+      title: (card.getAttribute('data-testid') || '').replace(/^ec-project-card-/, ''),
+      testid: card.getAttribute('data-testid'),
+      button: SnorkelBot.normText(text(card.querySelector('button'))) || null,
+    })),
+    revisions: Array.from(document.querySelectorAll(`${REVISION_TABLE} tbody tr`))
+      .map(rowInfo)
+      .filter(Boolean)
+      .map((row) => ({ uid: row.uid, project: row.texts[1] || null, href: row.href })),
   }));
 })();
