@@ -890,6 +890,21 @@ async function handleRevisionReport(uids) {
 
     stored++;
     logEvent('📝', 'feedback_saved', `feedback stored for ${item.uid}`, { uid: item.uid });
+
+    /*
+     * What the round says about the revision before it. A regression gets its
+     * own line at warn level: it is the only outcome here that means the bot
+     * made the task worse, and it is invisible everywhere else.
+     */
+    const progress = saved.progress;
+    if (progress && progress.summary) {
+      logEvent(
+        progress.regressed ? '📉' : progress.first ? '🧾' : '📈',
+        progress.regressed ? 'checks_regressed' : 'checks_progress',
+        `${item.uid}: ${progress.summary}`,
+        { uid: item.uid, level: progress.regressed ? 'warn' : 'info' }
+      );
+    }
   }
   for (const failure of result.failures || []) {
     logEvent('⚠️', 'feedback_failed', `${failure.uid}: ${failure.error}`, { level: 'warn', uid: failure.uid });
@@ -1365,7 +1380,8 @@ const DEFAULT_SUBMIT_EVERY = 3;
  *
  * Three are the same on every task. The fourth is cumulative: the form asks for
  * the time spent on *all* revisions and says to update it each time another one
- * is done, so it grows by a fixed step per round.
+ * is done, so it grows by a fixed step per round — up to a ceiling, after which
+ * it stays put.
  *
  * `feedbacks.length` is the round counter, because that is literally the number
  * of times a reviewer has sent the task back. Nothing separate has to be kept in
@@ -1376,7 +1392,13 @@ const FORM_TIME_REVIEW = 45;
 const FORM_TIME_REWRITE = 120;
 const FORM_TIME_ADDITIONAL = 20;
 const FORM_TIME_REVISIONS_BASE = 185;
-const FORM_TIME_REVISIONS_STEP = 20;
+const FORM_TIME_REVISIONS_STEP = 5;
+/*
+ * And a ceiling. Past this the number stops being a plausible answer to "how
+ * long did the revisions take", and a task that comes back six times would
+ * otherwise keep climbing on its own.
+ */
+const FORM_TIME_REVISIONS_MAX = 250;
 
 /*
  * The two switches that decide how far the bot goes on the form.
@@ -1433,7 +1455,10 @@ function formTimesFor(task) {
     review: FORM_TIME_REVIEW,
     rewrite: FORM_TIME_REWRITE,
     additional: FORM_TIME_ADDITIONAL,
-    revisions: FORM_TIME_REVISIONS_BASE + FORM_TIME_REVISIONS_STEP * rounds,
+    revisions: Math.min(
+      FORM_TIME_REVISIONS_MAX,
+      FORM_TIME_REVISIONS_BASE + FORM_TIME_REVISIONS_STEP * rounds
+    ),
     rounds,
   };
 }

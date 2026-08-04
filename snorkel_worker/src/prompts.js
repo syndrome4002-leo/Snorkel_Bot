@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
+import { diffRounds } from './checksigns.js';
 
 /** Anything else in a docs folder is noise; these are the readable formats. */
 const DOC_EXTENSIONS = new Set(['.txt', '.md', '.markdown', '.json', '.toml', '.yaml', '.yml']);
@@ -192,7 +193,7 @@ export async function lessonPrompt() {
  * folder, and putting the text back in front of the model invites it to redo
  * them, which is how a revision undoes the round before it.
  */
-export async function revisionPrompt({ uid, taskDir, feedbacks, applied = [] }) {
+export async function revisionPrompt({ uid, taskDir, feedbacks, applied = [], lessons = '' }) {
   const rounds = Array.isArray(feedbacks) ? feedbacks : [];
   const latest = rounds[rounds.length - 1] || null;
   const notes = reviewerNotes(latest);
@@ -206,8 +207,49 @@ export async function revisionPrompt({ uid, taskDir, feedbacks, applied = [] }) 
     // saying it twice reads like two different pieces of information.
     reviewer_notes: notes,
     automated_checks: automatedChecks(latest),
+    scorecard: scorecard(rounds),
     history: roundHistory(rounds, applied),
+    lessons: lessons ? `\n${lessons}` : '',
   });
+}
+
+/**
+ * What the previous revision actually achieved, as a short scorecard.
+ *
+ * The checks below say what is wrong now. This says which of those the last
+ * round already tried and failed to fix, and — the part worth the file — which
+ * of them the last round CAUSED. Without it every round reads the report as if
+ * it were the first, and the same fix gets attempted again.
+ */
+function scorecard(rounds) {
+  if (rounds.length < 2) return '';
+  const diff = diffRounds(rounds[rounds.length - 2], rounds[rounds.length - 1]);
+
+  const lines = [];
+  if (diff.fixed.length) {
+    lines.push(`  fixed by the last round : ${diff.fixed.join(', ')}`);
+  }
+  if (diff.persisted.length) {
+    lines.push(
+      `  tried and still failing : ${diff.persisted.join(', ')}` +
+        '\n      (the last round already attempted these — a different approach is needed,' +
+        '\n       not the same one again)'
+    );
+  }
+  if (diff.introduced.length) {
+    lines.push(
+      `  CAUSED by the last round: ${diff.introduced.join(', ')}` +
+        '\n      (these were not here before. Look at what changed last round and undo the' +
+        '\n       part responsible, rather than adding more on top of it)'
+    );
+  }
+  if (!lines.length) return '';
+
+  return (
+    '\nWhat the last round did, measured against the round before it:\n\n' +
+    lines.join('\n') +
+    '\n'
+  );
 }
 
 /** A reviewer's note reduced to something two rounds can be compared on. */

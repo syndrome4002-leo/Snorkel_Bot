@@ -35,6 +35,7 @@ import {
 } from './prompts.js';
 import { normaliseAnswers, parseJsonReply } from './answers.js';
 import { lessonsBlock, recordLesson } from './lessons.js';
+import { signaturesOf } from './checksigns.js';
 import {
   TASK_STATUS_BUILD,
   TASK_STATUS_INVALID,
@@ -465,7 +466,32 @@ export async function workOnTask(task, { log, onSession } = {}) {
        */
       if (Number(task.static_fix_attempts || 0)) await patchTask(uid, { static_fix_attempts: 0 });
 
-      await session.send(await revisionPrompt({ uid, taskDir, feedbacks: task.feedbacks, applied }));
+      await session.send(
+        await revisionPrompt({
+          uid,
+          taskDir,
+          feedbacks: task.feedbacks,
+          applied,
+          lessons: await lessonsBlock({ source: 'review' }),
+        })
+      );
+
+      /*
+       * Write down what was done about each complaint this round was answering.
+       *
+       * Recorded now, trusted later: it stays unconfirmed until the NEXT round
+       * shows the complaint gone — and snorkel_server refuses to confirm from a
+       * round that introduced something new, so a fix that broke the oracle
+       * teaches nothing.
+       */
+      const open = signaturesOf(latest);
+      if (open.length) {
+        const lesson = await session.send(await lessonPrompt());
+        const written = await recordLesson(open, lesson.text, { source: 'review' });
+        if (written) {
+          say('📚', 'lesson', `noted what was done about ${written} review complaint(s)`);
+        }
+      }
     }
 
     // The answers as prose are what a person reads; this turn is the same thing

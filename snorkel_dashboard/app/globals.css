@@ -483,3 +483,38 @@ button.machine {
   color: var(--bad);
   background: rgba(197, 56, 47, 0.1);
 }
+
+/* The per-round scorecard in the feedback log: what the previous revision
+   fixed, failed to fix, and caused. The last of those is the one worth a
+   colour — it means the bot made the task worse. */
+.scorecard {
+  border: 1px solid var(--line, #2a2f3a);
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.scorecard.regressed {
+  border-left-color: #e5534b;
+}
+.score-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.score-label {
+  flex: 0 0 auto;
+  min-width: 170px;
+  opacity: 0.75;
+}
+.score-items {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+.score-row.good .score-items { color: #3fb950; }
+.score-row.warn .score-items { color: #d29922; }
+.score-row.bad .score-items { color: #e5534b; }

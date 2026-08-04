@@ -13,7 +13,8 @@ import { appendFile, readFile, writeFile, rm } from 'node:fs/promises';
 import admin from 'firebase-admin';
 import { config, serverRoot } from './config.js';
 import { machineId } from './machine.js';
-import { recordFailures, confirmLessons } from './lessons.js';
+import { recordFailures, confirmLessons, recordReviewFailures, confirmReviewLessons } from './lessons.js';
+import { diffRounds, describeDiff, madeThingsWorse, signaturesOf } from './checksigns.js';
 import { deleteFile } from './dropbox.js';
 
 /**
@@ -513,6 +514,19 @@ export async function addFeedback(uid, entry, extra = {}) {
    * want that round recorded. Silently discarding it was the reason feedback
    * looked like it was being replaced.
    */
+  /*
+   * What this round says about the last revision.
+   *
+   * Reduced to signatures and subtracted from the previous round, so a task that
+   * comes back carries the one fact nothing else in the system records: whether
+   * the work done on it helped. A round that fixes three complaints and breaks
+   * the oracle is otherwise indistinguishable from a round that fixed three
+   * complaints.
+   */
+  const previous = feedbacks.length ? feedbacks[feedbacks.length - 1] : null;
+  const diff = diffRounds(previous, entry);
+  entry.check_signatures = signaturesOf(entry);
+
   const next = [...feedbacks, entry];
 
   const now = new Date().toISOString();
@@ -528,6 +542,23 @@ export async function addFeedback(uid, entry, extra = {}) {
     // reopened on every single sweep.
     feedback_checked_at: now,
     updated_at: now,
+    /*
+     * Kept on the task, not only inside the round, because this is what the
+     * next revision is told and what the dashboard shows. `regressed` is the
+     * one to read: it means the revision caused something, as opposed to merely
+     * failing to fix it.
+     */
+    check_progress: {
+      at: now,
+      round: next.length,
+      first: Boolean(diff.first),
+      fixed: diff.fixed,
+      persisted: diff.persisted,
+      introduced: diff.introduced,
+      open: diff.open,
+      regressed: madeThingsWorse(diff),
+      summary: describeDiff(diff),
+    },
     ...extra,
   };
   /*
@@ -544,11 +575,35 @@ export async function addFeedback(uid, entry, extra = {}) {
   }
 
   await ref.set(record, { merge: true });
+
+  /*
+   * Feed the round into the lessons store.
+   *
+   * Counting what is open runs on every round; confirming what is fixed runs
+   * only when the round introduced nothing, because a round that broke
+   * something is not evidence about what fixes things. Neither is allowed to
+   * fail the write above — the feedback is the record, this is bookkeeping on
+   * top of it.
+   */
+  try {
+    await recordReviewFailures(uid, diff.open);
+    if (diff.fixed.length) {
+      await confirmReviewLessons(uid, diff.fixed, { clean: !madeThingsWorse(diff) });
+    }
+  } catch (err) {
+    console.warn(`[lessons] ${uid}: review pipeline skipped — ${err.message}`);
+  }
+
   console.log(
     `[firebase] ${config.firebase.collection}/${uid} -> task_status="${TASK_STATUS_NEEDS_REVISION}", ` +
-      `round ${next.length} appended`
+      `round ${next.length} appended — ${describeDiff(diff)}`
   );
-  return { record, skipped: false, rounds: next.length };
+  return {
+    record,
+    skipped: false,
+    rounds: next.length,
+    progress: record.check_progress,
+  };
 }
 
 /**

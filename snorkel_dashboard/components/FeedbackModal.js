@@ -20,7 +20,43 @@ function viaNote(via) {
   return { label: via, warn: false };
 }
 
-function Round({ entry, index, total }) {
+/**
+ * What one round says about the revision before it.
+ *
+ * Computed here from the stored signatures rather than read from
+ * `check_progress`, so it works on rounds recorded before that field existed —
+ * and so the panel never disagrees with the prompt, which derives it the same
+ * way.
+ */
+function Scorecard({ previous, entry }) {
+  const before = new Set(Array.isArray(previous?.check_signatures) ? previous.check_signatures : []);
+  const after = Array.isArray(entry.check_signatures) ? entry.check_signatures : [];
+  if (!previous || (!before.size && !after.length)) return null;
+
+  const afterSet = new Set(after);
+  const fixed = [...before].filter((s) => !afterSet.has(s));
+  const persisted = [...before].filter((s) => afterSet.has(s));
+  const introduced = after.filter((s) => !before.has(s));
+  if (!fixed.length && !persisted.length && !introduced.length) return null;
+
+  const row = (label, items, tone) =>
+    items.length ? (
+      <div className={`score-row ${tone}`}>
+        <span className="score-label">{label}</span>
+        <span className="score-items mono">{items.join(', ')}</span>
+      </div>
+    ) : null;
+
+  return (
+    <div className={`scorecard${introduced.length ? ' regressed' : ''}`}>
+      {row('fixed', fixed, 'good')}
+      {row('still open', persisted, 'warn')}
+      {row('caused by the last round', introduced, 'bad')}
+    </div>
+  );
+}
+
+function Round({ entry, index, total, previous }) {
   const notes = Array.isArray(entry.notes) ? entry.notes : [];
   const checks = Array.isArray(entry.checks) ? entry.checks : [];
   const withText = checks.filter((c) => c.text);
@@ -33,6 +69,8 @@ function Round({ entry, index, total }) {
         </span>
         <span className="muted">{when(entry.collected_at)}</span>
       </header>
+
+      <Scorecard previous={previous} entry={entry} />
 
       <h4 className="group-title">Reviewer notes</h4>
       {notes.length ? (
@@ -127,7 +165,13 @@ export default function FeedbackModal({ task, onClose }) {
           {feedbacks.length ? (
             // Newest last: reading top to bottom follows the conversation.
             feedbacks.map((entry, index) => (
-              <Round key={index} entry={entry} index={index} total={feedbacks.length} />
+              <Round
+                key={index}
+                entry={entry}
+                index={index}
+                total={feedbacks.length}
+                previous={index ? feedbacks[index - 1] : null}
+              />
             ))
           ) : (
             <p className="muted">No feedback has been collected for this task.</p>

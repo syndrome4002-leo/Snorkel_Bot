@@ -21,6 +21,16 @@ const MAX_IN_PROMPT = 15;
 
 const db = () => admin.firestore();
 
+/*
+ * A review signature as a Firestore document id.
+ *
+ * `judge:discuss/overreach` contains a slash and a document id may not, so
+ * every write would throw without this. Must match snorkel_server's copy —
+ * they address the same documents.
+ */
+const REVIEW_PREFIX = 'review__';
+export const reviewDocId = (signature) => `${REVIEW_PREFIX}${String(signature).replace(/\//g, '~')}`;
+
 /**
  * The lessons worth telling the model about, most frequent first.
  *
@@ -28,12 +38,16 @@ const db = () => admin.firestore();
  * data has: a complaint seen on nine tasks will probably be the tenth task's
  * problem too.
  */
-export async function confirmedLessons(limit = MAX_IN_PROMPT) {
+export async function confirmedLessons(limit = MAX_IN_PROMPT, { source = null } = {}) {
   try {
     const snap = await db().collection(COLLECTION()).where('confirmed', '==', true).limit(200).get();
     return snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((l) => l.lesson)
+      // A build is not helped by what a reviewer's judge said, and a revision is
+      // not helped by a build-log fix. `source` is absent on the platform-check
+      // entries written before this split, so they count as "static".
+      .filter((l) => !source || (l.source || 'static') === source)
       .sort((a, b) => (b.occurrences || 0) - (a.occurrences || 0))
       .slice(0, limit);
   } catch (err) {
@@ -45,18 +59,23 @@ export async function confirmedLessons(limit = MAX_IN_PROMPT) {
 }
 
 /** Those lessons as a block for a prompt, or '' when there are none yet. */
-export async function lessonsBlock() {
-  const lessons = await confirmedLessons();
+export async function lessonsBlock({ source = 'static' } = {}) {
+  const lessons = await confirmedLessons(MAX_IN_PROMPT, { source });
   if (!lessons.length) return '';
 
   const lines = lessons.map(
     (l) => `${l.label || l.check}: ${l.lesson}${l.occurrences > 1 ? ` (seen ${l.occurrences} times)` : ''}`
   );
 
-  return (
-    `These are checks that have failed on earlier tasks and what fixed them. ` +
-    `Avoid repeating them here.\n\n${lines.join('\n\n')}\n`
-  );
+  const intro =
+    source === 'review'
+      ? `These complaints have come back from review on earlier tasks, and this is what ` +
+        `beat them. Each was confirmed by the complaint disappearing in a round that broke ` +
+        `nothing else.`
+      : `These are checks that have failed on earlier tasks and what fixed them. ` +
+        `Avoid repeating them here.`;
+
+  return `${intro}\n\n${lines.join('\n\n')}\n`;
 }
 
 /**
@@ -66,7 +85,7 @@ export async function lessonsBlock() {
  * false until the platform actually passes the task, which is snorkel_server's
  * job. So a lesson is recorded early and trusted late.
  */
-export async function recordLesson(signatures, lesson) {
+export async function recordLesson(signatures, lesson, { source = 'static' } = {}) {
   const text = String(lesson || '').trim();
   if (!text) return 0;
 
@@ -78,8 +97,17 @@ export async function recordLesson(signatures, lesson) {
     try {
       await db()
         .collection(COLLECTION())
-        .doc(signature)
-        .set({ lesson: text.slice(0, 1500), lesson_written_at: new Date().toISOString() }, { merge: true });
+        .doc(source === 'review' ? reviewDocId(signature) : signature)
+        .set(
+          {
+            lesson: text.slice(0, 1500),
+            lesson_written_at: new Date().toISOString(),
+            // Written here too: the worker can reach a signature the server has
+            // not filed yet, and an entry with no source would read as static.
+            ...(source === 'review' ? { source: 'review', signature, label: signature } : {}),
+          },
+          { merge: true }
+        );
       written++;
     } catch (err) {
       console.warn(`[lessons] could not write ${signature}:`, err.message);

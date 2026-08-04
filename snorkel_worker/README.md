@@ -240,6 +240,56 @@ frequency being the closest thing to importance the data has.
 Reading them can never fail a build: if the collection is unreachable the run
 carries on without them. They are an advantage, not a dependency.
 
+## What a round achieved
+
+Every feedback round is reduced to a short list of signatures — what the four
+automated panes are complaining about, in a form two rounds can be subtracted
+from each other:
+
+    judge:discuss/overreach     judge:axis:test_coverage
+    quality:must_have_failed    oracle:runs_failed    difficulty:blocked
+
+Subtracting the previous round from this one gives the only honest measure of
+whether a revision worked:
+
+| | |
+| --- | --- |
+| `fixed` | in the last round, gone from this one |
+| `persisted` | in both — the fix did not take |
+| `introduced` | new this round, so the last revision **caused** it |
+
+`introduced` is the one that pays for this. A round that fixes three complaints
+and breaks the oracle looks, from every other angle in the system, exactly like a
+round that fixed three complaints. snorkel_server stores the diff on the task as
+`check_progress` and logs a regression at warn level; the revision prompt puts it
+in front of Claude as a scorecard, so the next round knows which fixes have
+already been tried and which damage it is being asked to undo.
+
+The reader is deliberately conservative: a pattern that does not match produces
+no signature rather than a guessed one, because a wrong signature makes a fix
+look like a regression and a regression look like progress. `npm test` runs it
+against the exact strings the panes produce.
+
+### And what it learns from it
+
+The signatures double as keys into `CheckLessons`, the same store the platform
+checks already use. After a revision the worker asks what it changed and files
+that against every complaint the round was answering; when the next round
+arrives, snorkel_server confirms the ones that disappeared.
+
+**A round that introduced something new confirms nothing at all.** Not because
+its fixes did not work — three of them did on `4418f8ec` round 3 — but because
+whatever Claude writes down after such a round describes the damage as well as
+the repair, and a store that files both starts teaching its own mistakes.
+
+Confirmed review lessons go into the revision prompt; build-log lessons stay in
+the build and static-fix prompts. `source` keeps them apart, and entries written
+before the split count as `static`.
+
+Note the encoding: a review signature contains a slash and a Firestore document
+id may not, so they are stored as `review__judge:discuss~overreach`. Both halves
+of the pipeline must agree on that — hence `reviewDocId` in each.
+
 ## Prompts
 
 The wording lives in `prompts/*.txt`, not in code. Edits take effect on the next

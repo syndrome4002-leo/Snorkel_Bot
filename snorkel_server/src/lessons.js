@@ -156,6 +156,111 @@ export async function confirmLessons(uid, signatures) {
   return confirmed;
 }
 
+/*
+ * ----------------------------------------------------------- review side ----
+ *
+ * The same store, for the complaints a reviewer's automated panes make. Two
+ * differences from the platform checks above:
+ *
+ *   - the signature is already readable (`judge:discuss/overreach`) rather than
+ *     a hash of a build log, so there is nothing to normalise;
+ *   - it contains a slash, and a Firestore document id may not. Hence the
+ *     encoding below — without it every write throws.
+ */
+
+const REVIEW_PREFIX = 'review__';
+
+/** A review signature as something Firestore will accept as a document id. */
+export const reviewDocId = (signature) => `${REVIEW_PREFIX}${String(signature).replace(/\//g, '~')}`;
+
+/**
+ * Counts the complaints a round is carrying.
+ *
+ * Called for every round, including ones that changed nothing: `occurrences` is
+ * how the prompt ranks lessons, and a complaint that keeps coming back is the
+ * one most worth telling the next task about.
+ */
+export async function recordReviewFailures(uid, signatures) {
+  const list = [...new Set((signatures || []).filter(Boolean))];
+  if (!list.length) return [];
+
+  const now = new Date().toISOString();
+  for (const signature of list) {
+    const ref = db().collection(COLLECTION()).doc(reviewDocId(signature));
+    const snap = await ref.get();
+
+    if (snap.exists) {
+      const seen = snap.data();
+      await ref.set(
+        {
+          occurrences: (seen.occurrences || 0) + 1,
+          last_seen_at: now,
+          uids: [...new Set([...(seen.uids || []), uid])].slice(-25),
+        },
+        { merge: true }
+      );
+      continue;
+    }
+
+    await ref.set({
+      signature,
+      source: 'review',
+      check: signature.split(':')[0],
+      label: signature,
+      occurrences: 1,
+      first_seen_at: now,
+      last_seen_at: now,
+      uids: [uid],
+      lesson: null,
+      confirmed: false,
+    });
+  }
+
+  console.log(`[lessons] ${uid} round carries ${list.length} review complaint(s): ${list.join(', ')}`);
+  return list;
+}
+
+/**
+ * Marks review complaints as beaten, but only when the round was a clean win.
+ *
+ * A round that fixed three things and broke the oracle is not evidence about
+ * what fixes things — whatever Claude wrote down after it describes the damage
+ * as well as the repair. Confirming from a round like that is how the store
+ * starts teaching its own mistakes, so those rounds teach nothing at all.
+ */
+export async function confirmReviewLessons(uid, fixed, { clean = true } = {}) {
+  const list = [...new Set((fixed || []).filter(Boolean))];
+  if (!list.length) return 0;
+  if (!clean) {
+    console.log(
+      `[lessons] ${uid} fixed ${list.length} review complaint(s) but introduced others — not confirming`
+    );
+    return 0;
+  }
+
+  let confirmed = 0;
+  for (const signature of list) {
+    const ref = db().collection(COLLECTION()).doc(reviewDocId(signature));
+    const snap = await ref.get();
+    if (!snap.exists) continue;
+
+    await ref.set(
+      {
+        resolved_count: (snap.data().resolved_count || 0) + 1,
+        // No text, nothing to teach — it waits for the worker to write one.
+        confirmed: Boolean(snap.data().lesson),
+        last_resolved_at: new Date().toISOString(),
+        last_resolved_by: uid,
+      },
+      { merge: true }
+    );
+    confirmed++;
+  }
+
+  console.log(`[lessons] ${uid} confirmed ${confirmed} review lesson(s)`);
+  return confirmed;
+}
+
 /** Everything worth showing, newest and most frequent first. */
 export async function listLessons(limit = 100) {
   const snap = await db().collection(COLLECTION()).limit(limit).get();
