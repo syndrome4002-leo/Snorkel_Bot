@@ -307,6 +307,25 @@ async function fetchDifficultyFile(task, taskDir, say) {
 
     await downloadFile(meta.dropbox_path, target);
     say('📐', 'difficulty_file', `${name} put in the task folder`);
+
+    /*
+     * Out of Dropbox now that it is on disk, and in that order.
+     *
+     * The record is cleared first so an interruption cannot leave a task
+     * pointing at a file that has just been deleted — the same reason the task
+     * zip is recorded before its remote copy goes. Losing the delete instead
+     * leaves one orphan file, which is the cheaper of the two failures.
+     *
+     * `dropbox_path` going null is also what stops the next round trying to
+     * fetch it again: the guard at the top of this function reads an absent path
+     * as "there is nothing waiting", which is exactly true.
+     */
+    await patchTask(String(task.UID || task.id), {
+      difficulty_file: { ...meta, dropbox_path: null, fetched_at: new Date().toISOString() },
+    });
+    await deleteFile(meta.dropbox_path);
+    say('🗑️', 'difficulty_file', `${name} removed from Dropbox — the folder has it now`);
+
     return name;
   } catch (err) {
     say('⚠️', 'difficulty_file_failed', `could not fetch ${name}: ${err.message}`, { level: 'warn' });

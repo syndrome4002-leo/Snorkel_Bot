@@ -1685,6 +1685,9 @@ async function stickyTimes(task, field, draw) {
   await patchTask(task.UID, { [field]: times }).catch((err) =>
     console.warn(`[server] could not store the form times for ${task.UID}: ${err.message}`)
   );
+  // The caller's copy too, so anything that asks again in the same pass gets the
+  // same answer rather than a second draw.
+  task[field] = times;
   return times;
 }
 
@@ -1863,6 +1866,19 @@ async function maybeSubmitCheck() {
   updateTicker();
   publishNow();
 
+  /*
+   * Drawn once for the whole submission.
+   *
+   * It used to be asked for twice — once for the command, once when recording
+   * what was filled — and the second call read the same in-memory task, which
+   * still had no `form_times` because the first call's write had gone to
+   * Firestore rather than to the object. So the first submit of a task filled
+   * the form with one set of numbers and recorded another, and the next round
+   * used the recorded one: the times appeared to change between rounds despite
+   * being stored precisely so they would not.
+   */
+  const times = await formTimesFor(task);
+
   const fileUrl =
     `http://127.0.0.1:${config.port}/api/task-file/${encodeURIComponent(uid)}` +
     (config.botToken ? `?token=${encodeURIComponent(config.botToken)}` : '');
@@ -1912,7 +1928,7 @@ async function maybeSubmitCheck() {
           // Sent up front so the extension can fill the form the moment both
           // checks pass, while the page is already open on the right task.
           answers: task.answers && !Array.isArray(task.answers) ? task.answers : null,
-          times: await formTimesFor(task),
+          times,
           send_to_reviewer: sendToReviewer(),
           /*
            * Static Checks is not negotiable — the platform gates on it.
@@ -1966,7 +1982,7 @@ async function maybeSubmitCheck() {
           level: 'warn',
         });
       }
-      if (form) await patchTask(uid, { form_filled: { ...form, times: await formTimesFor(task) } });
+      if (form) await patchTask(uid, { form_filled: { ...form, times } });
 
       /*
        * A submitted task is with a reviewer, so it stops being the new task this
