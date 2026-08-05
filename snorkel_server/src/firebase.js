@@ -404,20 +404,20 @@ export async function countSentToday({ newOnly = true } = {}) {
 
   // A range on one field needs no composite index, and ISO-8601 strings in UTC
   // compare correctly as strings.
-  const snap = await db
-    .collection(config.firebase.collection)
-    .where('sent_at', '>=', since)
-    .get();
-
   /*
-   * Filtered here rather than in the query. An equality on `submitted_new`
-   * alongside a range on `sent_at` would need a composite index created by hand;
-   * a day of submissions is a handful of documents, so it costs nothing to
-   * decide in memory.
+   * Counted on when a task was FIRST sent as a new one, not on when it was last
+   * sent at all.
+   *
+   * A task revised three times is still one new task submitted today, and it
+   * belongs to the day it went out — not to the day of its latest round. The
+   * old query asked `sent_at >= midnight`, which moved a task from day to day
+   * as it was revised and counted it again each time it happened to land in the
+   * window.
    */
-  const uids = snap.docs
-    .filter((d) => !newOnly || d.data().submitted_new === true)
-    .map((d) => d.id);
+  const field = newOnly ? 'submitted_new_at' : 'sent_at';
+  const snap = await db.collection(config.firebase.collection).where(field, '>=', since).get();
+
+  const uids = snap.docs.map((d) => d.id);
 
   return { count: uids.length, uids, since };
 }
@@ -447,7 +447,20 @@ export async function markSent(uid) {
   const wasNew = before.exists && before.data().is_new_task === true;
 
   const patch = {
-    submitted_new: wasNew,
+    /*
+     * Written ONCE, on the first send of a task that was new, and never
+     * unwritten.
+     *
+     * It used to be `submitted_new: wasNew` on every send. A new task that got
+     * sent, came back for revision and was resubmitted then had it overwritten
+     * with false — because `is_new_task` is cleared by the revision itself — so
+     * the day's count fell as tasks were revised and the cap never bit. On a
+     * busy day the count sat near zero however many new tasks had gone out.
+     *
+     * The timestamp is what the count actually reads: a task first sent as new
+     * today belongs to today whatever happens to it afterwards.
+     */
+    ...(wasNew ? { submitted_new: true, submitted_new_at: new Date().toISOString() } : {}),
     task_status: TASK_STATUS_SENT,
     /*
      * Submitted, so it is no longer the new task the account is holding — the
