@@ -10,25 +10,51 @@
     "",
     "`stages` says which runs produce the key. A first build asks only what its",
     "own prompts ask, so a key that belongs to a reviewer's round is not put in",
-    "front of the model during a build and cannot be invented there."
+    "front of the model during a build and cannot be invented there.",
+    "",
+    "`stages` also covers the two verdicts that end a task: a form that says",
+    "the task is invalid or valid as it stands asks far less than a fixable",
+    "one, and has no upload and no platform checks at all.",
+    "`label` is the wording the platform puts on the field, used where the",
+    "fixable questionnaire's numbering would mean nothing."
   ],
-
   "validity_required": {
     "question": "triage",
-    "stages": ["build", "revision"],
-    "enum": ["fixable", "invalid", "valid-as-is"]
+    "label": "What is your analysis of the Sentinel task you downloaded above?",
+    "stages": [
+      "build",
+      "revision",
+      "invalid",
+      "valid-as-is"
+    ],
+    "enum": [
+      "fixable",
+      "invalid",
+      "valid-as-is"
+    ]
   },
-
   "where_task_had_issues": {
     "question": "1",
-    "stages": ["build", "revision"],
+    "stages": [
+      "build",
+      "revision"
+    ],
     "list": true,
-    "enum": ["instructions", "tests", "oracle", "environment/dockerfile"]
+    "enum": [
+      "instructions",
+      "tests",
+      "oracle",
+      "environment/dockerfile"
+    ]
   },
-
   "what_issues_found": {
     "question": "2",
-    "stages": ["build", "revision"],
+    "label": "What issue did you find with the task/components?",
+    "stages": [
+      "build",
+      "revision",
+      "invalid"
+    ],
     "list": true,
     "enum": [
       "every requirement in the instructions is not properly tested",
@@ -40,45 +66,108 @@
       "less than 10 fail-to-pass tests in test suite"
     ]
   },
-
   "issues_in_detail": {
     "question": "3",
-    "stages": ["build", "revision"],
+    "stages": [
+      "build",
+      "revision"
+    ],
     "text": true
   },
-
+  "why_unfixable": {
+    "question": "why this task is unfixable",
+    "label": "Please explain in more detail why this task is unfixable",
+    "stages": [
+      "invalid"
+    ],
+    "text": true
+  },
+  "comments_for_reviewer": {
+    "question": "Comments for Reviewer",
+    "label": "Comments for Reviewer",
+    "stages": [
+      "invalid",
+      "valid-as-is"
+    ],
+    "text": true
+  },
   "files_changed": {
     "question": "4",
-    "stages": ["build", "revision"],
+    "stages": [
+      "build",
+      "revision"
+    ],
     "text": true
   },
-
   "added_PR_explain": {
     "question": "5",
-    "stages": ["build", "revision"],
+    "stages": [
+      "build",
+      "revision"
+    ],
     "text": true,
     "when": "NA if the PR was not touched"
   },
-
   "duplicate": {
     "question": "2 of the reviewer form",
-    "stages": ["revision"],
-    "enum": ["fixable", "invalid/Not Fixable", "Valid-as-is"]
+    "label": "[Duplicate] What is your analysis of the Sentinel task you downloaded above?",
+    "stages": [
+      "revision",
+      "invalid",
+      "valid-as-is"
+    ],
+    "enum": [
+      "fixable",
+      "invalid/Not Fixable",
+      "Valid-as-is"
+    ]
   },
-
   "what_makes_difficult": {
     "question": "6",
-    "stages": ["build", "revision"],
+    "label": "What makes this task difficult?",
+    "stages": [
+      "build",
+      "revision",
+      "invalid",
+      "valid-as-is"
+    ],
     "text": true
   },
-
   "senior_estimated_time": {
     "question": "7",
-    "stages": ["build", "revision"],
-    "enum": ["<10 minutes", "10-20 minutes", "20-40 minutes", "40+ minutes"]
+    "label": "How much time would you estimate a senior engineer familiar with the codebase would take to solve this?",
+    "stages": [
+      "build",
+      "revision",
+      "invalid",
+      "valid-as-is"
+    ],
+    "enum": [
+      "<10 minutes",
+      "10-20 minutes",
+      "20-40 minutes",
+      "40+ minutes"
+    ]
   },
-
-  "rewrite_time_min": { "question": "3.1.6", "stages": ["revision"], "number": true },
-  "review_time_min": { "question": "6", "stages": ["revision"], "number": true },
-  "submission_time_min": { "question": "7", "stages": ["revision"], "number": true }
+  "rewrite_time_min": {
+    "question": "3.1.6",
+    "stages": [
+      "revision"
+    ],
+    "number": true
+  },
+  "review_time_min": {
+    "question": "6",
+    "stages": [
+      "revision"
+    ],
+    "number": true
+  },
+  "submission_time_min": {
+    "question": "7",
+    "stages": [
+      "revision"
+    ],
+    "number": true
+  }
 }

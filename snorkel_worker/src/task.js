@@ -33,6 +33,7 @@ import {
   lessonPrompt,
   staticFixPrompt,
   triagePrompt,
+  verdictPrompt,
 } from './prompts.js';
 import {
   issueFormatProblems,
@@ -46,13 +47,10 @@ import { lessonsBlock, recordLesson } from './lessons.js';
 import { signaturesOf } from './checksigns.js';
 import {
   TASK_STATUS_BUILD,
-  TASK_STATUS_INVALID,
   TASK_STATUS_NEEDS_REVISION,
   TASK_STATUS_STATIC_FAIL,
-  TASK_STATUS_VALID_AS_IS,
   markDownloaded,
   markReady,
-  markTriaged,
   patchTask,
   saveAnswers,
 } from './firebase.js';
@@ -430,28 +428,22 @@ export async function workOnTask(task, { log, onSession } = {}) {
       say('🔎', 'triage', `${uid} is ${triage.verdict}`);
 
       /*
-       * Anything but fixable ends the run here. There are no corrections to
-       * make and no form to fill in, so asking for them would only produce
-       * answers about work that was never done.
+       * Anything but fixable means there is nothing to correct and nothing to
+       * upload — but there is still a form to fill in, and it is the only thing
+       * the reviewer will read. The run used to stop here, which left that form
+       * empty and the task waiting for a person.
+       *
+       * The questions are a different, much shorter set: the platform drops the
+       * upload, the two checks and half the form the moment the verdict is not
+       * "fixable".
        */
       if (triage.verdict !== 'fixable') {
-        clearInterval(heartbeat);
-        const status = triage.verdict === 'invalid' ? TASK_STATUS_INVALID : TASK_STATUS_VALID_AS_IS;
-        await markTriaged(uid, status, triage.note);
-        say('🛑', 'triage_stop', `${uid} -> "${status}", nothing to build`);
-        return {
-          uid,
-          from,
-          taskDir,
-          triage: triage.verdict,
-          status,
-          sessionId: session.id,
-          costUsd: session.costUsd,
-          durationMs: session.durationMs,
-        };
+        stage = triage.verdict === 'invalid' ? 'invalid' : 'valid-as-is';
+        say('🛑', 'triage_stop', `${uid} is ${triage.verdict} — filling in the form that says so`);
+        await session.send(await verdictPrompt({ uid, taskDir, verdict: stage }));
+      } else {
+        await session.send(await fixPrompt({ uid, taskDir, lessons: await lessonsBlock() }));
       }
-
-      await session.send(await fixPrompt({ uid, taskDir, lessons: await lessonsBlock() }));
     } else {
       // ---- a reviewer sent it back ---------------------------------------
       const latest = Array.isArray(task.feedbacks) ? task.feedbacks[task.feedbacks.length - 1] : null;
@@ -626,6 +618,37 @@ export async function workOnTask(task, { log, onSession } = {}) {
   );
 
   // -------------------------------------------------------- back up -------
+  /*
+   * A verdict that ends the task has nothing to pack.
+   *
+   * The folder is byte-identical to what was downloaded — the run stopped
+   * before any corrections — so a zip would be the reviewer's own file handed
+   * back. The form's upload field is optional and is left empty. The task still
+   * goes to "ready to submit": the form has answers and wants submitting, it
+   * just wants submitting without a file.
+   */
+  if (triage && triage.verdict !== 'fixable') {
+    await markReady(uid, {
+      needs_upload: false,
+      triage_verdict: triage.verdict,
+      triage_note: triage.note || null,
+      worker_session_id: session.id,
+      worker_cost_usd: session.costUsd || null,
+    });
+    say('🏁', 'ready', `${uid} is ${triage.verdict} — form answered, ready to submit with no upload`);
+    return {
+      uid,
+      from,
+      taskDir,
+      triage: triage.verdict,
+      answerFields: saved.fields,
+      answersRound: saved.round,
+      sessionId: session.id,
+      costUsd: session.costUsd,
+      durationMs: session.durationMs,
+    };
+  }
+
   const { path: outZip, name: zipName, madeByClaude } = await zipToUpload(task, taskDir);
   say('📦', 'packed', `${zipName}${madeByClaude ? ' (built by Claude)' : ' (packed from the folder)'}`);
 

@@ -696,6 +696,51 @@
    * The label is the question a person reads, so it is the more durable handle
    * of the two.
    */
+  /*
+   * The form a verdict of Invalid or Valid-as-is produces.
+   *
+   * A different, much shorter form: the platform drops the upload field, both
+   * check buttons, the confirmation checklist, the Send-to-Reviewer box and two
+   * of the four time fields the moment the answer stops being "fixable". So
+   * this is its own list rather than a filter over the one below — the fields
+   * that survive have different ids and, for the times, different meanings.
+   *
+   * `only` limits a field to one of the two verdicts. Valid-as-is has no
+   * "what issue did you find" and no "why is it unfixable", because it is not
+   * claiming anything is wrong.
+   */
+  const VERDICT_FIELDS = [
+    { key: 'validity_required', kind: 'radio', testid: 'field-multidimensionradio-segments-valid' },
+    { key: 'duplicate', kind: 'radio', testid: 'field-radio-ec-valid', fallback: 'validity_required' },
+    {
+      key: 'what_issues_found',
+      kind: 'multi',
+      only: 'invalid',
+      label: 'what issue did you find with the task',
+    },
+    {
+      key: 'why_unfixable',
+      kind: 'text',
+      only: 'invalid',
+      label: 'please explain in more detail why this task is unfixable',
+    },
+    { key: 'what_makes_difficult', kind: 'text', label: 'what makes this task difficult' },
+    { key: 'senior_estimated_time', kind: 'radio', testid: 'field-radio-sr-engineer-aht' },
+    { key: 'comments_for_reviewer', kind: 'text', label: 'comments for reviewer' },
+  ];
+
+  /* The two time fields these forms carry, and nothing else. */
+  const VERDICT_TIMES = [
+    { key: 'review', label: 'did it take you to review the initial task and determine its validity' },
+    { key: 'complete', label: 'did it take you to complete all revisions' },
+  ];
+
+  /** What the two validity questions must say, per verdict. */
+  const VERDICT_OPTION = {
+    invalid: { validity_required: 'Invalid', duplicate: 'Invalid' },
+    'valid-as-is': { validity_required: 'Valid-as-is', duplicate: 'Valid-as-is' },
+  };
+
   const FORM_FIELDS = [
     { key: 'validity_required', kind: 'radio', testid: 'field-multidimensionradio-segments-valid' },
     { key: 'duplicate', kind: 'radio', testid: 'field-radio-ec-valid', fallback: 'validity_required' },
@@ -716,11 +761,19 @@
    * reviewer and only the server can count that. Keeping the defaults here means
    * a command that arrives without them still fills the form.
    */
+  /*
+   * The four handling times, by the label the platform puts on each.
+   *
+   * The numbers come from the server, which draws them once per task and keeps
+   * them — so there is no default here. A form filled with a built-in constant
+   * because the message arrived without them would be the one thing these are
+   * randomised to avoid: every submission claiming the same figures.
+   */
   const FORM_TIMES = [
-    { key: 'review', minutes: 45, label: 'review the initial task and determine its validity' },
-    { key: 'rewrite', minutes: 120, label: 'complete the initial task rewrite only' },
-    { key: 'additional', minutes: 20, label: 'complete the additional questions on the form' },
-    { key: 'revisions', minutes: 185, label: 'complete all revisions' },
+    { key: 'review', label: 'review the initial task and determine its validity' },
+    { key: 'rewrite', label: 'complete the initial task rewrite only' },
+    { key: 'additional', label: 'complete the additional questions on the form' },
+    { key: 'revisions', label: 'complete all revisions' },
   ];
 
   /** Everything in this one gets ticked; it is a list of things to affirm. */
@@ -916,6 +969,140 @@
    * Never ticks "Send to Reviewer" and never clicks Submit. The whole point is
    * that a person looks at this before it goes anywhere.
    */
+  /**
+   * The whole page, for a task whose verdict ended it.
+   *
+   * One handler rather than the prepare / attach / check / fill sequence,
+   * because there is nothing to prepare for and nothing to check: choosing
+   * anything but Fixable removes the upload field and both check buttons from
+   * the page. So it answers the two validity questions, fills what is left, and
+   * stops.
+   */
+  /**
+   * Handing the form in, if that has been asked for.
+   *
+   * Only ever on an explicit true. This is the one action in the whole system
+   * that cannot be undone — after it, a reviewer has the task — so it does not
+   * happen because a field was missing from a message.
+   */
+  async function handIn(want, filled, skipped) {
+    if (!want) return false;
+
+    const button = $$('button').find((b) => SnorkelBot.normText(SnorkelBot.text(b)).toLowerCase() === 'submit');
+    if (!button) {
+      skipped.push('submit (no Submit button found)');
+      return false;
+    }
+    if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+      skipped.push('submit (the button is disabled, so the form is not complete)');
+      return false;
+    }
+
+    // The last click of the whole run, and the one that cannot be undone.
+    await pause('beforeSubmit');
+    SnorkelBot.click(button);
+    // Some builds ask to confirm; some do not. Either is fine.
+    const confirmed = await confirmDialog('Submit', { timeout: 6000 });
+    filled.push(`submitted${confirmed.appeared ? ' and confirmed' : ''}`);
+    await SnorkelBot.sleep(1500);
+    return true;
+  }
+
+  SnorkelBot.on('SUBMIT_VERDICT_FORM', async (msg) => {
+    setPace(msg);
+    const verdict = String(msg.verdict || '').toLowerCase();
+    const wanted = VERDICT_OPTION[verdict];
+    if (!wanted) throw new Error(`Not a verdict this form knows: "${msg.verdict}"`);
+
+    const answers = msg.answers || {};
+    const times = msg.times || {};
+    const filled = [];
+    const skipped = [];
+
+    await expandSections();
+
+    /*
+     * The verdict first, and on its own.
+     *
+     * The rest of the form is rendered from it — "what issue did you find" and
+     * "why is it unfixable" do not exist until the answer is Invalid — so
+     * filling in field order would skip them on a page that had not caught up.
+     */
+    for (const spec of VERDICT_FIELDS.slice(0, 2)) {
+      const field = await SnorkelBot.waitFor(() => findField(spec), {
+        timeout: msg.timeout || 60000,
+        label: `the ${spec.key} question`,
+      });
+      const res = await fillRadio(field, wanted[spec.key]);
+      res.ok ? filled.push(spec.key) : skipped.push(`${spec.key} (${res.why})`);
+      await pause('radio');
+    }
+
+    // Let the form redraw around the answer before looking for the rest.
+    await pause('section');
+
+    for (const spec of VERDICT_FIELDS.slice(2)) {
+      if (spec.only && spec.only !== verdict) continue;
+
+      const value = answers[spec.key] ?? (spec.fallback ? answers[spec.fallback] : undefined);
+      if (value === undefined || value === null || value === '') {
+        skipped.push(`${spec.key} (no answer stored)`);
+        continue;
+      }
+
+      const field = findField(spec);
+      if (!field) {
+        skipped.push(`${spec.key} (field not on this page)`);
+        continue;
+      }
+
+      try {
+        if (spec.kind === 'radio') {
+          const res = await fillRadio(field, value);
+          res.ok ? filled.push(spec.key) : skipped.push(`${spec.key} (${res.why})`);
+        } else if (spec.kind === 'multi') {
+          const res = await fillMulti(field, Array.isArray(value) ? value : [value]);
+          if (res.ticked || res.unticked) {
+            filled.push(`${spec.key} (${res.ticked} ticked${res.unticked ? `, ${res.unticked} cleared` : ''})`);
+          }
+          if (!res.ok) skipped.push(`${spec.key} (${res.why})`);
+        } else {
+          const how = await fillText(field, String(value));
+          how ? filled.push(`${spec.key} (${how})`) : skipped.push(`${spec.key} (no input in the field)`);
+        }
+      } catch (err) {
+        skipped.push(`${spec.key} (${err.message})`);
+      }
+      await pause('field');
+    }
+
+    for (const time of VERDICT_TIMES) {
+      const minutes = times[time.key];
+      if (!Number.isFinite(Number(minutes))) {
+        skipped.push(`${time.key} time (nothing sent)`);
+        continue;
+      }
+      const field = fieldByLabel(time.label);
+      const box = field && $('input', field);
+      if (!box) {
+        skipped.push(`${time.key} time (field not on this page)`);
+        continue;
+      }
+      setNativeValue(box, String(minutes));
+      filled.push(`${time.key} time (${minutes})`);
+      await pause('number');
+    }
+
+    /*
+     * No confirmation checklist and no Send to Reviewer: neither is rendered on
+     * a form that is not claiming a fix. Looking for them would only produce
+     * two "not on this page" lines on every single one of these.
+     */
+    const submitted = await handIn(msg.auto_submit === true, filled, skipped);
+
+    return { verdict, filled, skipped, submitted, page_url: location.href };
+  });
+
   SnorkelBot.on('SUBMIT_FILL_FORM', async (msg) => {
     setPace(msg);
     const answers = msg.answers || {};
@@ -985,10 +1172,15 @@
       }
 
       const sent = Number(msg.times && msg.times[time.key]);
-      const minutes = Number.isFinite(sent) && sent > 0 ? Math.round(sent) : time.minutes;
+      if (!Number.isFinite(sent) || sent <= 0) {
+        // Left blank rather than guessed. The server owns these numbers, and a
+        // guess here would be wrong in the one way that matters.
+        skipped.push(`${time.label} (no time sent)`);
+        continue;
+      }
 
-      setNativeValue(box, String(minutes));
-      filled.push(`${time.label} = ${minutes}`);
+      setNativeValue(box, String(Math.round(sent)));
+      filled.push(`${time.label} = ${Math.round(sent)}`);
       await pause('number');
     }
 
@@ -1020,31 +1212,7 @@
       (ticked ? filled : skipped).push(`send to reviewer${ticked ? '' : ' (would not tick)'}`);
     }
 
-    /*
-     * Handing it in, if that has been asked for.
-     *
-     * Only ever on an explicit true. This is the one action in the whole system
-     * that cannot be undone — after it, a reviewer has the task — so it does not
-     * happen because a field was missing from a message.
-     */
-    let submitted = false;
-    if (msg.auto_submit === true) {
-      const button = $$('button').find((b) => SnorkelBot.normText(SnorkelBot.text(b)).toLowerCase() === 'submit');
-      if (!button) {
-        skipped.push('submit (no Submit button found)');
-      } else if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
-        skipped.push('submit (the button is disabled, so the form is not complete)');
-      } else {
-        // The last click of the whole run, and the one that cannot be undone.
-        await pause('beforeSubmit');
-        SnorkelBot.click(button);
-        // Some builds ask to confirm; some do not. Either is fine.
-        const confirmed = await confirmDialog('Submit', { timeout: 6000 });
-        submitted = true;
-        filled.push(`submitted${confirmed.appeared ? ' and confirmed' : ''}`);
-        await SnorkelBot.sleep(1500);
-      }
-    }
+    const submitted = await handIn(msg.auto_submit === true, filled, skipped);
 
     return {
       filled,

@@ -862,6 +862,52 @@ async function submitCheck(requestId, options) {
 
   if (!page.uid) log(`could not read a UID from ${page.page_url || 'the page'} — continuing`);
 
+  // How long to leave between actions on the form. 1 is the built-in human
+  // pacing; a larger number stretches every gap, without an extension reload.
+  const paceScale = Number(options.pace_scale) > 0 ? Number(options.pace_scale) : 1;
+
+  /*
+   * A task whose verdict ended it takes a different road entirely.
+   *
+   * Answering anything but Fixable removes the upload field, both check buttons
+   * and the confirmation checklist from the page — so there is nothing to
+   * attach, nothing to run and nothing to wait for. One handler fills the short
+   * form and it is done.
+   */
+  if (options.verdict) {
+    progress(requestId, 'verdict_form', `${uid} is ${options.verdict} — filling the form that says so`);
+    const form = await askTab(tab.id, {
+      type: 'SUBMIT_VERDICT_FORM',
+      verdict: options.verdict,
+      answers: options.answers || {},
+      times: options.times || {},
+      pace_scale: paceScale,
+      // Passed through as given. The extension does not decide policy; it is
+      // told, so one dashboard governs every machine.
+      auto_submit: options.auto_submit === true,
+      timeout: 60000,
+    });
+
+    progress(
+      requestId,
+      'form_filled',
+      `${form.filled.length} field(s) filled` +
+        (form.skipped.length ? `, ${form.skipped.length} skipped` : '') +
+        (form.submitted ? ' — SUBMITTED' : '')
+    );
+
+    return {
+      uid,
+      verdict: options.verdict,
+      // No checks ran, and none could have. Said explicitly so the server does
+      // not read an absent result as a failure.
+      checks: [],
+      passed: true,
+      form,
+      submitted: Boolean(form.submitted),
+    };
+  }
+
   /*
    * The page has to be put into the right state first: the check buttons are
    * inside a collapsed accordion, and the re-upload field does not exist at all
@@ -869,9 +915,6 @@ async function submitCheck(requestId, options) {
    * this step there is simply nothing on the page to click or attach to.
    */
   progress(requestId, 'prepare', 'opening the sections and answering the analysis questions');
-  // How long to leave between actions on the form. 1 is the built-in human
-  // pacing; a larger number stretches every gap, without an extension reload.
-  const paceScale = Number(options.pace_scale) > 0 ? Number(options.pace_scale) : 1;
 
   const prepared = await askTab(tab.id, {
     type: 'SUBMIT_PREPARE',

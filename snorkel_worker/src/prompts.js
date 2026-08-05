@@ -198,6 +198,33 @@ export async function rewritePrompt(offenders) {
   return fill(await template('rewrite'), { offenders: list });
 }
 
+/**
+ * The form that goes back with an "invalid" or "valid-as-is" verdict.
+ *
+ * Those two end the task: no corrections, no zip, no platform checks. The run
+ * used to stop at the verdict, which left the form empty and the task waiting
+ * for a person — so this is the turn that produces the answers it wants, and
+ * nothing else.
+ *
+ * The questions come from the schema rather than being written out here, so a
+ * key added there is asked for without touching this file.
+ */
+export async function verdictPrompt({ uid, taskDir, verdict }) {
+  const schema = await schemaForStage(verdict);
+  const questions = Object.entries(schema)
+    .map(([key, spec]) => {
+      const what = spec.enum
+        ? `one of: ${spec.enum.map((v) => `"${v}"`).join(', ')}${spec.list ? ' (any number of them)' : ''}`
+        : spec.number
+          ? 'a number of minutes'
+          : 'a few sentences';
+      return `- ${spec.label || spec.question || key} (${what})`;
+    })
+    .join('\n');
+
+  return fill(await template('verdict'), { uid, task_dir: taskDir, verdict, questions });
+}
+
 /** Asked once a fix is done: what should the next task have known? */
 export async function lessonPrompt() {
   return template('lesson');

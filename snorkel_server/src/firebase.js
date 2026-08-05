@@ -707,7 +707,16 @@ export async function findReadyToSubmit(machine, { excludeNew = false } = {}) {
   // index-free, but keeping it in memory lets the caller see how many were
   // skipped and why, which is the difference between "nothing to do" and
   // "three tasks are stuck waiting on an upload".
-  let eligible = rows.filter((t) => t.file_uploaded === true);
+  /*
+   * A file in Dropbox is what makes a task submittable — except for one whose
+   * verdict ended it. Those have nothing to upload: the run stopped before any
+   * corrections, so the folder is the reviewer's own file, and the form's upload
+   * field is optional. Waiting for a file that will never arrive would leave
+   * them stuck at "ready to submit" forever.
+   */
+  let eligible = rows.filter(
+    (t) => t.file_uploaded === true || t.needs_upload === false
+  );
   const waiting = rows.length - eligible.length;
 
   /*

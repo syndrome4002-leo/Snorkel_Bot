@@ -1,0 +1,22 @@
+You judged this task {{verdict}}, so there are no corrections to make and nothing
+to upload. What is left is the form that goes back with that judgement, and it is
+the only thing the reviewer will read.
+
+Task UID: {{uid}}
+Task folder: {{task_dir}}
+
+Answer these, from what you already read. Do not go back and re-read the task, and
+do not start fixing anything.
+
+{{questions}}
+
+How to write them:
+
+- The reader sees only this form. They do not have your reasoning, they cannot see
+  the checks, and they were not there when you looked at the task. Say what is
+  wrong and where, concretely, naming the file and the specific thing.
+- Short and plain, the way a person filling in a form writes. No markdown, no
+  bullet characters, no "—", and never wrap a sentence onto the next line.
+- Never mention rounds, earlier attempts, feedback, the checks or the judge.
+- "It is invalid" is not a reason. "instruction.md asks for a retry policy the
+  tests never exercise, and the oracle implements a different one" is a reason.

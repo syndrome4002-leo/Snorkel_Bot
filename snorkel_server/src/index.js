@@ -1509,10 +1509,77 @@ const DEFAULT_SUBMIT_EVERY = 3;
  * revisions — but a fixed answer is what is wanted, so a task on its sixth round
  * reports the same 185 as one on its first.
  */
-const FORM_TIME_REVIEW = 45;
-const FORM_TIME_REWRITE = 120;
-const FORM_TIME_ADDITIONAL = 20;
-const FORM_TIME_REVISIONS = 185;
+/*
+ * Ranges, not numbers, and drawn once per task.
+ *
+ * Random because a constant is its own tell: every submission claiming exactly
+ * 45, 120, 20 and 185 minutes says more about the bot than about the work.
+ * Fixed after the first draw because a reviewer sends tasks back, and a figure
+ * that changed between rounds would be claiming the work was done twice.
+ *
+ * The last one is not a range of its own — it is the sum of the other three,
+ * because that is what it is: the total time spent on the task.
+ */
+const FORM_TIME_REVIEW = [40, 60];
+const FORM_TIME_REWRITE = [110, 140];
+const FORM_TIME_ADDITIONAL = [15, 30];
+
+/*
+ * A task that ends at a verdict answers two time fields, and both are picked at
+ * random the first time and then never move.
+ *
+ * Random because a constant is its own tell — every invalid task claiming
+ * exactly 45 and 70 minutes says more about the bot than about the task. Fixed
+ * after that because the reviewer may send it back, and a number that changed
+ * between rounds would be saying the work was done twice.
+ */
+const VERDICT_TIME_REVIEW = [35, 50];
+const VERDICT_TIME_COMPLETE = [60, 80];
+
+const between = ([low, high]) => low + Math.floor(Math.random() * (high - low + 1));
+
+/**
+ * The times for a task, drawn on first use and kept from then on.
+ *
+ * Stored on the task rather than derived from its uid, because a seed would
+ * have to stay stable across every future change to how these are worked out,
+ * and this only has to stay stable across rounds.
+ */
+async function stickyTimes(task, field, draw) {
+  const stored = task[field];
+  if (stored && Object.values(stored).every((v) => Number.isFinite(v))) return stored;
+
+  const times = draw();
+  await patchTask(task.UID, { [field]: times }).catch((err) =>
+    console.warn(`[server] could not store the form times for ${task.UID}: ${err.message}`)
+  );
+  return times;
+}
+
+/** True for a task whose verdict ended it, so there is no file and no checks. */
+const endsAtVerdict = (task) =>
+  task?.triage_verdict === 'invalid' || task?.triage_verdict === 'valid-as-is';
+
+/**
+ * The two times for such a task, chosen once and kept.
+ *
+ * Stored on the task the first time they are needed, so a resubmission after a
+ * reviewer sends it back reports the same figures it did before.
+ */
+const verdictTimesFor = (task) =>
+  stickyTimes(task, 'form_times_verdict', () => ({
+    review: between(VERDICT_TIME_REVIEW),
+    complete: between(VERDICT_TIME_COMPLETE),
+  }));
+
+/** The four a fixable task answers. The last is the sum of the first three. */
+const fixableTimesFor = (task) =>
+  stickyTimes(task, 'form_times', () => {
+    const review = between(FORM_TIME_REVIEW);
+    const rewrite = between(FORM_TIME_REWRITE);
+    const additional = between(FORM_TIME_ADDITIONAL);
+    return { review, rewrite, additional, revisions: review + rewrite + additional };
+  });
 
 /*
  * The two switches that decide how far the bot goes on the form.
@@ -1563,15 +1630,20 @@ async function submitAllowanceLeft() {
   }
 }
 
-function formTimesFor(task) {
+async function formTimesFor(task) {
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
-  return {
-    review: FORM_TIME_REVIEW,
-    rewrite: FORM_TIME_REWRITE,
-    additional: FORM_TIME_ADDITIONAL,
-    revisions: FORM_TIME_REVISIONS,
-    rounds,
-  };
+
+  /*
+   * A verdict form has two time fields, not four, and different numbers behind
+   * them: nothing was rewritten, so the figures the fixable path reports would
+   * be describing work that never happened.
+   */
+  if (endsAtVerdict(task)) {
+    const { review, complete } = await verdictTimesFor(task);
+    return { review, complete, rounds, verdict: task.triage_verdict };
+  }
+
+  return { ...(await fixableTimesFor(task)), rounds };
 }
 let submitTimer = null;
 
@@ -1696,12 +1768,19 @@ async function maybeSubmitCheck() {
         options: {
           uid,
           is_new_task: task.is_new_task === true,
+          /*
+           * The verdict that ended this task, or absent. It picks the whole
+           * shape of what happens on the page: a verdict form has no upload, no
+           * check buttons and no confirmation checklist, because the platform
+           * stops rendering them the moment the answer is not "fixable".
+           */
+          verdict: endsAtVerdict(task) ? task.triage_verdict : null,
           file_url: fileUrl,
           file_name: task.file_name || `${uid}.zip`,
           // Sent up front so the extension can fill the form the moment both
           // checks pass, while the page is already open on the right task.
           answers: task.answers && !Array.isArray(task.answers) ? task.answers : null,
-          times: formTimesFor(task),
+          times: await formTimesFor(task),
           send_to_reviewer: sendToReviewer(),
           auto_submit: maySubmit,
           // Stretches the pauses between actions on the form. Left at 1 unless
@@ -1749,7 +1828,7 @@ async function maybeSubmitCheck() {
           level: 'warn',
         });
       }
-      if (form) await patchTask(uid, { form_filled: { ...form, times: formTimesFor(task) } });
+      if (form) await patchTask(uid, { form_filled: { ...form, times: await formTimesFor(task) } });
 
       /*
        * A submitted task is with a reviewer, so it stops being the new task this
