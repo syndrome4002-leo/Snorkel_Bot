@@ -792,6 +792,35 @@
     return box.tagName.toLowerCase();
   }
 
+  const isSet = (el) =>
+    el.getAttribute('aria-checked') === 'true' || el.getAttribute('data-state') === 'checked';
+
+  /**
+   * Clicks a Radix control until it reaches the state asked for.
+   *
+   * These re-render constantly — the platform's checks run for minutes between
+   * preparing the page and filling it in, and every result that lands rebuilds
+   * part of the form. A click that arrives mid-render is dropped, with no error
+   * and nothing to see. Firing once and reporting success is how a field ends up
+   * wrong on the finished form while the log says it was filled.
+   */
+  async function clickUntil(el, want = true, { attempts = 3, settle = 1200 } = {}) {
+    if (isSet(el) === want) return true;
+
+    for (let i = 0; i < attempts; i++) {
+      SnorkelBot.click(el);
+      const took = await SnorkelBot.waitFor(() => (isSet(el) === want ? true : null), {
+        timeout: settle,
+        interval: 120,
+        label: `the option to become ${want ? 'ticked' : 'unticked'}`,
+      }).catch(() => null);
+      if (took) return true;
+      // A re-render in flight; let it finish before trying again.
+      await SnorkelBot.sleep(400);
+    }
+    return isSet(el) === want;
+  }
+
   async function fillRadio(field, value) {
     const wanted = SnorkelBot.normText(value).toLowerCase();
     const options = $$('button[role="radio"]', field);
@@ -802,10 +831,11 @@
     if (!hit) {
       return { ok: false, why: `no option "${value}" (have: ${options.map((b) => b.getAttribute('value')).join(', ')})` };
     }
-    if (hit.getAttribute('aria-checked') !== 'true') {
-      SnorkelBot.click(hit);
-      await pause('radio');
-    }
+
+    const already = isSet(hit);
+    const took = await clickUntil(hit, true);
+    if (!already) await pause('radio');
+    if (!took) return { ok: false, why: `clicked "${value}" but it did not stay selected` };
     return { ok: true };
   }
 
@@ -815,28 +845,69 @@
     if (!boxes.length) return { ok: false, why: 'no options found' };
 
     const wanted = (values || []).map((v) => SnorkelBot.normText(v).toLowerCase());
-    let ticked = 0;
 
-    for (const box of boxes) {
+    const options = boxes.map((box) => {
       const label = SnorkelBot.normText(
         box.getAttribute('aria-label') || SnorkelBot.text(box) || box.getAttribute('value') || ''
       )
         .replace(/<[^>]*>/g, '')
         .toLowerCase();
-
       // Substring both ways: the stored answers are shortened versions of the
       // option text ("oracle" for "Oracle Solution"), and the option text is
       // sometimes a shortened version of the answer.
-      const want = all || wanted.some((w) => label.includes(w) || w.includes(label));
-      const checked = box.getAttribute('aria-checked') === 'true' || box.getAttribute('data-state') === 'checked';
+      return { box, label, want: all || wanted.some((w) => label.includes(w) || w.includes(label)) };
+    });
 
-      if (want && !checked) {
-        SnorkelBot.click(box);
-        ticked++;
-        await pause('option');
-      }
+    /*
+     * Nothing matched, on a field the caller had an answer for.
+     *
+     * That is a matching failure rather than an empty answer — and now that this
+     * unticks, acting on it would CLEAR the field instead of merely leaving it
+     * short. Left exactly as it is, and reported.
+     */
+    if (!all && !options.some((o) => o.want)) {
+      return {
+        ok: false,
+        ticked: 0,
+        unticked: 0,
+        of: boxes.length,
+        missed: [],
+        why: `none of ${JSON.stringify(values)} matched the options on this page`,
+      };
     }
-    return { ok: true, ticked, of: boxes.length };
+
+    let ticked = 0;
+    let unticked = 0;
+    const missed = [];
+
+    for (const { box, label, want } of options) {
+      /*
+       * The answer is the whole set, not something to add to it.
+       *
+       * A revision re-fills a form that still has last round's boxes ticked, so
+       * anything absent from the answer has to come OFF. Only ever ticking meant
+       * the selection grew every round and ended up claiming more than the
+       * answer said.
+       */
+      if (isSet(box) === want) continue;
+
+      if (await clickUntil(box, want)) {
+        if (want) ticked++;
+        else unticked++;
+      } else {
+        missed.push(`${label.slice(0, 40) || '(unlabelled)'} would not ${want ? 'tick' : 'untick'}`);
+      }
+      await pause('option');
+    }
+
+    return {
+      ok: !missed.length,
+      ticked,
+      unticked,
+      of: boxes.length,
+      missed,
+      why: missed.join(', '),
+    };
   }
 
   /**
@@ -872,7 +943,14 @@
           res.ok ? filled.push(spec.key) : skipped.push(`${spec.key} (${res.why})`);
         } else if (spec.kind === 'multi') {
           const res = await fillMulti(field, Array.isArray(value) ? value : [value]);
-          res.ok ? filled.push(`${spec.key} (${res.ticked} ticked)`) : skipped.push(`${spec.key} (${res.why})`);
+          // Both, when some took and some did not: "3 ticked" alone would hide
+          // a fourth that silently bounced back.
+          if (res.ticked || res.unticked) {
+            filled.push(
+              `${spec.key} (${res.ticked} ticked` + (res.unticked ? `, ${res.unticked} cleared)` : ')')
+            );
+          }
+          if (!res.ok) skipped.push(`${spec.key} (${res.why})`);
         } else {
           const how = await fillText(field, String(value));
           how ? filled.push(`${spec.key} (${how})`) : skipped.push(`${spec.key} (no input in the field)`);
@@ -889,6 +967,7 @@
     if (confirmField) {
       const res = await fillMulti(confirmField, [], { all: true });
       filled.push(`confirmations (${res.ticked}/${res.of} ticked)`);
+      if (!res.ok) skipped.push(`confirmations (${res.why})`);
     } else {
       skipped.push('confirmations (field not on this page)');
     }
