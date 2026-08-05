@@ -195,6 +195,12 @@
           "daily_submit_limit": {
             ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)"
           },
+          "adopt_unknown": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().matches(/^(off|all|listed)$/))"
+          },
+          "adopt_uids": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length < 4000)"
+          },
           "$other": {
             ".validate": true
           }

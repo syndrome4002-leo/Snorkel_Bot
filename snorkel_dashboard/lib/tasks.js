@@ -63,10 +63,10 @@ export function watchTasks(machine, mine, onUpdate, onError, max = 200) {
     q,
     (snapshot) => {
       let rows = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      // Only the over-30 fallback needs filtering here; the other two queries
+      // are already scoped by Firestore.
       if (!machine && !byList) rows = rows.filter((row) => wanted.has(row.machine_id));
-      if (machine || byList || true) {
-        rows.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
-      }
+      rows.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
       onUpdate(rows);
     },
     (err) => onError?.(err)

@@ -80,17 +80,25 @@ export default function Page() {
 
     return watchTasks(
       selected,
+      // "All machines" means the machines on this dashboard, not every task in
+      // the database — another deployment shares the collection.
+      machines,
       (list) => {
         setTasks(list);
         setTasksNote(
-          `${list.length} task${list.length === 1 ? '' : 's'}${selected ? ' on this machine' : ' across all machines'}`
+          `${list.length} task${list.length === 1 ? '' : 's'}` +
+            (selected
+              ? ' on this machine'
+              : machines.length
+                ? ` across ${machines.length} machine${machines.length === 1 ? '' : 's'}`
+                : ' — no machines added yet')
         );
       },
       (err) => {
         setTasksNote(
-          err.code === 'permission-denied'
+          err?.code === 'permission-denied'
             ? 'Firestore rules are blocking this read — deploy firestore.rules.'
-            : `Could not read tasks: ${err.message}`
+            : `Could not read tasks: ${err?.message || err?.code || 'unknown error'}`
         );
       }
     );

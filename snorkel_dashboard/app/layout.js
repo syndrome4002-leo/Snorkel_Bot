@@ -13,7 +13,18 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    /*
+     * The script in <head> below stamps `data-theme` on this element before
+     * React hydrates, so the server HTML ("<html lang=en>") and the live DOM
+     * ("<html lang=en data-theme=dark>") differ by exactly one attribute, and
+     * React warns that the tree did not match.
+     *
+     * That difference is the point: the alternative is applying the theme after
+     * hydration, which is a flash of the wrong colours on every single load.
+     * `suppressHydrationWarning` covers this element's own attributes and
+     * nothing deeper, so a genuine mismatch inside the page still surfaces.
+     */
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link
           rel="icon"

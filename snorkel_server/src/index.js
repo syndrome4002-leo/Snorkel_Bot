@@ -831,7 +831,11 @@ async function maybeAutoStart(reviseCount) {
 /**
  * The unknown rows that are ours to take on.
  *
- * "Ours" is the owner column, which a separate script annotates each row with
+ * Two gates, and both have to open. `adopt_unknown` on the dashboard says
+ * whether to do this at all and whether to do it for everything or only for
+ * UIDs listed by hand; the owner column says which rows could ever qualify.
+ *
+ * "Ours" is that owner column, which a separate script annotates each row with
  * from the shared sheet. Three deliberate refusals:
  *
  *   - no owner on the row means unknown, not ours. The annotation is not the
@@ -842,13 +846,32 @@ async function maybeAutoStart(reviseCount) {
  *     backlog of six would hold it for half an hour.
  */
 function adoptable(unknown, rows) {
+  /*
+   * Off unless somebody turned it on. Taking on work nobody asked for is the
+   * kind of surprise a default should never spring, so an unset value reads as
+   * "leave them alone" rather than as "all".
+   */
+  const mode = String(settings.adopt_unknown || 'off').trim().toLowerCase();
+  if (mode !== 'all' && mode !== 'listed') return [];
+
   const owner = String(settings.sheet_owner || '').trim().toLowerCase();
   if (!owner) return [];
+
+  // Split on anything that is not part of a UID, so a list pasted as lines, as
+  // commas, or as both comes out the same.
+  const listed = new Set(
+    String(settings.adopt_uids || '')
+      .split(/[^0-9a-fA-F-]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  if (mode === 'listed' && !listed.size) return [];
 
   const byUid = new Map((rows || []).map((r) => [String(r.uid || '').toLowerCase(), r]));
   return unknown
     .map((uid) => byUid.get(String(uid).toLowerCase()))
-    .filter((row) => row && String(row.owner || '').trim().toLowerCase() === owner);
+    .filter((row) => row && String(row.owner || '').trim().toLowerCase() === owner)
+    .filter((row) => mode === 'all' || listed.has(String(row.uid).toLowerCase()));
 }
 
 /**
@@ -932,11 +955,14 @@ async function handleRevisionReport(uids, rows = []) {
    */
   const mine = adoptable(unknown, rows);
   if (mine.length) {
+    const mode = String(settings.adopt_unknown || 'off').toLowerCase();
     logEvent(
       '👤',
       'adopt_found',
-      `${mine.length} of ${unknown.length} unknown task(s) are ${settings.sheet_owner}'s — ` +
-        `taking on ${mine[0].uid}` + (mine.length > 1 ? `, the rest next sweep` : '')
+      `${mine.length} of ${unknown.length} unknown task(s) are ${settings.sheet_owner}'s` +
+        (mode === 'listed' ? ' and on the list' : '') +
+        ` — taking on ${mine[0].uid}` +
+        (mine.length > 1 ? ', the rest next sweep' : '')
     );
     try {
       await adoptFromReviseList(mine[0]);

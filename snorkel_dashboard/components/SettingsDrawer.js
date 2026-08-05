@@ -99,6 +99,30 @@ const FIELDS = [
     fallback: false,
   },
   {
+    group: 'Taking on other tasks',
+    key: 'adopt_unknown',
+    type: 'choice',
+    label: 'Tasks in the revise list this system never submitted',
+    help:
+      'Submissions made by hand under the same owner, that have come back for revision. Taking one on downloads it and builds it like a new task, but it goes back through its own "Revise task" row and gets no new sheet row. Only ever tasks whose owner matches the Owner ID above — a row with no owner on it is left alone.',
+    options: [
+      { value: 'off', label: 'Leave them alone' },
+      { value: 'all', label: 'Take on any of them' },
+      { value: 'listed', label: 'Only the UIDs listed below' },
+    ],
+    placeholder: 'off',
+  },
+  {
+    group: 'Taking on other tasks',
+    key: 'adopt_uids',
+    type: 'text',
+    label: 'UIDs to take on',
+    help:
+      'One per line, or separated by commas. Only used when "Only the UIDs listed below" is chosen; anything not on the list is left alone.',
+    multiline: true,
+    placeholder: '0cb4eb47-ea97-4ab8-a541-c4828399407b',
+  },
+  {
     group: 'Worker',
     key: 'static_fix_limit',
     label: 'Static check fix attempts',
@@ -145,7 +169,9 @@ export default function SettingsDrawer({ machine, onClose }) {
           next[field.key] =
             field.type === 'checkbox'
               ? (value?.[field.key] ?? field.fallback ?? false)
-              : (value?.[field.key] ?? '');
+              : field.type === 'choice'
+                ? (value?.[field.key] ?? field.options[0].value)
+                : (value?.[field.key] ?? '');
         }
         return next;
       });
@@ -159,6 +185,17 @@ export default function SettingsDrawer({ machine, onClose }) {
     try {
       const patch = {};
       for (const field of FIELDS) {
+        if (field.type === 'choice') {
+          // Written even when it is the first option, so "off" is a decision on
+          // the record rather than an absence somebody has to guess a default
+          // for — the same reason the checkboxes below are written as booleans.
+          const chosen = String(values[field.key] ?? '').trim();
+          patch[field.key] = field.options.some((o) => o.value === chosen)
+            ? chosen
+            : field.options[0].value;
+          continue;
+        }
+
         if (field.type === 'text') {
           const raw = String(values[field.key] ?? '').trim();
           patch[field.key] = raw || null;
@@ -211,7 +248,40 @@ export default function SettingsDrawer({ machine, onClose }) {
               <div key={group}>
                 <h4 className="group-title">{group}</h4>
                 {FIELDS.filter((field) => field.group === group).map((field) =>
-                  field.type === 'text' ? (
+                  field.type === 'choice' ? (
+                    <div key={field.key} className="setting">
+                      <label htmlFor={field.key}>{field.label}</label>
+                      <p className="muted">{field.help}</p>
+                      <select
+                        id={field.key}
+                        value={values[field.key] ?? field.options[0].value}
+                        onChange={(event) =>
+                          setValues((current) => ({ ...current, [field.key]: event.target.value }))
+                        }
+                      >
+                        {field.options.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : field.type === 'text' && field.multiline ? (
+                    <div key={field.key} className="setting">
+                      <label htmlFor={field.key}>{field.label}</label>
+                      <p className="muted">{field.help}</p>
+                      <textarea
+                        id={field.key}
+                        rows={4}
+                        style={{ width: '100%' }}
+                        value={values[field.key] ?? ''}
+                        onChange={(event) =>
+                          setValues((current) => ({ ...current, [field.key]: event.target.value }))
+                        }
+                        placeholder={field.placeholder}
+                      />
+                    </div>
+                  ) : field.type === 'text' ? (
                     <div key={field.key} className="setting">
                       <label htmlFor={field.key}>{field.label}</label>
                       <p className="muted">{field.help}</p>
