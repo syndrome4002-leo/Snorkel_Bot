@@ -136,6 +136,20 @@
       projectFull: cols.project >= 0 ? texts[cols.project] : '',
       anchor,
       href,
+      /*
+       * Who the row belongs to.
+       *
+       * NOT the platform's markup — a separate script annotates each row from
+       * the shared sheet, which is where `.snorkel-card-owner` comes from. It is
+       * the only way to tell a submission of ours from somebody else's when the
+       * task is not in the database, so an absent one means "unknown owner", and
+       * the server treats unknown as "leave it alone" rather than as a match.
+       */
+      owner: SnorkelBot.normText(text(tr.querySelector('.snorkel-card-owner'))) || null,
+      title:
+        (tr.querySelector('.snorkel-card-task') &&
+          SnorkelBot.normText(tr.querySelector('.snorkel-card-task').getAttribute('title') || '')) ||
+        null,
       // The assignment id, kept because it is what the platform's own URL uses
       // and what any support conversation about a stuck row will quote.
       assignmentId: (href.match(/assignmentId=([0-9a-f-]{36})/i) || [])[1] || null,
@@ -361,7 +375,8 @@
         href: row.href,
         assignmentId: row.assignmentId,
         due: row.due,
-        title: row.uid,
+        owner: row.owner,
+        title: row.title || row.uid,
       })),
       count: rows.length,
       // `cards` keeps the old name the server logs. It tells "nothing to revise"

@@ -294,6 +294,38 @@ async function handleServerMessage(msg) {
     return;
   }
 
+  /*
+   * Take on a task that is in the revise list but was never submitted by this
+   * system — a submission of the same owner's, made by hand.
+   *
+   * The same work as starting a new task (scrape, download, hand the zip over)
+   * with one difference: the way in is that task's own "Revise task" row rather
+   * than the project's "Begin Submission", because the submission already
+   * exists. Everything downstream then treats it as an ordinary build.
+   */
+  if (msg.type === 'adopt_revision') {
+    const requestId = msg.requestId || String(Date.now());
+    if (busy) {
+      return void send({ type: 'result', requestId, ok: false, error: 'Extension is busy.' });
+    }
+    busy = true;
+    try {
+      const result = await adoptRevision(requestId, msg.options || {});
+      send({ type: 'result', requestId, ok: true, ...result });
+    } catch (err) {
+      send({
+        type: 'result',
+        requestId,
+        ok: false,
+        error: String((err && err.message) || err),
+        code: err && err.code,
+      });
+    } finally {
+      busy = false;
+    }
+    return;
+  }
+
   if (msg.type === 'start_sentinel') {
     const requestId = msg.requestId || String(Date.now());
     if (busy) {
@@ -535,6 +567,52 @@ async function runSentinelFlow(requestId, options) {
 }
 
 /**
+ * Opens a revise-list task this system has never seen, and captures it.
+ *
+ * Identical to a new task from the scrape onwards; only the way in differs. The
+ * page UID is checked against the row we asked for, because clicking the wrong
+ * row and downloading somebody else's task is not something you could undo.
+ */
+async function adoptRevision(requestId, options) {
+  const cfg = await getConfig();
+  const uid = String(options.uid || '');
+  if (!uid) throw new Error('adopt_revision needs a uid.');
+  const projectKey = options.projectKey || cfg.projectKey;
+
+  progress(requestId, 'open_home', options.homeUrl || cfg.homeUrl);
+  const tab = await openHome(options.homeUrl || cfg.homeUrl);
+  await sleep(options.paceAfterLoadMs ?? cfg.paceAfterLoadMs);
+
+  progress(requestId, 'click_revise', `${uid} — adopting a task submitted by hand`);
+  await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey, timeout: 90000 });
+
+  try {
+    await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
+  } catch (err) {
+    const stillHome = await getTab(tab.id).then((t) => t && /\/home/i.test(t.url || ''));
+    if (!stillHome) throw err;
+    const failure = new Error(
+      `Clicked "Revise task" for ${uid} but the site stayed on the home page — the row may have ` +
+        `gone from the list.`
+    );
+    failure.code = 'START_UNAVAILABLE';
+    throw failure;
+  }
+
+  await askTab(tab.id, { type: 'WAIT_READY', timeout: 120000 });
+  await sleep(options.paceBeforeCopyMs ?? cfg.paceBeforeCopyMs);
+
+  const page = await askTab(tab.id, { type: 'SUBMIT_PAGE_UID' }).catch(() => ({}));
+  if (page.uid && String(page.uid).toLowerCase() !== uid.toLowerCase()) {
+    throw new Error(
+      `Asked for ${uid} but the page that opened is ${page.uid} — not downloading it.`
+    );
+  }
+
+  return captureCurrentTask(requestId, options, tab, projectKey, { adopted: true });
+}
+
+/**
  * Scrapes and downloads whatever task the tab is already showing.
  *
  * Split out of the flow above so it can also be used when the browser turns out
@@ -669,6 +747,10 @@ async function reportRevisions() {
     send({
       type: 'revisions',
       uids: revisions.map((r) => r.uid),
+      // The rows themselves, so the server can tell one of ours from somebody
+      // else's when the task is not in its database. `uids` stays for the
+      // handler that only ever wanted the list.
+      rows: revisions.map((r) => ({ uid: r.uid, owner: r.owner || null, title: r.title || null })),
       checked_at,
       // Chrome's own schedule, not an assumption about the interval — an alarm
       // that has drifted or been rescheduled still reports the truth.

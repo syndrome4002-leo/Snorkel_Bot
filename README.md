@@ -496,6 +496,38 @@ queued. `pending_tasks` in `/api/status` is the current queue depth.
 
 ---
 
+## Taking on a task somebody submitted by hand
+
+The revise list belongs to the whole account, so most of what is in it was never
+submitted by this system. Those are normally left alone. The exception is a
+submission **under the same owner** — one this person made by hand, that has now
+come back for revision.
+
+    row owner == sheet_owner  and  not in the database   ->  take it on
+
+It is captured exactly like a new task — opened, scraped, its zip downloaded and
+put in Dropbox — so the worker builds it the usual way. Two things differ, and
+both follow from the submission already existing:
+
+| | |
+| --- | --- |
+| how it is submitted | its own **"Revise task"** row, not the project's "Begin Submission" |
+| the tracking sheet | **no new row** — whoever submitted it by hand already added one |
+
+Both come from `adopted: true` on the record, which also leaves `is_new_task`
+false, so the daily new-task cap does not apply to it either.
+
+**The owner comes from a script that is not part of this system.** The platform's
+own markup does not say who a row belongs to; a separate userscript annotates
+each one from the shared sheet, which is where `.snorkel-card-owner` comes from.
+So a row with no owner on it is treated as **not ours** — the annotation may
+simply not have loaded, and the cost of guessing wrong is downloading and
+rewriting somebody else's work. Same for an unset `sheet_owner`: nothing to
+compare against means nothing is adopted.
+
+One per sweep. They share the browser tab with the uploads and the revise check,
+and a backlog of six would hold it for half an hour.
+
 ## The selectors it depends on
 
 Derived from your saved `snorkel_homepage.html` and

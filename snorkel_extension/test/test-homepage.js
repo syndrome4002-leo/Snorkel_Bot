@@ -131,6 +131,43 @@ function load(htmlFile) {
     void bot;
   }
 
+  // ---- the owner, which is what makes a task adoptable --------------------
+  {
+    const { call } = load('snorkel_homepage.html');
+    const listed = await call('LIST_REVISIONS', { projectKey: PROJECT_KEY, timeout: 2000, settle: 0 });
+    const owners = listed.revisions.map((r) => r.owner);
+
+    check(
+      "each row reports whose submission it is",
+      owners.filter(Boolean).length === listed.revisions.length,
+      `got ${JSON.stringify(owners)}`
+    );
+    check(
+      'the owners are read individually, not from the first row',
+      new Set(owners).size >= 3 && owners.includes('Syndrome') && owners.includes('Rabidon'),
+      `got ${JSON.stringify(owners)}`
+    );
+
+    // The same decision the server makes: same owner, and not already known.
+    const known = new Set(['0cb4eb47-ea97-4ab8-a541-c4828399407b', '4418f8ec-a367-4a41-a3ca-914c31b0d67d']);
+    const mine = listed.revisions.filter(
+      (r) => !known.has(r.uid) && String(r.owner || '').toLowerCase() === 'syndrome'
+    );
+    check(
+      "another owner's task is never adoptable",
+      mine.every((r) => r.owner === 'Syndrome') && !mine.some((r) => r.owner === 'Rabidon' || r.owner === 'Dmon'),
+      `would adopt ${JSON.stringify(mine.map((r) => `${r.uid} (${r.owner})`))}`
+    );
+    check(
+      'a row with no owner is not adoptable',
+      listed.revisions
+        .map((r) => ({ ...r, owner: null }))
+        .filter((r) => String(r.owner || '').toLowerCase() === 'syndrome').length === 0,
+      'a missing annotation was treated as a match'
+    );
+    console.log(`        (of ${listed.revisions.length} rows: ${owners.join(', ')})`);
+  }
+
   // ---- "Show more", with a button that actually works ---------------------
   {
     const { clicked, call, dom } = load('snorkel_homepage.html');

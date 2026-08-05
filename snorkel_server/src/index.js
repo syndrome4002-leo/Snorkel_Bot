@@ -828,7 +828,79 @@ async function maybeAutoStart(reviseCount) {
  * Anything else in the list is already in build or already recorded as needing
  * revision, so there is nothing new to fetch.
  */
-async function handleRevisionReport(uids) {
+/**
+ * The unknown rows that are ours to take on.
+ *
+ * "Ours" is the owner column, which a separate script annotates each row with
+ * from the shared sheet. Three deliberate refusals:
+ *
+ *   - no owner on the row means unknown, not ours. The annotation is not the
+ *     platform's markup and may simply not have loaded, and the cost of guessing
+ *     wrong is downloading and rewriting somebody else's task.
+ *   - no `sheet_owner` configured means the same: nothing to compare against.
+ *   - one per sweep. They share the browser tab with everything else, and a
+ *     backlog of six would hold it for half an hour.
+ */
+function adoptable(unknown, rows) {
+  const owner = String(settings.sheet_owner || '').trim().toLowerCase();
+  if (!owner) return [];
+
+  const byUid = new Map((rows || []).map((r) => [String(r.uid || '').toLowerCase(), r]));
+  return unknown
+    .map((uid) => byUid.get(String(uid).toLowerCase()))
+    .filter((row) => row && String(row.owner || '').trim().toLowerCase() === owner);
+}
+
+/**
+ * Takes on one revise-list task that this system never submitted.
+ *
+ * The browser opens it by its own "Revise task" row, scrapes it and downloads
+ * the zip — the same capture a new task gets — and from there it is an ordinary
+ * build. It is marked `adopted` so the two things that differ are handled: the
+ * submission already exists, so it goes back through Revise rather than through
+ * a new start, and it is already in the tracking sheet.
+ */
+async function adoptFromReviseList(row) {
+  const uid = String(row.uid);
+  logEvent('🫱', 'adopt_start', `${uid} is ${row.owner}'s and not in the database — taking it on`, {
+    uid,
+  });
+
+  const captured = await hub.command(
+    'snorkel',
+    { type: 'adopt_revision', options: { uid } },
+    config.submitTimeoutMs
+  );
+
+  if (!captured || !captured.task || !captured.task.UID) {
+    logEvent('⚠️', 'adopt_failed', `${uid}: nothing was captured from the page`, { uid, level: 'warn' });
+    return false;
+  }
+
+  const saved = await saveTask(captured.task, { ...(captured.meta || {}), adopted: true });
+  if (!saved.saved) {
+    logEvent('⚠️', 'adopt_failed', `${uid} could not be saved: ${saved.reason}`, { uid, level: 'warn' });
+    return false;
+  }
+  logEvent('⬇️', 'task_downloaded', `${captured.task.file_name} (${uid}, adopted)`, { uid });
+
+  try {
+    const dropbox = await runDropboxStep(uid, {});
+    if (dropbox.uploaded) {
+      logEvent('☁️', 'task_uploaded', `${dropbox.file.name} -> ${dropbox.task.dropbox_path}`, { uid });
+    }
+  } catch (err) {
+    // The record exists and the file is on disk, so the ordinary upload retry
+    // path can still finish this.
+    logEvent('⚠️', 'task_warn', `${uid} was saved but not uploaded: ${err.message}`, {
+      uid,
+      level: 'warn',
+    });
+  }
+  return true;
+}
+
+async function handleRevisionReport(uids, rows = []) {
   // Reading the list is harmless, but opening task pages to collect feedback is
   // work, and work is what the switch stops.
   if (!systemEnabled) {
@@ -851,6 +923,29 @@ async function handleRevisionReport(uids) {
   if (unknown.length) {
     console.log(`[revisions] ignoring ${unknown.length} not in the database: ${unknown.join(', ')}`);
     logEvent('🙈', 'feedback_skip', `${unknown.length} in the revise list are not this bot's tasks`);
+  }
+
+  /*
+   * One of those may be ours after all — submitted by hand, under the same
+   * owner. Taken on before the feedback collection below, because adopting is
+   * what makes it collectable next time round.
+   */
+  const mine = adoptable(unknown, rows);
+  if (mine.length) {
+    logEvent(
+      '👤',
+      'adopt_found',
+      `${mine.length} of ${unknown.length} unknown task(s) are ${settings.sheet_owner}'s — ` +
+        `taking on ${mine[0].uid}` + (mine.length > 1 ? `, the rest next sweep` : '')
+    );
+    try {
+      await adoptFromReviseList(mine[0]);
+    } catch (err) {
+      logEvent('⚠️', 'adopt_failed', `${mine[0].uid}: ${err.message}`, {
+        uid: mine[0].uid,
+        level: 'warn',
+      });
+    }
   }
 
   if (!wanted.length) {
@@ -1233,7 +1328,7 @@ startStatusHeartbeat(async () => ({
  * so a reading this server asked for collected feedback perfectly well and still
  * left auto-start believing the count was unknown.
  */
-async function applyRevisionReport({ uids = [], checked_at, next_check_at }) {
+async function applyRevisionReport({ uids = [], rows = [], checked_at, next_check_at }) {
   lastRevisionReport = {
     checked_at: checked_at || new Date().toISOString(),
     // The extension reports its own alarm time; a requested check does not
@@ -1246,7 +1341,7 @@ async function applyRevisionReport({ uids = [], checked_at, next_check_at }) {
 
   let outcome = { considered: uids.length, collected: 0 };
   try {
-    outcome = await handleRevisionReport(uids);
+    outcome = await handleRevisionReport(uids, rows);
   } catch (err) {
     logEvent('❌', 'revision_failed', err.message, { level: 'error' });
   }
@@ -1261,6 +1356,10 @@ hub.onRevisions = async (msg) => {
   }
   await applyRevisionReport({
     uids: msg.uids || [],
+    // The rows carry the owner, which is what tells an unknown task of ours
+    // from somebody else's. Absent from an older extension; then nothing is
+    // adopted, which is the right way to be wrong.
+    rows: msg.rows || [],
     checked_at: msg.checked_at,
     next_check_at: msg.next_check_at,
   });
@@ -1313,6 +1412,7 @@ async function requestReviseCount(why) {
     const report_ = await hub.command('snorkel', { type: 'check_revisions' });
     await applyRevisionReport({
       uids: (report_.revisions || []).map((r) => r.uid),
+      rows: report_.revisions || [],
       checked_at: report_.checked_at,
       next_check_at: report_.next_check_at,
     });
@@ -1644,13 +1744,24 @@ async function maybeSubmitCheck() {
           { uid }
         );
 
-        const sheet = await recordSubmission(task, {
-          csvUrl: settings.sheet_csv_url,
-          webhookUrl: settings.sheet_webhook_url,
-          owner: settings.sheet_owner,
-        });
+        /*
+         * An adopted task is already in the sheet — it was put there by whoever
+         * submitted it by hand, under this same owner. Adding another row would
+         * be a duplicate of their entry, not a record of ours.
+         */
+        const sheet = task.adopted
+          ? { appended: false, skipped: true, reason: 'adopted — already in the sheet' }
+          : await recordSubmission(task, {
+              csvUrl: settings.sheet_csv_url,
+              webhookUrl: settings.sheet_webhook_url,
+              owner: settings.sheet_owner,
+            });
 
-        if (sheet.appended) {
+        if (sheet.skipped) {
+          logEvent('📗', 'sheet_skip', `${uid} was submitted by hand originally — no new sheet row`, {
+            uid,
+          });
+        } else if (sheet.appended) {
           logEvent(
             '📗',
             'sheet_row',
@@ -1887,6 +1998,7 @@ watchCommands(async (command, report) => {
     const report_ = await hub.command('snorkel', { type: 'check_revisions' });
     const outcome = await applyRevisionReport({
       uids: (report_.revisions || []).map((r) => r.uid),
+      rows: report_.revisions || [],
       checked_at: report_.checked_at,
       next_check_at: report_.next_check_at,
     });

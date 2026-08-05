@@ -324,7 +324,16 @@ export async function saveTask(task, meta = {}) {
      * "has never been reviewed" and "we have not collected the feedback yet" are
      * different things, and only one of them means the task is new.
      */
-    is_new_task: true,
+    is_new_task: meta.adopted ? false : true,
+    /*
+     * Taken on from the revise list rather than started from the project page:
+     * somebody submitted it by hand, it came back for revision, and the owner
+     * matches ours. Two things follow from it — the submission already exists,
+     * so it is reached by its "Revise task" row rather than by starting a new
+     * one, and it is already in the tracking sheet, so no row is added when it
+     * goes back.
+     */
+    ...(meta.adopted ? { adopted: true, adopted_at: new Date().toISOString() } : {}),
     updated_at: new Date().toISOString(),
   };
 
