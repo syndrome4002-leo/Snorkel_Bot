@@ -315,6 +315,36 @@ async function fetchDifficultyFile(task, taskDir, say) {
 }
 
 /**
+ * Removes a task's folder from this machine.
+ *
+ * Only the folder. The database record and the Dropbox copy are the server's to
+ * clear — this is the one part that can only be done where the files are.
+ *
+ * `findTaskDir` is used rather than a computed path, because a folder unpacked
+ * by hand may not follow the naming convention, and deleting the wrong
+ * directory is not a mistake worth risking to save a lookup.
+ */
+export async function deleteTaskFolder(uid) {
+  const taskDir = await findTaskDir(uid);
+  if (!taskDir) return { deleted: false, reason: 'no folder for it on this machine' };
+
+  /*
+   * A last check that this is what it claims to be. `findTaskDir` matches a
+   * folder merely starting with the uid, and rm -rf on a path that came over the
+   * network deserves one more look than that.
+   */
+  if (!path.basename(taskDir).startsWith(String(uid))) {
+    return { deleted: false, reason: `${taskDir} does not belong to ${uid}` };
+  }
+  if (path.dirname(taskDir) === taskDir) {
+    return { deleted: false, reason: 'refusing to delete a filesystem root' };
+  }
+
+  await rm(taskDir, { recursive: true, force: true });
+  return { deleted: true, path: taskDir };
+}
+
+/**
  * Runs one task through Claude and puts the result back.
  *
  * `task` is the record as it looked *before* being claimed, so `worked_from`

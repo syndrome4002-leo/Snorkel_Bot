@@ -21,7 +21,7 @@ const statusClass = (status) => String(status).trim().toLowerCase().replace(/\s+
  */
 const isWorking = (status) => /^working/i.test(String(status).trim());
 
-function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs, onOpenCheck }) {
+function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs, onOpenCheck, onDelete }) {
   const [open, setOpen] = useState(false);
   const status = task.task_status || '—';
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
@@ -65,6 +65,20 @@ function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs, onOpenCheck })
         <td>{task.file_uploaded ? 'yes' : 'no'}</td>
         <td>{when(task.updated_at)}</td>
         <td className="row-actions">
+          {onDelete ? (
+            <button
+              className="link danger"
+              title={
+                'Throw this task away: its folder on the worker machine, its record here, ' +
+                'and its zip in Dropbox.\n\nThe tracking sheet is left alone — a row there ' +
+                'is the history of what was submitted, and this does not un-submit it.'
+              }
+              onClick={() => onDelete(task)}
+            >
+              delete
+            </button>
+          ) : null}
+
           {check ? (
             <button
               className={`link${check.passed ? '' : ' danger'}`}
@@ -120,7 +134,7 @@ const KINDS = [
   { key: 'revision', label: 'Revisions' },
 ];
 
-export default function TaskTable({ tasks, note, onRefresh, showMachine = false }) {
+export default function TaskTable({ tasks, note, onRefresh, showMachine = false, onDelete }) {
   const [filter, setFilter] = useState('');
   const [kind, setKind] = useState('');
   const [feedbackTask, setFeedbackTask] = useState(null);
@@ -209,6 +223,7 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false 
                   onOpenFeedback={setFeedbackTask}
                   onOpenLogs={setLogsTask}
                   onOpenCheck={setCheckTask}
+                  onDelete={onDelete}
                 />
               ))
             ) : (

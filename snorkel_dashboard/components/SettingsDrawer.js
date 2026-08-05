@@ -86,6 +86,15 @@ const FIELDS = [
   },
   {
     group: 'Submitting',
+    key: 'run_prescriptiveness',
+    type: 'checkbox',
+    fallback: true,
+    label: 'Run the prescriptiveness check',
+    help:
+      'The platform marks this one optional; Static Checks is not, and always runs. Each run is a full platform build, so turning it off is minutes saved per submission — at the cost of not hearing what it would have said.',
+  },
+  {
+    group: 'Submitting',
     key: 'daily_submit_limit',
     label: 'New tasks to submit per day',
     help: 'Counts new tasks only, not revisions. From midnight, across every machine. At the limit a task is still built, uploaded and checked, and the form filled in for you to submit by hand. Empty or 0 means no limit.',

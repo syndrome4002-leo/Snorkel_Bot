@@ -7,7 +7,7 @@
  * nothing needs to be able to reach the server directly.
  */
 
-import { limitToLast, onValue, push, query, ref, serverTimestamp, set, update } from 'firebase/database';
+import { get, limitToLast, onValue, push, query, ref, serverTimestamp, set, update } from 'firebase/database';
 import { rtdb } from './firebase';
 import { scoped } from './workspace';
 
@@ -31,6 +31,35 @@ export const workersPath = () => scoped('workers');
  * A timestamp rather than a flag, so clicking again while the first is still
  * running is a fresh request instead of a write nobody notices.
  */
+/**
+ * Asks every registered worker to delete a task's folder.
+ *
+ * Every worker, because the dashboard does not know which machine holds the
+ * files — a task built on one machine can be revised on another. A worker with
+ * no folder for that uid answers "nothing to remove" and does nothing, so
+ * asking all of them is safe and saves keeping a map nobody would maintain.
+ */
+export async function requestFolderDelete(uid, dropboxPath = null) {
+  const at = new Date().toISOString();
+  const registered = await get(ref(rtdb(), workersPath()));
+  const ids = registered.exists() ? Object.keys(registered.val() || {}) : [];
+  if (!ids.length) return { asked: 0 };
+
+  await Promise.all(
+    ids.map((id) =>
+      set(ref(rtdb(), `${workersPath()}/${id}/delete_request`), {
+        uid,
+        at,
+        // The worker holds the Dropbox credentials, so it clears that copy too.
+        // Sent along because the record is about to go and it is the only place
+        // this path is written down.
+        dropbox_path: dropboxPath || null,
+      }).catch(() => null)
+    )
+  );
+  return { asked: ids.length };
+}
+
 export function refreshWorkerUsage(workerId) {
   return set(ref(rtdb(), `${workersPath()}/${workerId}/refresh_request`), new Date().toISOString());
 }

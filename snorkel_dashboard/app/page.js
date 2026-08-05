@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { firebaseConfigured, missingConfigKeys } from '@/lib/firebase';
-import { watchServerStatus } from '@/lib/commands';
-import { findInBuild, watchTasks } from '@/lib/tasks';
+import { requestFolderDelete, watchServerStatus } from '@/lib/commands';
+import { deleteTask, findInBuild, watchTasks } from '@/lib/tasks';
 import {
   addMachine,
   getSelected,
@@ -106,6 +106,40 @@ export default function Page() {
     // shows: adding one has to widen the list rather than wait for a reload.
   }, [ready, selected, machines]);
 
+  /*
+   * Throwing a task away.
+   *
+   * Three places hold something, and each is cleared by whoever can reach it:
+   * the worker deletes the folder (only that machine has it), the server deletes
+   * the Dropbox copy (only it has the credentials), and the browser deletes the
+   * record. The tracking sheet is deliberately untouched — a row there is the
+   * history of what was submitted, and this does not un-submit anything.
+   *
+   * The record goes last. It carries the Dropbox path and the uid the other two
+   * need, so removing it first would strand both.
+   */
+  const remove_task = useCallback(
+    async (task) => {
+      const uid = String(task.UID || task.id);
+      const ok = window.confirm(
+        `Delete ${uid}?\n\n` +
+          'This removes its folder from the worker machine, its zip from Dropbox, ' +
+          'and its record here.\n\nThe tracking sheet is left alone. This cannot be undone.'
+      );
+      if (!ok) return;
+
+      setTasksNote(`Deleting ${uid}…`);
+      try {
+        await requestFolderDelete(uid, task.dropbox_path || null);
+        await deleteTask(uid);
+        setTasksNote(`${uid} deleted`);
+      } catch (err) {
+        setTasksNote(`Could not delete ${uid}: ${err.message}`);
+      }
+    },
+    []
+  );
+
   const select = useCallback((id) => {
     setSelected(id);
     setSelectedState(id);
@@ -182,7 +216,7 @@ export default function Page() {
           column, the table needs the width. */}
       <div className={selected ? 'workspace' : ''}>
         {selected ? <SystemLogs machine={selected} /> : null}
-        <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} />
+        <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} onDelete={remove_task} />
       </div>
 
       {settingsOpen && selected ? (

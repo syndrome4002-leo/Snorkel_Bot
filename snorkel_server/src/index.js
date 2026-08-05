@@ -1914,6 +1914,12 @@ async function maybeSubmitCheck() {
           answers: task.answers && !Array.isArray(task.answers) ? task.answers : null,
           times: await formTimesFor(task),
           send_to_reviewer: sendToReviewer(),
+          /*
+           * Static Checks is not negotiable — the platform gates on it.
+           * Prescriptiveness is marked optional on the page, and each run is a
+           * full platform build, so the dashboard decides whether to spend one.
+           */
+          run_prescriptiveness: settings.run_prescriptiveness !== false,
           auto_submit: maySubmit,
           // Stretches the pauses between actions on the form. Left at 1 unless
           // somebody has asked for slower.

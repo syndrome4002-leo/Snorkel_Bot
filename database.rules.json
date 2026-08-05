@@ -100,15 +100,28 @@
         ".read": true,
         ".write": false,
         "//": [
-          "A browser may write one thing here: refresh_request, which asks that worker",
-          "to find out its current Claude usage. Everything else under a worker is the",
-          "process reporting on itself, through the Admin SDK, which these rules do not",
-          "apply to."
+          "A browser may write two things here: refresh_request, asking that worker for",
+          "its current Claude usage, and delete_request, asking it to throw a task's",
+          "folder and Dropbox copy away. Everything else under a worker is the process",
+          "reporting on itself through the Admin SDK, which these rules do not apply to."
         ],
         "$workerId": {
           "refresh_request": {
             ".write": true,
             ".validate": "newData.isString() && newData.val().length < 40"
+          },
+          "delete_request": {
+            ".write": true,
+            ".validate": "newData.hasChildren(['uid','at'])",
+            "uid": {
+              ".validate": "newData.isString() && newData.val().length < 64"
+            },
+            "at": {
+              ".validate": "newData.isString() && newData.val().length < 40"
+            },
+            "dropbox_path": {
+              ".validate": "!newData.exists() || newData.isString()"
+            }
           }
         }
       }

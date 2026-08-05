@@ -75,6 +75,39 @@ export function watchUsageRefresh(onRequest) {
   return () => ref.off('value', handler);
 }
 
+/**
+ * Watches for the dashboard asking this worker to delete a task's folder.
+ *
+ * Same one-writable-key arrangement as the usage refresh: a browser may put a
+ * request here and nothing else. The request carries the uid and a timestamp, so
+ * asking twice for the same task is two requests rather than one write nobody
+ * notices.
+ */
+export function watchDeleteRequests(onRequest) {
+  if (!db) return () => {};
+  const ref = db.ref(`${WORKER()}/delete_request`);
+  let handled = null;
+
+  const handler = (snapshot) => {
+    const value = snapshot.val();
+    if (!value || !value.uid || !value.at || value.at === handled) return;
+    handled = value.at;
+    onRequest(value);
+  };
+  ref.on('value', handler);
+  return () => ref.off('value', handler);
+}
+
+/** What came of a delete, for the dashboard and the log. */
+export async function publishDeleteResult(result) {
+  if (!db) return;
+  try {
+    await db.ref(`${WORKER()}/delete_result`).set({ at: new Date().toISOString(), ...result });
+  } catch (err) {
+    console.warn('[rtdb] could not publish the delete result:', err.message);
+  }
+}
+
 /** What came of it, so the dashboard can stop showing a spinner. */
 export async function publishRefreshResult(result) {
   if (!db) return;

@@ -6,7 +6,7 @@
  * refresh button and no request to the server.
  */
 
-import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { firestore } from './firebase';
 
 export const TASKS_COLLECTION = process.env.NEXT_PUBLIC_FIREBASE_COLLECTION || 'Tasks';
@@ -71,4 +71,16 @@ export function watchTasks(machine, mine, onUpdate, onError, max = 200) {
     },
     (err) => onError?.(err)
   );
+}
+
+/**
+ * Removes a task's record.
+ *
+ * Only the record. The folder is the worker's to delete (only that machine has
+ * it) and the tracking sheet is deliberately left alone — a row there is the
+ * history of what was submitted, and deleting a task here does not un-submit
+ * it.
+ */
+export function deleteTask(uid) {
+  return deleteDoc(doc(firestore(), TASKS_COLLECTION, String(uid)));
 }

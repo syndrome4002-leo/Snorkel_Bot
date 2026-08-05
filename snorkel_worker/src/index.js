@@ -13,6 +13,7 @@
 
 import { mkdir } from 'node:fs/promises';
 import { config } from './config.js';
+import { deleteFile } from './dropbox.js';
 import { machineId } from './machine.js';
 import {
   TASK_STATUS_BUILD,
@@ -31,8 +32,10 @@ import {
   initRtdb,
   pushLog,
   setTicker,
+  publishDeleteResult,
   publishRefreshResult,
   startWorkerHeartbeat,
+  watchDeleteRequests,
   watchUsageRefresh,
   watchSettings,
   watchMachineIndex,
@@ -43,7 +46,7 @@ import {
 import { startConnectServer } from './connect.js';
 import { checkClaude } from './claude.js';
 import { dropboxConfigured } from './dropbox.js';
-import { workOnTask, reuploadTask } from './task.js';
+import { deleteTaskFolder, workOnTask, reuploadTask } from './task.js';
 import { readClaudeUsage, refreshClaudeUsage } from './usage.js';
 import { acquireLock, releaseLock, releaseLockSync, workerProcessAlive } from './lock.js';
 
@@ -457,6 +460,48 @@ async function main() {
    * task. The heartbeat above republishes the same stale numbers every ten
    * seconds; only a call to the API makes them newer.
    */
+  /*
+   * The dashboard asking for a task to be thrown away.
+   *
+   * Only the folder is this worker's to remove; the record and the Dropbox copy
+   * are the server's. Split that way because only this machine has the files,
+   * and only the server has the credentials.
+   */
+  watchDeleteRequests(async ({ uid, at, dropbox_path: dropboxPath }) => {
+    log('🗑️', 'delete_folder', `asked to throw ${uid} away`, { uid });
+    try {
+      const result = await deleteTaskFolder(uid);
+
+      /*
+       * And the Dropbox copy, which only a worker or the server can reach. Done
+       * here so one request clears everything outside the database, and reported
+       * separately: a folder deleted with a file left behind is a different
+       * outcome from both gone.
+       */
+      let dropbox = 'none recorded';
+      if (dropboxPath) {
+        try {
+          await deleteFile(dropboxPath);
+          dropbox = `removed ${dropboxPath}`;
+        } catch (err) {
+          dropbox = `could not remove ${dropboxPath}: ${err.message}`;
+        }
+      }
+
+      await publishDeleteResult({ ok: true, uid, requested_at: at, dropbox, ...result });
+      log(
+        result.deleted ? '🗑️' : '➖',
+        'delete_folder_done',
+        (result.deleted ? `removed ${result.path}` : `no folder here — ${result.reason}`) +
+          `; dropbox: ${dropbox}`,
+        { uid }
+      );
+    } catch (err) {
+      await publishDeleteResult({ ok: false, uid, requested_at: at, error: err.message });
+      log('⚠️', 'delete_folder_failed', `${uid}: ${err.message}`, { uid, level: 'warn' });
+    }
+  });
+
   watchUsageRefresh(async (at) => {
     log('🔄', 'usage_refresh', 'asking Anthropic for the current usage figures');
     try {

@@ -670,7 +670,23 @@
     const reopened = await expandSections();
     if (reopened) await SnorkelBot.sleep(600);
 
-    for (const [key, spec] of Object.entries(CHECKS)) {
+    /*
+     * Which checks to run.
+     *
+     * Static Checks is not negotiable — the platform gates on it. Prescriptiveness
+     * is marked optional on the page, so the dashboard decides: a task that would
+     * pass everything else can be held up for minutes by a check nobody is acting
+     * on, and each run is a full platform build.
+     *
+     * Absent means run it, so a command from an older server behaves as it always
+     * did.
+     */
+    const wanted = Object.entries(CHECKS).filter(
+      ([key]) => key !== 'prescriptiveness' || msg.run_prescriptiveness !== false
+    );
+    const skippedChecks = Object.keys(CHECKS).filter((key) => !wanted.some(([k]) => k === key));
+
+    for (const [key, spec] of wanted) {
       await pause('beforeCheck');
       results.push(await runCheck(key, spec, timeout));
     }
@@ -678,6 +694,9 @@
     const failed = results.filter((r) => r.verdict !== 'pass');
 
     return {
+      // Named rather than merely absent, so a task that passed one check reads
+      // as "the other was turned off" instead of "the other never ran".
+      skipped_checks: skippedChecks,
       passed: failed.length === 0,
       results,
       checked_at: new Date().toISOString(),

@@ -986,6 +986,9 @@ async function submitCheck(requestId, options) {
   progress(requestId, 'checks', 'running Check feedback and Check prescriptiveness');
   const checks = await askTab(tab.id, {
     type: 'SUBMIT_RUN_CHECKS',
+    // Passed through as given: the extension does not decide policy, it is told,
+    // so one dashboard governs every machine. Absent means run it.
+    run_prescriptiveness: options.run_prescriptiveness !== false,
     pace_scale: paceScale,
     checkTimeout: options.checkTimeout || 600000,
   });
