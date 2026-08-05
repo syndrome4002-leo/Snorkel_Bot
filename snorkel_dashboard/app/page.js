@@ -12,13 +12,14 @@ import {
   setSelected,
   watchMachines,
 } from '@/lib/machines';
-import MachinePicker from '@/components/MachinePicker';
+import { MachineAdd, MachineList } from '@/components/MachinePicker';
 import StatusPills from '@/components/StatusPills';
 import StartTask from '@/components/StartTask';
 import SettingsDrawer from '@/components/SettingsDrawer';
 import SystemLogs from '@/components/SystemLogs';
 import ClaudeUsage from '@/components/ClaudeUsage';
 import SystemSwitch from '@/components/SystemSwitch';
+import ThemeToggle from '../components/ThemeToggle';
 import TaskTable from '@/components/TaskTable';
 
 /** Shown only when .env.local has not been filled in — a setup problem, not a login. */
@@ -135,41 +136,35 @@ export default function Page() {
 
   return (
     <>
+      {/*
+        Everything you DO is in the top bar; everything that is merely true is in
+        the bottom one. Starting a task, opening settings and adding a machine
+        are actions, so they live up here beside the master switch.
+      */}
       <header>
         <h1>🤿 Bot</h1>
         {selected ? <StatusPills status={status} /> : <span className="muted">All machines</span>}
+
+        <span className="header-actions">
+          {selected ? (
+            <StartTask
+              machine={selected}
+              serverOnline={Boolean(status?.online)}
+              inBuildTask={inBuildTask}
+              taskInFlight={Boolean(status?.task_in_flight)}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
+          ) : (
+            <span className="muted header-hint">
+              {machines.length ? 'Pick a machine below to start a task' : 'Add a machine to start tasks'}
+            </span>
+          )}
+          <MachineAdd onAdd={add} note={machineNote} />
+        </span>
+
         <SystemSwitch />
+        <ThemeToggle />
       </header>
-
-      <MachinePicker
-        machines={machines}
-        selected={selected}
-        statuses={statuses}
-        note={machineNote}
-        onSelect={select}
-        onAdd={add}
-        onRemove={remove}
-      />
-
-      {selected ? (
-        <StartTask
-          machine={selected}
-          serverOnline={Boolean(status?.online)}
-          inBuildTask={inBuildTask}
-          taskInFlight={Boolean(status?.task_in_flight)}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
-      ) : (
-        <section className="card">
-          <p className="muted">
-            {machines.length
-              ? 'Pick a machine above to start a task on it.'
-              : 'Add a machine above to start tasks on it.'}
-          </p>
-        </section>
-      )}
-
-      <ClaudeUsage />
 
       {/* Logs on the left, tasks on the right: the logs are a narrow running
           column, the table needs the width. */}
@@ -181,6 +176,26 @@ export default function Page() {
       {settingsOpen && selected ? (
         <SettingsDrawer machine={selected} onClose={() => setSettingsOpen(false)} />
       ) : null}
+
+      {/*
+        The bottom bar: what is true rather than what you can do. Fixed, so where
+        it sits in the tree does not affect the layout — but last is where it
+        belongs in reading and tab order. `body` carries matching bottom padding
+        so the last card is never underneath it.
+      */}
+      <footer className="usage-bar">
+        <ClaudeUsage />
+        <div className="bar-machines">
+          <span className="usage-title">Machines</span>
+          <MachineList
+            machines={machines}
+            selected={selected}
+            statuses={statuses}
+            onSelect={select}
+            onRemove={remove}
+          />
+        </div>
+      </footer>
     </>
   );
 }

@@ -14,6 +14,13 @@ function when(iso) {
 /** "in build" would otherwise become two class names. */
 const statusClass = (status) => String(status).trim().toLowerCase().replace(/\s+/g, '-');
 
+/*
+ * The one status that means something is happening right now: Claude has the
+ * folder open. Everything else is a task waiting its turn, and a row that
+ * animates while nothing is being done to it is a lie told cheerfully.
+ */
+const isWorking = (status) => /^working/i.test(String(status).trim());
+
 function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs, onOpenCheck }) {
   const [open, setOpen] = useState(false);
   const status = task.task_status || '—';
@@ -25,7 +32,14 @@ function TaskRow({ task, showMachine, onOpenFeedback, onOpenLogs, onOpenCheck })
 
   return (
     <>
-      <tr className={task.is_new_task === true ? 'pinned' : undefined}>
+      <tr
+        className={
+          [task.is_new_task === true ? 'pinned' : '', isWorking(status) ? 'working-row' : '']
+            .filter(Boolean)
+            .join(' ') || undefined
+        }
+        title={isWorking(status) ? 'Claude has this task open' : undefined}
+      >
         <td className="mono">{task.UID}</td>
         {showMachine ? <td className="mono">{task.machine_id || '—'}</td> : null}
         <td className="mono">{task.file_name || '—'}</td>

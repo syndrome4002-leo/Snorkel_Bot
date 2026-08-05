@@ -1,54 +1,179 @@
+/*
+ * Colour, in three layers.
+ *
+ *   :root                     light, and the default
+ *   @media prefers-dark       what the machine asks for
+ *   :root[data-theme="…"]     what the person asked for, which wins over both
+ *
+ * The last layer is why the attribute selectors repeat the whole palette rather
+ * than only the dark one: choosing "light" on a machine set to dark has to
+ * override the media query, so it needs the same specificity going the other
+ * way.
+ */
 :root {
-  color-scheme: light dark;
-  --bg: #f6f7f9;
-  --card: #fff;
-  --line: #dfe3e8;
-  --text: #1b1f24;
-  --muted: #6b7480;
+  color-scheme: light;
+
+  --bg: #f4f6f8;
+  --bg-sunk: #eceff3;
+  --card: #ffffff;
+  --line: #dde2e8;
+  --line-soft: #e8ecf1;
+  --text: #16191d;
+  --muted: #667080;
   --accent: #2563eb;
-  --ok: #1e9e5a;
-  --warn: #b7791f;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --ok: #1a8f52;
+  --ok-soft: rgba(26, 143, 82, 0.12);
+  --warn: #a86a12;
+  --warn-soft: rgba(168, 106, 18, 0.13);
   --bad: #c5382f;
+  --bad-soft: rgba(197, 56, 47, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-md: 0 4px 14px -4px rgba(16, 24, 40, 0.14);
+  --shadow-lg: 0 18px 48px -12px rgba(16, 24, 40, 0.3);
+
+  --radius: 10px;
+  --radius-sm: 7px;
+  --hover: rgba(16, 24, 40, 0.05);
+  --press: rgba(16, 24, 40, 0.09);
 }
+
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14171c;
-    --card: #1c2027;
-    --line: #2c323b;
-    --text: #e7eaee;
-    --muted: #97a1ad;
+    color-scheme: dark;
+
+    --bg: #0f1216;
+    --bg-sunk: #0b0e11;
+    --card: #171b21;
+    --line: #262c35;
+    --line-soft: #1f242b;
+    --text: #e6eaef;
+    --muted: #98a2b0;
+    --accent: #5b8def;
+    --accent-soft: rgba(91, 141, 239, 0.16);
+    --ok: #3fbc77;
+    --ok-soft: rgba(63, 188, 119, 0.15);
+    --warn: #d9a441;
+    --warn-soft: rgba(217, 164, 65, 0.16);
+    --bad: #e5675c;
+    --bad-soft: rgba(229, 103, 92, 0.16);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 20px 52px -12px rgba(0, 0, 0, 0.65);
+
+    --hover: rgba(255, 255, 255, 0.06);
+    --press: rgba(255, 255, 255, 0.1);
   }
+}
+
+/* Chosen explicitly — beats the media query whichever way it points. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --bg-sunk: #eceff3;
+  --card: #ffffff;
+  --line: #dde2e8;
+  --line-soft: #e8ecf1;
+  --text: #16191d;
+  --muted: #667080;
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --ok: #1a8f52;
+  --ok-soft: rgba(26, 143, 82, 0.12);
+  --warn: #a86a12;
+  --warn-soft: rgba(168, 106, 18, 0.13);
+  --bad: #c5382f;
+  --bad-soft: rgba(197, 56, 47, 0.12);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-md: 0 4px 14px -4px rgba(16, 24, 40, 0.14);
+  --shadow-lg: 0 18px 48px -12px rgba(16, 24, 40, 0.3);
+  --hover: rgba(16, 24, 40, 0.05);
+  --press: rgba(16, 24, 40, 0.09);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f1216;
+  --bg-sunk: #0b0e11;
+  --card: #171b21;
+  --line: #262c35;
+  --line-soft: #1f242b;
+  --text: #e6eaef;
+  --muted: #98a2b0;
+  --accent: #5b8def;
+  --accent-soft: rgba(91, 141, 239, 0.16);
+  --ok: #3fbc77;
+  --ok-soft: rgba(63, 188, 119, 0.15);
+  --warn: #d9a441;
+  --warn-soft: rgba(217, 164, 65, 0.16);
+  --bad: #e5675c;
+  --bad-soft: rgba(229, 103, 92, 0.16);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 20px 52px -12px rgba(0, 0, 0, 0.65);
+  --hover: rgba(255, 255, 255, 0.06);
+  --press: rgba(255, 255, 255, 0.1);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  padding: 0 0 3rem;
+  /* Enough for the fixed usage bar plus a little air. */
+  padding: 0 0 76px;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Only the surfaces cross-fade when the theme changes; leaving it on
+     everything makes the switch look like a slow page load. */
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
+/* Sticky, so the system switch and the status pills stay reachable however far
+   down the log you are. */
 header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding: 16px 20px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--line);
-  background: var(--card);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  box-shadow: var(--shadow-sm);
 }
-header h1 { font-size: 18px; margin: 0; margin-right: auto; }
+header h1 {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+  margin-right: auto;
+}
 
-h2 { font-size: 15px; margin: 0; }
+h2 { font-size: 15px; margin: 0; letter-spacing: -0.005em; }
 
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 16px;
   margin: 16px 20px;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+
+/* One reading column on a wide screen. Full-width tables of eight columns are
+   readable; full-width prose at 2560px is not. */
+@media (min-width: 1500px) {
+  .card,
+  header > * { max-width: none; }
+  .card { margin-inline: max(20px, calc((100vw - 1440px) / 2)); }
 }
 
 .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -59,65 +184,153 @@ h2 { font-size: 15px; margin: 0; }
 
 button {
   font: inherit;
+  font-weight: 500;
   padding: 7px 14px;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
 }
-button:hover { background: rgba(128, 128, 128, 0.12); }
+button:hover { background: var(--hover); border-color: color-mix(in srgb, var(--line) 60%, var(--text)); }
+button:active { background: var(--press); transform: translateY(0.5px); }
+button:disabled { opacity: 0.5; cursor: default; }
+button:disabled:hover { background: transparent; border-color: var(--line); }
+
+/* One visible focus ring for everything, and only for the keyboard. */
+:where(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
   font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
-button.primary:hover { filter: brightness(1.08); }
-button.primary:disabled { opacity: 0.55; cursor: default; filter: none; }
+button.primary:hover { filter: brightness(1.08); border-color: var(--accent); }
+button.primary:disabled { opacity: 0.55; cursor: default; filter: none; box-shadow: none; }
 button.link {
   border: 0;
   padding: 4px 6px;
   color: var(--muted);
   font-size: 12px;
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
+button.link:hover { color: var(--text); background: transparent; }
 
-input {
+input,
+select,
+textarea {
   font: inherit;
   padding: 6px 9px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunk);
   color: inherit;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+input:hover,
+select:hover,
+textarea:hover { border-color: color-mix(in srgb, var(--line) 55%, var(--text)); }
+input:focus,
+select:focus,
+textarea:focus { background: var(--card); }
+
+/* --- theme toggle --- */
+.theme-toggle {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-sunk);
+}
+.theme-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+}
+.theme-option:hover { background: var(--hover); border-color: transparent; color: var(--text); }
+.theme-option.active {
+  background: var(--card);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+/* The labels are a nicety; below the fold of a narrow window the icons carry it. */
+@media (max-width: 640px) {
+  .theme-label { display: none; }
+  .theme-option { padding: 5px 9px; }
 }
 
 .pills { display: flex; gap: 6px; flex-wrap: wrap; }
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   font-size: 12px;
-  padding: 3px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--line);
+  background: var(--bg-sunk);
   white-space: nowrap;
 }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.ok { background: var(--ok); }
-.dot.bad { background: var(--bad); }
-.dot.warn { background: var(--warn); }
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: 0 0 auto;
+}
+/* A halo rather than a bigger dot: it reads as a live indicator at 7px without
+   taking any more room in a crowded header. */
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.dot.bad { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+.dot.warn { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
 
 .steps { margin: 12px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
 .steps li { margin: 2px 0; }
 .steps li.done { color: var(--text); }
 
-.table-wrap { overflow-x: auto; margin-top: 10px; }
+.table-wrap {
+  overflow-x: auto;
+  margin-top: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+/* Sticky, so the columns stay named while a long list scrolls under them. */
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-sunk);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+tbody tr { transition: background-color 0.1s ease; }
+tbody tr:hover > td { background: var(--hover); }
+tbody tr:last-child > td { border-bottom: 0; }
 td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-tr.details td { background: rgba(128, 128, 128, 0.06); }
+tr.details td { background: var(--bg-sunk); }
+tr.details:hover > td { background: var(--bg-sunk); }
 pre {
   margin: 0;
   white-space: pre-wrap;
@@ -131,33 +344,66 @@ pre {
 .badge {
   display: inline-block;
   font-size: 11px;
-  padding: 2px 8px;
+  font-weight: 500;
+  padding: 2px 9px;
   border-radius: 999px;
   border: 1px solid var(--line);
+  white-space: nowrap;
 }
-.badge.in-build { border-color: var(--warn); color: var(--warn); }
+.badge.in-build { border-color: transparent; background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 
-/* New tasks sit at the top of the table. A left edge marks where the pinned
-   block ends, so it is clear they are pinned rather than merely first. */
-tr.pinned > td {
-  background: rgba(47, 133, 90, 0.06);
-}
-tr.pinned > td:first-child {
-  box-shadow: inset 3px 0 0 var(--ok, #2f855a);
-}
+/* --- a row that is being worked right now --- */
 
-/* Whether a task was started fresh or came back from a reviewer. Filled rather
-   than outlined, so it does not compete with the status badge beside it. */
-.badge.kind-new {
+.badge.working\.\. {
   border-color: transparent;
-  background: rgba(47, 133, 90, 0.16);
-  color: var(--ok, #2f855a);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 600;
 }
-.badge.kind-revision {
-  border-color: transparent;
-  background: rgba(128, 128, 128, 0.14);
-  color: var(--muted);
+
+/*
+ * A row being worked, shown by the row itself rather than by anything in it.
+ *
+ * The sweep is on the <tr>, not on each <td>: a gradient per cell would restart
+ * at every column boundary and read as six separate flickers instead of one
+ * light passing along the row. Table cells paint over their row, so the cells of
+ * a working row are made transparent to let it through — which also keeps the
+ * pinned marker, because that is a box-shadow rather than a background.
+ */
+tr.working-row {
+  background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 14%, transparent) 45%,
+      color-mix(in srgb, var(--accent) 14%, transparent) 55%,
+      transparent 100%
+    ),
+    linear-gradient(var(--accent-soft), var(--accent-soft));
+  background-size: 55% 100%, 100% 100%;
+  background-repeat: no-repeat, no-repeat;
+  animation: working-sweep 2.4s linear infinite;
+}
+tr.working-row > td { background: transparent; }
+tr.working-row:hover > td { background: var(--hover); }
+/* A marker of its own on the first column, so a working row is identifiable at
+   the instant the sweep is off its edge. */
+tr.working-row > td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+tr.working-row.pinned > td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent), inset 6px 0 0 var(--ok);
+}
+
+@keyframes working-sweep {
+  from { background-position: -60% 0, 0 0; }
+  to { background-position: 160% 0, 0 0; }
+}
+
+/* The tint alone still says the row is being worked; only the travelling part is
+   motion, so only that is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  tr.working-row {
+    animation: none;
+    background-image: linear-gradient(var(--accent-soft), var(--accent-soft));
+  }
 }
 
 .gate {
@@ -174,32 +420,93 @@ tr.pinned > td:first-child {
 .gate input { width: 100%; }
 .gate button { width: 100%; margin-top: 12px; }
 
-/* --- machine picker --- */
-.machines { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+/* --- top bar actions --- */
+
+/*
+ * The doing half of the header. Pushed to its own group so the master switch and
+ * the theme toggle stay hard right however wide the actions get, and allowed to
+ * shrink before they do — a long machine id in the input should squeeze the
+ * input, not push the switch off the end.
+ */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.header-hint { font-size: 12px; }
+
+.start-task { position: relative; display: flex; align-items: center; gap: 8px; }
+.start-note { font-size: 12px; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/*
+ * A bar cannot grow paragraphs, so when a run has something to say it drops down
+ * underneath the button rather than pushing the page around. Anchored to the
+ * button, above the cards, and scrollable in case a run says a lot.
+ */
+.start-detail {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 25;
+  width: max(320px, 100%);
+  max-height: 50vh;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+}
+.start-detail p { margin: 0 0 8px; }
+.start-detail p:last-child { margin-bottom: 0; }
+.start-detail .steps { margin-top: 0; }
+
+.machine-add { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.machine-add input { width: min(240px, 34vw); font-size: 13px; padding: 5px 9px; }
+.machine-add button { padding: 5px 11px; font-size: 13px; }
+.machine-add-note { display: none; }
+
+/* --- machines, in the bottom bar --- */
+.machines { display: flex; align-items: center; gap: 6px; }
 
 .machine {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: transparent;
+  border-radius: 999px;
+  background: var(--bg-sunk);
   padding: 0;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
-.machine.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.machine.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 
 .machine-main,
 button.machine {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   border: 0;
   background: transparent;
-  padding: 7px 12px;
-  border-radius: 8px;
+  padding: 4px 11px;
+  border-radius: 999px;
   text-align: left;
+  font-size: 12px;
+  color: inherit;
 }
+.machine-main:hover,
+button.machine:hover { background: var(--hover); }
 .machine-name { font-weight: 600; }
+.machine-remove { padding: 3px 8px 3px 2px; font-size: 13px; text-decoration: none; }
+.machine-empty { font-style: italic; }
 .machine-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
@@ -208,7 +515,6 @@ button.machine {
 
 /* --- feedback + row actions --- */
 .row-actions { display: flex; gap: 4px; white-space: nowrap; }
-.badge.needs-revision { border-color: var(--bad); color: var(--bad); }
 
 .group-title {
   font-size: 12px;
@@ -225,15 +531,22 @@ button.machine {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.42);
+  background: rgba(8, 11, 15, 0.5);
+  backdrop-filter: blur(2px);
   z-index: 50;
+  animation: fade-in 0.14s ease;
   /* The drawer sits against the right edge, full height. */
   display: flex;
   justify-content: flex-end;
 }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes slide-in { from { transform: translateX(14px); opacity: 0.6; } }
+
 .modal {
   background: var(--card);
   border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  animation: slide-in 0.18s ease;
   width: min(680px, 100%);
   height: 100%;
   display: flex;
@@ -281,7 +594,7 @@ button.machine {
   border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 10px;
-  background: rgba(128, 128, 128, 0.05);
+  background: var(--bg-sunk);
 }
 .check-card { border-left-color: var(--warn); }
 .check-card.is-empty { border-left-color: var(--line); opacity: 0.65; }
@@ -318,7 +631,12 @@ button.machine {
   border-radius: 999px;
   border: 1px solid var(--line);
 }
-.chip.active { border-color: var(--accent); color: var(--accent); }
+.chip.active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
 .follow { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
 
 .logs {
@@ -326,10 +644,22 @@ button.machine {
   max-height: 340px;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 6px 4px;
-  background: rgba(128, 128, 128, 0.05);
+  background: var(--bg-sunk);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
+.logs::-webkit-scrollbar { width: 10px; height: 10px; }
+.logs::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+  /* Inset by a border rather than a narrower track, so the thumb grows on
+     hover without the content shifting. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.logs::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
 .log {
   display: grid;
   grid-template-columns: 5.5rem 1.6rem 10rem 1fr;
@@ -339,7 +669,7 @@ button.machine {
   font-size: 12px;
   border-radius: 5px;
 }
-.log:hover { background: rgba(128, 128, 128, 0.1); }
+.log:hover { background: var(--hover); }
 .log-time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .log-emoji { font-size: 14px; text-align: center; }
 .log-event {
@@ -348,8 +678,10 @@ button.machine {
   color: var(--muted);
 }
 .log-msg { word-break: break-word; }
-.log-warn { background: rgba(183, 121, 31, 0.12); }
-.log-error { background: rgba(197, 56, 47, 0.14); }
+/* A left edge rather than a filled row: the stream is long, and a wash of
+   colour over twenty lines is harder to scan than a marked margin. */
+.log-warn { background: var(--warn-soft); box-shadow: inset 2px 0 0 var(--warn); }
+.log-error { background: var(--bad-soft); box-shadow: inset 2px 0 0 var(--bad); }
 .log-error .log-msg { color: var(--bad); }
 
 /* A task's own history: two processes write into it, usually from two different
@@ -422,8 +754,8 @@ button.machine {
   margin-top: -1px;
   border: 1px solid var(--line);
   border-top: 0;
-  border-radius: 0 0 8px 8px;
-  background: rgba(128, 128, 128, 0.09);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: var(--bg-sunk);
   overflow: hidden;
 }
 .ticker {
@@ -434,8 +766,9 @@ button.machine {
   font-size: 12px;
   color: var(--muted);
 }
-.ticker + .ticker { border-top: 1px solid var(--line); }
-.logs { border-radius: 8px 8px 0 0; }
+.ticker + .ticker { border-top: 1px solid var(--line-soft); }
+.ticker .log-emoji { font-size: 13px; }
+.logs { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
 
 /* A failed platform check is the one thing in a row you want to notice. */
 .link.danger { color: var(--bad); font-weight: 600; }
@@ -448,7 +781,7 @@ button.machine {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  background: rgba(128, 128, 128, 0.08);
+  background: var(--bg-sunk);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 10px 12px;
@@ -462,34 +795,165 @@ button.machine {
 /* --- Claude usage meters --- */
 .meter { margin-top: 12px; }
 .meter-track {
+  display: block;
   height: 8px;
-  border-radius: 999px;
-  background: rgba(128, 128, 128, 0.18);
+  background: var(--press);
   overflow: hidden;
   margin: 5px 0 4px;
+  /* Square. A pill-shaped track rounds the fill away to nothing at low
+     percentages, which is exactly where reading it accurately matters. */
+  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
-.meter-fill { height: 100%; background: var(--ok); transition: width 240ms ease; }
+/*
+ * `display: block` is not optional: the fill is a <span>, and an inline element
+ * ignores both height and width — so the bar sat empty however high the figure
+ * beside it read.
+ */
+.meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+  border-radius: 0;
+  transition: width 240ms ease;
+}
 .meter-fill.warn { background: var(--warn); }
 .meter-fill.bad { background: var(--bad); }
 .pill.muted { color: var(--muted); }
-.usage-figure { font-size: 13px; font-variant-numeric: tabular-nums; }
-.worker-card { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
-.worker-card:first-of-type { border-top: 0; }
+.usage-figure { font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+
+/* --- the usage bar, pinned along the bottom --- */
+
+/*
+ * A gauge rather than a record: it answers "how much is left" at a glance, so
+ * it stays put instead of being scrolled to. Same glass treatment as the header
+ * it mirrors, and `body` carries matching bottom padding so the last card is
+ * never underneath it.
+ */
+/* Claude on the left, machines on the right, each scrolling within its own half
+   so a long list of either never pushes the other off the bar. */
+.usage-group { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 auto; }
+.bar-machines {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+  flex: 0 1 auto;
+}
+.bar-machines::-webkit-scrollbar { display: none; }
+
+.usage-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--card) 90%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px);
+  box-shadow: 0 -2px 12px -6px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+}
+
+.usage-title {
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+/* Scrolls sideways rather than wrapping: a bar that grows a second row moves
+   everything above it, which is the one thing a fixed bar must not do. */
+.usage-workers {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.usage-workers::-webkit-scrollbar { display: none; }
+
+.usage-worker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.usage-worker + .usage-worker {
+  border-left: 1px solid var(--line);
+  padding-left: 22px;
+}
+
+.usage-name { display: inline-flex; align-items: center; gap: 7px; }
+.usage-name strong { font-weight: 600; }
+.usage-name .muted { font-variant-numeric: tabular-nums; }
+
+.usage-windows { display: inline-flex; align-items: center; gap: 16px; }
+
+/* Fixed columns, so two windows line up under each other and the bar does not
+   jitter as "resets in 3 days" becomes "resets in 47 minutes". */
+.usage-window {
+  display: grid;
+  grid-template-columns: 1.6rem 84px 2.6rem auto;
+  align-items: center;
+  gap: 7px;
+}
+.usage-window-label { color: var(--muted); font-variant-numeric: tabular-nums; }
+.usage-window .meter-track { height: 6px; width: 84px; margin: 0; }
+.usage-reset { font-size: 11px; }
+
+.usage-running {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+.usage-when { cursor: default; opacity: 0.6; }
+/* A gauge that has not been written for hours still draws a full bar, which
+   reads as current. Fading it is the cheapest way to say otherwise. */
+.usage-worker.stale .usage-windows { opacity: 0.55; }
+.usage-worker.stale .usage-when { color: var(--warn); opacity: 1; }
+.usage-none { font-style: italic; }
+
+@media (max-width: 1100px) {
+  /* The machine names alone; the gauges keep the room. */
+  .bar-machines .usage-title { display: none; }
+  .bar-machines { padding-left: 12px; }
+}
+
+@media (max-width: 820px) {
+  .usage-bar { gap: 10px; padding: 7px 12px; }
+  .usage-title,
+  .usage-reset { display: none; }
+  .usage-window { grid-template-columns: 1.6rem 56px 2.6rem; }
+  .usage-window .meter-track { width: 56px; }
+}
 
 /* The master switch. Loud when off, because "off" is the surprising state. */
 .sys-switch { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
 .sys-switch.off {
   border-color: var(--bad);
   color: var(--bad);
-  background: rgba(197, 56, 47, 0.1);
+  background: var(--bad-soft);
 }
 
 /* The per-round scorecard in the feedback log: what the previous revision
    fixed, failed to fix, and caused. The last of those is the one worth a
    colour — it means the bot made the task worse. */
 .scorecard {
-  border: 1px solid var(--line, #2a2f3a);
+  border: 1px solid var(--line);
   border-left-width: 3px;
+  border-left-color: var(--line);
+  background: var(--bg-sunk);
   border-radius: 6px;
   padding: 8px 10px;
   margin: 8px 0 14px;
@@ -498,9 +962,7 @@ button.machine {
   gap: 4px;
   font-size: 12px;
 }
-.scorecard.regressed {
-  border-left-color: #e5534b;
-}
+.scorecard.regressed { border-left-color: var(--bad); }
 .score-row {
   display: flex;
   gap: 8px;
@@ -515,6 +977,6 @@ button.machine {
   flex: 1 1 auto;
   word-break: break-word;
 }
-.score-row.good .score-items { color: #3fb950; }
-.score-row.warn .score-items { color: #d29922; }
-.score-row.bad .score-items { color: #e5534b; }
+.score-row.good .score-items { color: var(--ok); }
+.score-row.warn .score-items { color: var(--warn); }
+.score-row.bad .score-items { color: var(--bad); }

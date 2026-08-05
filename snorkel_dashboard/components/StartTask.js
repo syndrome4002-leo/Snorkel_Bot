@@ -73,67 +73,79 @@ export default function StartTask({ machine, serverOnline, inBuildTask, taskInFl
 
   const reached = command ? STEPS.findIndex(([key]) => key === command.step) : -1;
 
+  const note =
+    command?.status === 'succeeded'
+      ? `done — ${command.file_name} (${command.uid})`
+      : command?.status === 'failed'
+        ? 'failed'
+        : command?.status === 'expired'
+          ? 'expired — the server was not running'
+          : command?.status === 'pending'
+            ? 'queued — waiting for the server to pick it up'
+            : command
+              ? `running — ${STEPS.find(([key]) => key === command.step)?.[1] || command.step}`
+              : '';
+
+  /*
+   * Anything worth saying beyond the button itself. Collected here because the
+   * buttons now live in the top bar, and a bar cannot grow paragraphs — so when
+   * there is something to say it drops down underneath instead of pushing the
+   * page around.
+   */
+  const detail = [];
+  if (inBuildTask) {
+    detail.push(
+      <p key="in-build">
+        <strong>{inBuildTask.UID}</strong> is still in build. Finish and upload it before starting
+        another.
+      </p>
+    );
+  } else if (taskInFlight) {
+    detail.push(<p key="in-flight">A task is being started on this machine.</p>);
+  }
+  if (command?.error_code === 'START_UNAVAILABLE') {
+    detail.push(
+      <p key="unavailable">
+        Snorkel did not hand out a task. That usually means a daily limit, an empty queue, or
+        somebody else took the assignment — try again later.
+      </p>
+    );
+  }
+  if (!serverOnline) {
+    detail.push(
+      <p key="offline">
+        The server is offline. You can still queue a task — it will be picked up when the server
+        comes back, as long as that is within 10 minutes.
+      </p>
+    );
+  }
+  if (command) {
+    detail.push(
+      <ol key="steps" className="steps">
+        {STEPS.map(([key, label], index) => (
+          <li key={key} className={reached >= index ? 'done' : ''}>
+            {label}
+          </li>
+        ))}
+      </ol>
+    );
+  }
+  if (command?.error) detail.push(<p key="cmd-error" className="error">{command.error}</p>);
+  if (error) detail.push(<p key="error" className="error">{error}</p>);
+
   return (
-    <section className="card">
-      <div className="row">
-        <button className="primary" onClick={start} disabled={busy}>
-          {busy ? 'Running…' : 'Start new task'}
-        </button>
+    <div className="start-task">
+      <button className="primary" onClick={start} disabled={busy}>
+        {busy ? 'Running…' : 'Start new task'}
+      </button>
 
-        <button onClick={onOpenSettings} title="Auto-start and other machine settings">
-          Settings
-        </button>
+      <button onClick={onOpenSettings} title="Auto-start and other machine settings">
+        Settings
+      </button>
 
-        <span className="muted">
-          {command?.status === 'succeeded'
-            ? `done — ${command.file_name} (${command.uid})`
-            : command?.status === 'failed'
-              ? 'failed'
-              : command?.status === 'expired'
-                ? 'expired — the server was not running'
-                : command?.status === 'pending'
-                  ? 'queued — waiting for the server to pick it up'
-                  : command
-                    ? `running — ${STEPS.find(([key]) => key === command.step)?.[1] || command.step}`
-                    : ''}
-        </span>
-      </div>
+      {note ? <span className="muted start-note">{note}</span> : null}
 
-      {inBuildTask ? (
-        <p className="muted">
-          <strong>{inBuildTask.UID}</strong> is still in build. Finish and upload it before starting
-          another.
-        </p>
-      ) : taskInFlight ? (
-        <p className="muted">A task is being started on this machine.</p>
-      ) : null}
-
-      {command?.error_code === 'START_UNAVAILABLE' ? (
-        <p className="muted">
-          Snorkel did not hand out a task. That usually means a daily limit, an empty queue, or
-          somebody else took the assignment — try again later.
-        </p>
-      ) : null}
-
-      {!serverOnline ? (
-        <p className="muted">
-          The server is offline. You can still queue a task — it will be picked up when the server
-          comes back, as long as that is within 10 minutes.
-        </p>
-      ) : null}
-
-      {command ? (
-        <ol className="steps">
-          {STEPS.map(([key, label], index) => (
-            <li key={key} className={reached >= index ? 'done' : ''}>
-              {label}
-            </li>
-          ))}
-        </ol>
-      ) : null}
-
-      {command?.error ? <p className="error">{command.error}</p> : null}
-      {error ? <p className="error">{error}</p> : null}
-    </section>
+      {detail.length ? <div className="start-detail muted">{detail}</div> : null}
+    </div>
   );
 }
