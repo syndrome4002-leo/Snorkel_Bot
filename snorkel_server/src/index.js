@@ -2045,6 +2045,9 @@ function lanAddresses() {
 // another PC. That is also why the token warning below matters.
 server.listen(config.port, () => {
   console.log(`[server] machine id: ${machineId()}`);
+  // A mismatch is otherwise invisible: this server would watch a switch nobody
+  // is turning, and its dashboard would be turning one nobody is watching.
+  console.log(`[server] workspace:  ${config.workspace}`);
   console.log(`[server] dashboard:  http://localhost:${config.port}`);
   for (const address of lanAddresses()) {
     console.log(`[server]             http://${address}:${config.port}   <- from another PC`);

@@ -9,7 +9,7 @@
     "Anyone who knows this database URL can therefore read the command history",
     "and queue a task. That is the accepted trade-off for a login-free dashboard.",
     "",
-    "The server uses the Admin SDK, which bypasses rules entirely — these only",
+    "The server uses the Admin SDK, which bypasses rules entirely \u2014 these only",
     "constrain browsers.",
     "",
     "Two things are still locked down, because they are correctness rather than",
@@ -17,35 +17,34 @@
     "and a command cannot be rewritten once the server has claimed it, which",
     "would otherwise corrupt a run in progress."
   ],
-
   "rules": {
     ".read": false,
     ".write": false,
-
     "commands": {
       ".read": true,
-
       "$commandId": {
         ".read": true,
         ".write": "!data.exists() || data.child('status').val() == 'pending'",
-
         ".validate": "newData.hasChildren(['type', 'status', 'requested_at'])",
-
-        "type": { ".validate": "newData.val() == 'start_new_task' || newData.val() == 'mark_sent' || newData.val() == 'check_revisions'" },
+        "type": {
+          ".validate": "newData.val() == 'start_new_task' || newData.val() == 'mark_sent' || newData.val() == 'check_revisions'"
+        },
         "status": {
           ".validate": "newData.val() == 'pending' || newData.val() == 'running' || newData.val() == 'succeeded' || newData.val() == 'failed' || newData.val() == 'expired'"
         },
-        "requested_at": { ".validate": "newData.isString()" },
-        "$other": { ".validate": true }
+        "requested_at": {
+          ".validate": "newData.isString()"
+        },
+        "$other": {
+          ".validate": true
+        }
       }
     },
-
     "server": {
       "//": "Published by the server; browsers only read it.",
       ".read": true,
       ".write": false
     },
-
     "task_logs": {
       "//": [
         "One log stream per task UID, written by both snorkel_server and",
@@ -55,51 +54,81 @@
       ".read": true,
       ".write": false
     },
-
     "system": {
       "//": [
         "The master switch, read by every server and worker.",
         "",
         "Off means take no new work. Anything already running is left to",
-        "finish — a Claude session killed halfway is wasted, and a browser",
-        "abandoned mid-upload leaves a task in a state nobody asked for."
+        "finish \u2014 a Claude session killed halfway is wasted, and a browser",
+        "abandoned mid-upload leaves a task in a state nobody asked for.",
+        "",
+        "Scoped by workspace: one Firebase project can carry several independent",
+        "set-ups, and they must not share this. $workspace matches the",
+        "NEXT_PUBLIC_WORKSPACE / WORKSPACE setting of the dashboard, server and",
+        "worker that belong together. \"default\" is what a deployment that sets",
+        "nothing already is."
       ],
-      ".read": true,
-      ".write": true,
-      "enabled": { ".validate": "newData.isBoolean()" },
-      "changed_at": { ".validate": "!newData.exists() || newData.isString()" },
-      "$other": { ".validate": true }
+      "$workspace": {
+        ".read": true,
+        ".write": true,
+        "enabled": {
+          ".validate": "newData.isBoolean()"
+        },
+        "changed_at": {
+          ".validate": "!newData.exists() || newData.isString()"
+        },
+        "$other": {
+          ".validate": true
+        }
+      }
     },
-
     "workers": {
       "//": [
         "One entry per snorkel_worker, keyed by the machine it runs on.",
         "",
         "Shared rather than nested under a machine, because a worker works for",
-        "machines it is not itself one of — there is no machine branch it",
-        "naturally belongs to. Browsers only read it."
+        "machines it is not itself one of \u2014 there is no machine branch it",
+        "naturally belongs to. Browsers only read it.",
+        "",
+        "Scoped by workspace: one Firebase project can carry several independent",
+        "set-ups, and they must not share this. $workspace matches the",
+        "NEXT_PUBLIC_WORKSPACE / WORKSPACE setting of the dashboard, server and",
+        "worker that belong together. \"default\" is what a deployment that sets",
+        "nothing already is."
       ],
-      ".read": true,
-      ".write": false
+      "$workspace": {
+        ".read": true,
+        ".write": false
+      }
     },
-
     "machines_index": {
       "//": [
         "The machines being worked, added from the dashboard.",
         "",
         "Read by snorkel_worker to decide whose tasks to pick up, so it is",
         "shared rather than per-browser. Removing an entry stops the worker",
-        "taking that machine's tasks."
+        "taking that machine's tasks.",
+        "",
+        "Scoped by workspace: one Firebase project can carry several independent",
+        "set-ups, and they must not share this. $workspace matches the",
+        "NEXT_PUBLIC_WORKSPACE / WORKSPACE setting of the dashboard, server and",
+        "worker that belong together. \"default\" is what a deployment that sets",
+        "nothing already is."
       ],
-      ".read": true,
-      ".write": true,
-      "$machineId": {
-        ".validate": "newData.hasChild('added_at') || !newData.exists()",
-        "added_at": { ".validate": "newData.isString()" },
-        "$other": { ".validate": true }
+      "$workspace": {
+        ".read": true,
+        ".write": true,
+        "$machineId": {
+          ".validate": "newData.hasChild('added_at') || !newData.exists()",
+          "added_at": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": true
+          }
+        }
       }
     },
-
     "machines": {
       "$machineId": {
         "commands": {
@@ -113,48 +142,73 @@
             "status": {
               ".validate": "newData.val() == 'pending' || newData.val() == 'running' || newData.val() == 'succeeded' || newData.val() == 'failed' || newData.val() == 'expired'"
             },
-            "requested_at": { ".validate": "newData.isString()" },
-            "$other": { ".validate": true }
+            "requested_at": {
+              ".validate": "newData.isString()"
+            },
+            "$other": {
+              ".validate": true
+            }
           }
         },
-
         "status": {
           "//": "Published by the server.",
           ".read": true,
           ".write": false
         },
-
         "settings": {
           "//": "Written from the dashboard, read by the server.",
           ".read": true,
           ".write": true,
-          "revise_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
-          "try_new_task_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
-          "check_revise_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
-          "submit_check_every_min": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
-          "worker_max_concurrent": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
-          "static_fix_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)" },
-          "send_to_reviewer": { ".validate": "!newData.exists() || newData.isBoolean()" },
-          "sheet_owner": { ".validate": "!newData.exists() || newData.isString()" },
-          "sheet_csv_url": { ".validate": "!newData.exists() || newData.isString()" },
-          "sheet_webhook_url": { ".validate": "!newData.exists() || newData.isString()" },
-          "auto_submit": { ".validate": "!newData.exists() || newData.isBoolean()" },
-          "daily_submit_limit": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)" },
-          "$other": { ".validate": true }
+          "revise_limit": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)"
+          },
+          "try_new_task_every_min": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)"
+          },
+          "check_revise_every_min": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)"
+          },
+          "submit_check_every_min": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)"
+          },
+          "worker_max_concurrent": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)"
+          },
+          "static_fix_limit": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1)"
+          },
+          "send_to_reviewer": {
+            ".validate": "!newData.exists() || newData.isBoolean()"
+          },
+          "sheet_owner": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "sheet_csv_url": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "sheet_webhook_url": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "auto_submit": {
+            ".validate": "!newData.exists() || newData.isBoolean()"
+          },
+          "daily_submit_limit": {
+            ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)"
+          },
+          "$other": {
+            ".validate": true
+          }
         },
-
         "logs": {
           "//": "Written by the server only; the dashboard reads the tail.",
           ".read": true,
           ".write": false
         },
-
         "ticker": {
-          "//": "One line, overwritten in place — the countdown to the next check.",
+          "//": "One line, overwritten in place \u2014 the countdown to the next check.",
           ".read": true,
           ".write": false
         },
-
         "worker": {
           "//": "Published by snorkel_worker: how many tasks Claude has open.",
           ".read": true,

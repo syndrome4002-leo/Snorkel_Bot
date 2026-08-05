@@ -334,6 +334,12 @@ async function main() {
   await acquireLock();
 
   console.log(`[worker] machine ${machineId()} (pid ${process.pid})`);
+  /*
+   * Said out loud because a mismatch is invisible otherwise: a worker on the
+   * wrong workspace reads an empty machine list and reports "nothing to do"
+   * forever, which looks exactly like a quiet day.
+   */
+  console.log(`[worker] workspace ${config.worker.workspace}`);
   console.log(`[worker] work dir ${config.workDir}`);
   if (config.extraTaskDirs.length) console.log(`[worker] also searching ${config.extraTaskDirs.join(', ')}`);
 

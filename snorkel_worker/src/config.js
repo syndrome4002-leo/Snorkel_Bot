@@ -113,6 +113,17 @@ export const config = {
      */
     handleRevisions: bool(process.env.HANDLE_REVISIONS, true),
 
+    /*
+     * Which deployment this worker belongs to.
+     *
+     * One Firebase project can carry several independent set-ups. They share a
+     * database, but they must not share a machine list — otherwise this worker
+     * picks up the other set-up's tasks, on a machine whose folders it does not
+     * have. Must match NEXT_PUBLIC_WORKSPACE in its dashboard and WORKSPACE in
+     * its server; "default" is what an existing deployment already is.
+     */
+    workspace: (process.env.WORKSPACE || 'default').trim() || 'default',
+
     /**
      * Take work belonging to any machine rather than only this one. Off by
      * default: the machine that built a task is the one whose download folder

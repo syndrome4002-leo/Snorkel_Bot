@@ -9,6 +9,7 @@
 
 import { limitToLast, onValue, push, query, ref, serverTimestamp, set, update } from 'firebase/database';
 import { rtdb } from './firebase';
+import { scoped } from './workspace';
 
 // Everything is scoped by machine so several machines can share one project.
 export const commandsPath = (machine) => `machines/${machine}/commands`;
@@ -16,7 +17,8 @@ export const statusPath = (machine) => `machines/${machine}/status`;
 export const settingsPath = (machine) => `machines/${machine}/settings`;
 export const logsPath = (machine) => `machines/${machine}/logs`;
 export const tickerPath = (machine) => `machines/${machine}/ticker`;
-export const workersPath = () => 'workers';
+/* Scoped, so one deployment's usage bar does not show another's workers. */
+export const workersPath = () => scoped('workers');
 
 /** Queues a command for one machine. Returns its id so the caller can watch it. */
 async function queue(machine, type, extra = {}) {

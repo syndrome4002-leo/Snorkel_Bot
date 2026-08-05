@@ -20,26 +20,53 @@ export function findInBuild(tasks) {
 }
 
 /**
- * Live task list, newest first. Pass a machine id to see only that machine's
- * work, or '' for all of them.
+ * Live task list, newest first.
+ *
+ * `machine` is one machine id, or '' for all of them — where "all" means every
+ * machine on THIS dashboard's list, not every task in the database. The Tasks
+ * collection is shared by every deployment in the Firebase project, so an
+ * unfiltered read shows another set-up's work as if it were yours. `mine` is
+ * that list, and an empty one shows nothing rather than everything.
  *
  * Filtering by machine deliberately sorts in the browser instead of asking
  * Firestore to. A where() plus an orderBy() on a different field needs a
  * composite index created by hand, and this list is small enough that it is not
  * worth making you click through that.
  */
-export function watchTasks(machine, onUpdate, onError, max = 200) {
+export function watchTasks(machine, mine, onUpdate, onError, max = 200) {
   const tasks = collection(firestore(), TASKS_COLLECTION);
+  const list = Array.isArray(mine) ? mine.filter(Boolean) : [];
+
+  if (!machine && !list.length) {
+    // No machines on this dashboard: nothing of ours to show. Reporting zero is
+    // right; falling back to an unfiltered read would show everyone else's.
+    onUpdate([]);
+    return () => {};
+  }
+
+  /*
+   * Firestore's `in` takes at most 30 values. Past that the query is dropped and
+   * the filtering happens in the browser — still scoped, just less efficient,
+   * which is the right trade at a size nobody has yet reached.
+   */
+  const byList = !machine && list.length <= 30;
 
   const q = machine
     ? query(tasks, where('machine_id', '==', machine), limit(max))
-    : query(tasks, orderBy('updated_at', 'desc'), limit(max));
+    : byList
+      ? query(tasks, where('machine_id', 'in', list), limit(max))
+      : query(tasks, orderBy('updated_at', 'desc'), limit(max));
+
+  const wanted = new Set(list);
 
   return onSnapshot(
     q,
     (snapshot) => {
-      const rows = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      if (machine) rows.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+      let rows = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      if (!machine && !byList) rows = rows.filter((row) => wanted.has(row.machine_id));
+      if (machine || byList || true) {
+        rows.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+      }
       onUpdate(rows);
     },
     (err) => onError?.(err)

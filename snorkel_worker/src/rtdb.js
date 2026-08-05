@@ -31,7 +31,7 @@ const TICKER = () => `machines/${machineId()}/ticker`;
  * exactly what the dashboard did. `/workers` is where you look when you want to
  * know whether a worker exists at all.
  */
-const WORKER = () => `workers/${machineId()}`;
+const WORKER = () => `workers/${config.worker.workspace}/${machineId()}`;
 
 /**
  * The master switch. One node for the whole system, not per machine.
@@ -40,11 +40,11 @@ const WORKER = () => `workers/${machineId()}`;
  * killing a Claude session halfway wastes it, and abandoning a browser mid
  * upload leaves a task in a state nobody chose.
  */
-const SYSTEM = 'system';
+const SYSTEM = () => `system/${config.worker.workspace}`;
 
 export function watchSystem(onChange) {
   if (!db) return () => {};
-  const ref = db.ref(SYSTEM);
+  const ref = db.ref(SYSTEM());
   // Absent means on. A system that switched itself off because nobody had ever
   // touched the setting would be a poor surprise.
   const handler = (snapshot) => onChange((snapshot.val() || {}).enabled !== false);
@@ -52,8 +52,15 @@ export function watchSystem(onChange) {
   return () => ref.off('value', handler);
 }
 
-/** The machines the dashboard has been told to work. Shared, not per-machine. */
-const MACHINE_INDEX = 'machines_index';
+/*
+ * The machines the dashboard has been told to work.
+ *
+ * Scoped to the workspace: shared by this deployment's dashboard and worker,
+ * and by nothing else. Two set-ups in one Firebase project reading the same
+ * list is how a worker ends up trying to build a task whose folder is on
+ * somebody else's computer.
+ */
+const MACHINE_INDEX = () => `machines_index/${config.worker.workspace}`;
 
 /**
  * One stream per task, keyed by UID rather than by machine.
@@ -155,7 +162,7 @@ export function watchSettings(onChange) {
  */
 export function watchMachineIndex(onChange) {
   if (!db) return () => {};
-  const ref = db.ref(MACHINE_INDEX);
+  const ref = db.ref(MACHINE_INDEX());
   const handler = (snapshot) => {
     const rows = [];
     snapshot.forEach((child) => {
@@ -171,7 +178,7 @@ export function watchMachineIndex(onChange) {
 /** One-shot read of the same list, for the check script. */
 export async function readMachineIndex() {
   if (!db) return [];
-  const snapshot = await db.ref(MACHINE_INDEX).once('value');
+  const snapshot = await db.ref(MACHINE_INDEX()).once('value');
   const ids = [];
   snapshot.forEach((child) => {
     ids.push(child.key);

@@ -20,6 +20,7 @@ import SystemLogs from '@/components/SystemLogs';
 import ClaudeUsage from '@/components/ClaudeUsage';
 import SystemSwitch from '@/components/SystemSwitch';
 import ThemeToggle from '../components/ThemeToggle';
+import WorkspacePicker from '@/components/WorkspacePicker';
 import TaskTable from '@/components/TaskTable';
 
 /** Shown only when .env.local has not been filled in — a setup problem, not a login. */
@@ -93,7 +94,9 @@ export default function Page() {
         );
       }
     );
-  }, [ready, selected]);
+    // `machines` is in here because it now decides what the all-machines view
+    // shows: adding one has to widen the list rather than wait for a reload.
+  }, [ready, selected, machines]);
 
   const select = useCallback((id) => {
     setSelected(id);
@@ -162,6 +165,7 @@ export default function Page() {
           <MachineAdd onAdd={add} note={machineNote} />
         </span>
 
+        <WorkspacePicker />
         <SystemSwitch />
         <ThemeToggle />
       </header>

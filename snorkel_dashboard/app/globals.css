@@ -241,6 +241,28 @@ input:focus,
 select:focus,
 textarea:focus { background: var(--card); }
 
+/* --- which deployment this dashboard is showing --- */
+.workspace-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--bg-sunk);
+  font-size: 12px;
+  color: var(--muted);
+}
+.workspace-chip:hover { color: var(--text); }
+.workspace-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.workspace-edit { display: inline-flex; align-items: center; gap: 6px; }
+.workspace-edit input { width: 150px; font-size: 12px; padding: 4px 9px; }
+.workspace-edit button { padding: 4px 10px; font-size: 12px; }
+
 /* --- theme toggle --- */
 .theme-toggle {
   display: inline-flex;

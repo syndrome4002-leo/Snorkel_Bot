@@ -44,11 +44,11 @@ const TASK_LOGS = (uid) => `task_logs/${uid}`;
  * killing a Claude session halfway wastes it, and abandoning a browser mid
  * upload leaves a task in a state nobody chose.
  */
-const SYSTEM = 'system';
+const SYSTEM = () => `system/${config.workspace}`;
 
 export function watchSystem(onChange) {
   if (!db) return () => {};
-  const ref = db.ref(SYSTEM);
+  const ref = db.ref(SYSTEM());
   // Absent means on. A system that switched itself off because nobody had ever
   // touched the setting would be a poor surprise.
   const handler = (snapshot) => onChange((snapshot.val() || {}).enabled !== false);

@@ -22,6 +22,16 @@ const resolveFromServerRoot = (p) => (p ? (path.isAbsolute(p) ? p : path.resolve
 export const config = {
   port: Number(process.env.PORT || 8787),
 
+  /*
+   * Which deployment this server belongs to.
+   *
+   * One Firebase project can carry several independent set-ups. They share a
+   * database, but not a master switch — otherwise turning one off stops the
+   * other. Must match NEXT_PUBLIC_WORKSPACE in its dashboard and WORKSPACE in
+   * its worker; "default" is what an existing deployment already is.
+   */
+  workspace: (process.env.WORKSPACE || 'default').trim() || 'default',
+
   /** Shared secret the extension must present as ?token= on the WS URL. Empty = no auth. */
   botToken: process.env.BOT_TOKEN || '',
 
