@@ -238,7 +238,14 @@ export async function lessonPrompt() {
  * folder, and putting the text back in front of the model invites it to redo
  * them, which is how a revision undoes the round before it.
  */
-export async function revisionPrompt({ uid, taskDir, feedbacks, applied = [], lessons = '' }) {
+export async function revisionPrompt({
+  uid,
+  taskDir,
+  feedbacks,
+  applied = [],
+  lessons = '',
+  difficultyFile = null,
+}) {
   const rounds = Array.isArray(feedbacks) ? feedbacks : [];
   const latest = rounds[rounds.length - 1] || null;
   const notes = reviewerNotes(latest);
@@ -255,6 +262,13 @@ export async function revisionPrompt({ uid, taskDir, feedbacks, applied = [], le
     scorecard: scorecard(rounds),
     history: roundHistory(rounds, applied),
     lessons: lessons ? `\n${lessons}` : '',
+    difficulty_file: difficultyFile
+      ? `\nThe platform's own difficulty check results are in the task folder as\n` +
+        `${difficultyFile} — the agent simulation and the per-verifier statistics\n` +
+        `behind the Difficulty Check summary above. Read it before changing anything\n` +
+        `the difficulty check complains about: the summary says what failed, this says\n` +
+        `why.\n`
+      : '',
   });
 }
 

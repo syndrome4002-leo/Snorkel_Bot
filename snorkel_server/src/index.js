@@ -22,6 +22,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
@@ -983,6 +984,40 @@ async function adoptFromReviseList(row) {
   return true;
 }
 
+/**
+ * Puts a downloaded difficulty artefact where the worker can reach it.
+ *
+ * Named after the task rather than kept as the platform named it, because the
+ * platform's name says nothing about which task it belongs to and Dropbox is
+ * one flat folder.
+ *
+ * Never fails the sweep. The file is optional and the feedback it accompanies
+ * is already stored; losing it costs the next revision some context, not the
+ * round.
+ */
+async function stashDifficultyFile(uid, file) {
+  const name = `difficulty_${uid}${path.extname(file.name || '') || '.zip'}`;
+  try {
+    const uploaded = await uploadFile(file.path, { fileName: name });
+    await patchTask(uid, {
+      difficulty_file: {
+        name,
+        dropbox_path: uploaded.dropbox_path,
+        original_name: file.name || null,
+        bytes: file.bytes || null,
+        at: new Date().toISOString(),
+      },
+    });
+    logEvent('📐', 'difficulty_file', `${uid}: ${file.name || name} kept for the next revision`, { uid });
+
+    // The browser's copy has served its purpose; the worker takes it from
+    // Dropbox now.
+    await rm(file.path, { force: true }).catch(() => {});
+  } catch (err) {
+    logEvent('⚠️', 'difficulty_file_failed', `${uid}: ${err.message}`, { uid, level: 'warn' });
+  }
+}
+
 async function handleRevisionReport(uids, rows = []) {
   // Reading the list is harmless, but opening task pages to collect feedback is
   // work, and work is what the switch stops.
@@ -1071,6 +1106,18 @@ async function handleRevisionReport(uids, rows = []) {
 
     stored++;
     logEvent('📝', 'feedback_saved', `feedback stored for ${item.uid}`, { uid: item.uid });
+
+    /*
+     * The difficulty check results, on their way to the worker.
+     *
+     * The browser downloaded them onto THIS machine; the task folder they
+     * belong in is on whichever machine the worker runs on. Dropbox is how
+     * everything else crosses that gap, so it is how this does too — the worker
+     * fetches it into the folder before the revision starts.
+     */
+    if (item.difficulty_file && item.difficulty_file.path) {
+      await stashDifficultyFile(item.uid, item.difficulty_file);
+    }
 
     /*
      * What the round says about the revision before it. A regression gets its

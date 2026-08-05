@@ -447,6 +447,51 @@ async function openHome(homeUrl, timeout = 120000) {
 // ---------------------------------------------------------- downloads ----
 
 /**
+ * Downloads the difficulty check results for the task on screen, if there are
+ * any.
+ *
+ * Returns what Chrome saved and where, or null. Null covers every ordinary
+ * reason there is no file — the system has not run the task yet, the field is
+ * absent, the button is disabled — and those are not worth failing a feedback
+ * collection over.
+ */
+async function grabDifficultyFile(requestId, tab, uid) {
+  // Armed before the click: chrome.downloads.onCreated fires immediately, and a
+  // listener added afterwards misses it.
+  const capture = armDownloadCapture(30000);
+  let asked;
+  try {
+    asked = await askTab(tab.id, { type: 'CLICK_DIFFICULTY_DOWNLOAD' });
+  } catch (err) {
+    capture.cancel();
+    log(`difficulty results for ${uid}: ${err.message}`);
+    return null;
+  }
+
+  if (!asked || !asked.clicked) {
+    capture.cancel();
+    log(`difficulty results for ${uid}: ${asked ? asked.why : 'no answer from the page'}`);
+    return null;
+  }
+
+  const item = await capture.promise;
+  if (!item) {
+    log(`difficulty results for ${uid}: the button was clicked but no download started`);
+    return null;
+  }
+
+  const done = await waitForDownloadComplete(item.id).catch(() => null);
+  const saved = (done && done.filename) || item.filename || null;
+  if (!saved) {
+    log(`difficulty results for ${uid}: the download did not finish`);
+    return null;
+  }
+
+  progress(requestId, 'difficulty_file', `${uid} — ${basename(saved)}`);
+  return { path: saved, name: basename(saved), bytes: (done && done.fileSize) || null };
+}
+
+/**
  * Arms a one-shot listener BEFORE the download button is clicked, so the
  * chrome.downloads event cannot be missed. Resolves with the DownloadItem, or
  * null if nothing started within the timeout.
@@ -1023,8 +1068,20 @@ async function collectFeedback(requestId, uids, options) {
       await sleep(beforeCopy);
 
       const res = await askTab(tab.id, { type: 'COPY_FEEDBACK' });
+
+      /*
+       * The difficulty check artefact, if the platform has attached one.
+       *
+       * Taken here because the page is already open on this task and will not
+       * be again — the alternative is a second navigation per task. Failure is
+       * never fatal: the file is optional, and feedback without it is still
+       * worth having.
+       */
+      const difficulty = await grabDifficultyFile(requestId, tab, uid);
+
       collected.push({
         uid,
+        difficulty_file: difficulty,
         // The page's own UID is kept when it disagrees with the card's, so a
         // mismatch is visible in the data rather than silently wrong.
         page_uid: res.uid || null,

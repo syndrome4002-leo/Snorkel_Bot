@@ -182,6 +182,13 @@ async function zipToUpload(task, taskDir) {
   const zips = [];
   for (const entry of await readdir(taskDir, { withFileTypes: true })) {
     if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.zip') continue;
+    /*
+     * Never the difficulty artefact, however new it is. It is deleted before we
+     * get here, but a run that died between fetching and packing would leave one
+     * behind — and uploading the platform's own check results as the task is not
+     * a mistake worth leaving one failure away.
+     */
+    if (/^difficulty_/i.test(entry.name)) continue;
     const full = path.join(taskDir, entry.name);
     zips.push({ name: entry.name, path: full, mtime: (await stat(full)).mtimeMs });
   }
@@ -273,6 +280,38 @@ export async function reuploadTask(task, { log } = {}) {
 
   say('🔁', 'reupload_done', `${uid} has a file again and can be submitted`);
   return { uid, taskDir, zipName, dropboxPath: uploaded.dropbox_path };
+}
+
+/**
+ * Puts the difficulty check results into the task folder, if there are any.
+ *
+ * The platform attaches this once it has run the task: the agent simulation and
+ * the per-verifier statistics behind the difficulty summary. The browser
+ * downloaded it on another machine, so it comes back through Dropbox like
+ * everything else.
+ *
+ * Returns the file name for the prompt to point at, or null. Never throws — a
+ * revision without it is the revision we did yesterday, and losing the round
+ * over an optional attachment would be a poor trade.
+ */
+async function fetchDifficultyFile(task, taskDir, say) {
+  const meta = task.difficulty_file;
+  if (!meta || !meta.dropbox_path) return null;
+
+  const name = meta.name || path.basename(meta.dropbox_path);
+  const target = path.join(taskDir, name);
+
+  try {
+    // Already here from an earlier round; no reason to fetch it twice.
+    if (await stat(target).then(() => true).catch(() => false)) return name;
+
+    await downloadFile(meta.dropbox_path, target);
+    say('📐', 'difficulty_file', `${name} put in the task folder`);
+    return name;
+  } catch (err) {
+    say('⚠️', 'difficulty_file_failed', `could not fetch ${name}: ${err.message}`, { level: 'warn' });
+    return null;
+  }
 }
 
 /**
@@ -384,6 +423,12 @@ export async function workOnTask(task, { log, onSession } = {}) {
   // unchanged note from a new one instead of asking Claude to remember.
   const applied = Array.isArray(task.revision_notes_applied) ? task.revision_notes_applied : [];
   let noteHash = '';
+  /*
+   * The difficulty artefact, if one was fetched into the folder for this round.
+   * Held out here because it goes in before the Claude turns and has to come
+   * out again after them, and those are in different branches.
+   */
+  let difficultyFile = null;
 
   try {
     if (from === TASK_STATUS_STATIC_FAIL) {
@@ -466,6 +511,8 @@ export async function workOnTask(task, { log, onSession } = {}) {
        */
       if (Number(task.static_fix_attempts || 0)) await patchTask(uid, { static_fix_attempts: 0 });
 
+      difficultyFile = await fetchDifficultyFile(task, taskDir, say);
+
       await session.send(
         await revisionPrompt({
           uid,
@@ -473,6 +520,7 @@ export async function workOnTask(task, { log, onSession } = {}) {
           feedbacks: task.feedbacks,
           applied,
           lessons: await lessonsBlock({ source: 'review' }),
+          difficultyFile,
         })
       );
 
@@ -647,6 +695,24 @@ export async function workOnTask(task, { log, onSession } = {}) {
       costUsd: session.costUsd,
       durationMs: session.durationMs,
     };
+  }
+
+  /*
+   * The difficulty artefact goes before anything is packed.
+   *
+   * It was reference material for this round, not part of the task — leaving it
+   * would put the platform's own check results inside the submission. Worse, it
+   * is a .zip in the task folder and the packer below takes the newest zip it
+   * finds: a round where Claude did not build one would upload the difficulty
+   * results to the platform as the task.
+   */
+  if (difficultyFile) {
+    await rm(path.join(taskDir, difficultyFile), { force: true }).catch((err) =>
+      say('⚠️', 'difficulty_file_failed', `could not remove ${difficultyFile}: ${err.message}`, {
+        level: 'warn',
+      })
+    );
+    say('🧹', 'difficulty_file', `${difficultyFile} removed before packing`);
   }
 
   const { path: outZip, name: zipName, madeByClaude } = await zipToUpload(task, taskDir);

@@ -280,6 +280,52 @@
     window.dispatchEvent(new CustomEvent('snorkelbot:restore-unload'));
   }
 
+  /*
+   * The difficulty check artefact, which the platform attaches after it has run
+   * the task.
+   *
+   *   [data-testid="field-difficulty_check_artifact_s3_key"]
+   *     "Download difficulty check results (optional)"
+   *     <button>Download File</button>
+   *
+   * Genuinely optional: it only exists once the system has run the code, so a
+   * task that has not reached that point simply has no button. Absent is a
+   * normal answer here, not a failure — the caller carries on without it.
+   *
+   * Worth having because the summary pane beside it is a précis; this file has
+   * the agent simulation and the per-verifier statistics behind it, which is
+   * what a fix for a difficulty complaint actually needs.
+   */
+  const DIFFICULTY_FIELD = '[data-testid="field-difficulty_check_artifact_s3_key"]';
+
+  SnorkelBot.on('CLICK_DIFFICULTY_DOWNLOAD', async () => {
+    assertOnReviewPage();
+
+    const field = document.querySelector(DIFFICULTY_FIELD);
+    if (!field) return { clicked: false, why: 'the difficulty results field is not on this page' };
+
+    const button = Array.from(field.querySelectorAll('button')).find((b) =>
+      /download/i.test(SnorkelBot.normText(SnorkelBot.text(b)))
+    );
+    if (!button) return { clicked: false, why: 'no download button — the system has not run this task yet' };
+    if (button.disabled || button.getAttribute('aria-disabled') === 'true') {
+      return { clicked: false, why: 'the download button is disabled — nothing attached yet' };
+    }
+
+    // Same guard the task download uses: the site asks "are you sure you want
+    // to leave", and a download can trip it.
+    suppressUnloadPrompt();
+    const restoreTimer = setTimeout(restoreUnloadPrompt, 30000);
+    try {
+      SnorkelBot.click(button);
+    } catch (err) {
+      clearTimeout(restoreTimer);
+      restoreUnloadPrompt();
+      throw err;
+    }
+    return { clicked: true };
+  });
+
   SnorkelBot.on('CLICK_DOWNLOAD', async (msg) => {
     assertOnReviewPage();
 
