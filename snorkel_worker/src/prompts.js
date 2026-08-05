@@ -180,6 +180,24 @@ export async function staticFixPrompt({ uid, taskDir, logs, lessons = '' }) {
   return fill(await template('staticfix'), { uid, task_dir: taskDir, logs, lessons });
 }
 
+/**
+ * Asked only when an answer talks about rounds instead of about the task.
+ *
+ * A separate turn rather than a stricter extraction prompt, because it is worth
+ * showing the model the actual sentence it wrote. Costs a turn, and only on the
+ * runs that need it.
+ */
+export async function rewritePrompt(offenders) {
+  const list = offenders
+    .map((o) => {
+      if (o.kind === 'verdict') return `  ${o.key}: this item never says whether it is fixable — ${o.match}`;
+      if (o.kind === 'format') return `  ${o.key}: ${o.match}`;
+      return `  ${o.key}: talks about the revision process — contains "${o.match}"`;
+    })
+    .join('\n');
+  return fill(await template('rewrite'), { offenders: list });
+}
+
 /** Asked once a fix is done: what should the next task have known? */
 export async function lessonPrompt() {
   return template('lesson');

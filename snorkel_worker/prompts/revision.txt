@@ -43,3 +43,30 @@ answer for that field, not an addition to the old one and not a diff — because
 replaces what is stored. Leave out any answer that is still correct as it stands.
 Keep each answer short and in plain language, the way a person filling in a form
 writes.
+
+In the answer describing each issue, the category in brackets is one you selected
+above, copied exactly as written there — "[the instructions are
+overly-prescriptive]", not "[Instructions / Overly prescriptive]" — on a line of
+its own, with the description starting on the next line. An environment problem
+gets its own item headed [environment/dockerfile].
+
+Every numbered item still needs all of what the question asks for: the category,
+the explanation, whether it is fixable, and how it was fixed — each of those on
+one line, however long it runs. Never wrap a sentence onto the next line: the
+line break is what separates one part from the next. That holds for an issue you dealt with earlier as much as for
+one you dealt with just now — the reader has no idea which is which, and an item
+that says only "already handled" answers nothing.
+
+The answers are read by somebody who sees only the finished submission. They do
+not know this task has been round more than once, and they cannot see the
+feedback, the checks or the judge. So an answer never mentions any of that.
+
+Never write "addressed in a previous round", "earlier rounds", "this round",
+"fixed last time", "as noted in the feedback", "the judge said", or anything of
+that shape. "Addressed in a previous round" tells the reader nothing at all.
+
+Write every answer as a standing description of the submission as it is now.
+For an issue dealt with earlier, still say what the issue was and what the task
+does about it — for example, not "Addressed in a previous round" but "The
+instruction read like a generated numbered spec, so it is written as prose."
+

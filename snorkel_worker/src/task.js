@@ -28,12 +28,20 @@ import {
   introPrompt,
   noteFingerprint,
   revisionPrompt,
+  rewritePrompt,
   reviewerNotes,
   lessonPrompt,
   staticFixPrompt,
   triagePrompt,
 } from './prompts.js';
-import { normaliseAnswers, parseJsonReply } from './answers.js';
+import {
+  issueFormatProblems,
+  missingVerdicts,
+  normaliseAnswers,
+  parseJsonReply,
+  processNarration,
+  wrappedLines,
+} from './answers.js';
 import { lessonsBlock, recordLesson } from './lessons.js';
 import { signaturesOf } from './checksigns.js';
 import {
@@ -522,6 +530,80 @@ export async function workOnTask(task, { log, onSession } = {}) {
   );
 
   if (triage && !answers.validity_required) answers.validity_required = triage.verdict;
+
+  /*
+   * "Addressed in a previous round" is not an answer.
+   *
+   * Whoever reads the form sees only the finished submission — no rounds, no
+   * feedback, no judge — so an answer written in those terms says nothing. The
+   * prompts forbid it, and this is what happens when that does not take: one
+   * more turn, showing the model the sentence it wrote, rewriting only the
+   * fields that need it.
+   *
+   * A failed rewrite keeps the original. A clumsy answer is worth having; losing
+   * the run over the phrasing is not.
+   */
+  const narrating = [
+    ...processNarration(answers).map((n) => ({ ...n, kind: 'narration' })),
+    // Question 3 wants a fixable verdict on every item. The ones that go short
+    // are the issues dealt with in an earlier round, which is the same habit as
+    // the process talk above and is worth the same one turn to put right.
+    ...missingVerdicts(answers).map((head) => ({ key: 'issues_in_detail', kind: 'verdict', match: head })),
+    // The shape question 3 asks for: the category in brackets is one that was
+    // selected, written as it is written there, on a line of its own.
+    ...issueFormatProblems(answers).map((why) => ({ key: 'issues_in_detail', kind: 'format', match: why })),
+    // A sentence wrapped at eighty columns turns one part of an item into three,
+    // and the item's shape is carried entirely by its line breaks.
+    ...wrappedLines(answers).map((where) => ({
+      key: 'issues_in_detail',
+      kind: 'format',
+      match: `a sentence is wrapped onto the next line: ${where}`,
+    })),
+  ];
+  if (narrating.length) {
+    say(
+      '✏️',
+      'answers_rewrite',
+      narrating
+        .map((n) =>
+          n.kind === 'verdict'
+            ? `${n.match} has no fixable verdict`
+            : n.kind === 'format'
+              ? n.match
+              : `${n.key} ("${n.match}")`
+        )
+        .join('; ')
+    );
+    try {
+      const redone = await session.send(await rewritePrompt(narrating));
+      const { answers: fixedFields } = await normaliseAnswers(parseJsonReply(redone.text));
+      let replaced = 0;
+      for (const { key } of narrating) {
+        if (fixedFields[key] != null && String(fixedFields[key]).trim()) {
+          answers[key] = fixedFields[key];
+          replaced++;
+        }
+      }
+      const left = [
+        ...processNarration(answers).map((n) => n.key),
+        ...missingVerdicts(answers).map((h) => `${h} (no verdict)`),
+        ...issueFormatProblems(answers),
+        ...wrappedLines(answers).map(() => 'a sentence is still wrapped'),
+      ];
+      say(
+        left.length ? '⚠️' : '✅',
+        'answers_rewritten',
+        left.length
+          ? `${replaced} rewritten, but still not right: ${left.join(', ')}`
+          : `${replaced} answer(s) rewritten`,
+        left.length ? { level: 'warn' } : {}
+      );
+    } catch (err) {
+      say('⚠️', 'answers_rewrite_failed', `keeping the original answers: ${err.message}`, {
+        level: 'warn',
+      });
+    }
+  }
 
   if (ignored.length) {
     say('⚠️', 'answers_extra', `ignored key(s) not in the schema: ${ignored.join(', ')}`);

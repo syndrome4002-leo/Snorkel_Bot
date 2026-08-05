@@ -8,3 +8,8 @@ Rules:
 - Leave out any key that does not apply to your answer. Do not include a key with an empty value just to have it there.
 - For a key with allowed values, use one of them exactly as written.
 - Free text keeps the wording you already used above. Same human tone, no markdown, no bullet characters, no "—".
+- One exception to "do not rewrite": if an answer above refers to rounds, to
+  earlier attempts, to the feedback, to the checks or to the judge, take that out
+  here. Say what the issue was and what the task does about it instead. Somebody
+  reading this sees only the finished submission, so "addressed in a previous
+  round" tells them nothing.

@@ -28,6 +28,40 @@ If it IS fixable, how could this be fixed? If not, explain why not.
 
 2) [Issue Category 2]...
 
+The category in brackets is one of the ones you selected above, copied exactly as
+it is written there. Not a label of your own: write
+
+  1) [the instructions are overly-prescriptive]
+
+and not "[Instructions / Overly prescriptive]" or "[Instructions]". The category
+is a line of its own; the description starts on the next line.
+
+There is an item for every category you chose in question 2. If you also found a
+problem with the environment, give it its own item headed with the question 1
+label it belongs to — [environment/dockerfile] — because question 2 has no
+category for one.
+
+EVERY item gets all four parts, with no exceptions. In particular every item
+says whether the issue is fixable — in those words — even when the issue is one
+you have already dealt with and there is nothing left to do about it. An item
+that only reports its status is not an answer to this question.
+
+Each of those four parts is ONE line, however long it runs. Do not wrap a
+sentence onto the next line: a line break is what separates one part from the
+next, so a wrapped sentence reads as a part of its own and the item falls apart.
+
+So a complete item reads — four lines, a blank line, then the next item:
+
+1) [the instructions are overly-prescriptive]
+The instruction named the exact status strings and field names the tests assert on, which tells the agent what to write instead of what the code should do.
+This is fixable.
+Rewritten to describe the behaviour, keeping the contract vocabulary but not the test assertions.
+
+2) [environment/dockerfile]
+task.toml was missing os, still carried network_mode in all three sections, and had no difficulty_explanation.
+This is fixable.
+Added os, removed the network fields, added difficulty_explanation.
+
 [ Re-upload the entire task as a zip file with the corrected instructions, tests, or oracle below, ensuring the task remains valid. Ensure the upload is submitted as <all-task-content>. Do not include runs/ or task/directory ]
 
 4 Files Changed - List every file you changed.
@@ -46,7 +80,22 @@ Describe what makes this task technically challenging. Consider factors such as 
 
 Writing answers rule:
 - Each Answers should be not so long, just like human-written.
+- Never wrap a sentence onto the next line. A paragraph is one line however long it runs; only a real break between parts or items is a new line.
 - The answers must not include hypen links or bullet points, symbols, formatting patterns including "—"
 - In a answer field, there should be blank line between each item. ( apply only for answers that have multiple items )
+
+The answers are read by somebody who sees only the finished submission. They do
+not know this task has been round more than once, and they cannot see the
+feedback, the checks or the judge. So an answer never mentions any of that.
+
+Never write "addressed in a previous round", "earlier rounds", "this round",
+"fixed last time", "as noted in the feedback", "the judge said", or anything of
+that shape. "Addressed in a previous round" tells the reader nothing at all.
+
+Write every answer as a standing description of the submission as it is now.
+For an issue dealt with earlier, still say what the issue was and what the task
+does about it — for example, not "Addressed in a previous round" but "The
+instruction read like a generated numbered spec, so it is written as prose."
+
 
 {{lessons}}The zip must hold the task content at its root. Do not include runs/ or task/ and do not put an older zip inside it.

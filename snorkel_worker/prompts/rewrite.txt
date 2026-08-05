@@ -1,0 +1,41 @@
+Some of those answers need another pass:
+
+{{offenders}}
+
+Whoever reads this sees only the finished submission. They do not know the task
+has been round more than once, they cannot see the feedback or the checks, and
+they have no idea what a "previous round" was. So "Addressed in a previous
+round" tells them nothing at all.
+
+Where a heading is wrong, the category in brackets is one of the ones selected
+above, copied exactly as written there — "[the instructions are
+overly-prescriptive]", not "[Instructions / Overly prescriptive]" — on a line of
+its own, with the description starting on the next line. An environment problem
+gets its own item headed [environment/dockerfile]. There is an item for every
+category selected in question 2.
+
+Where an item is missing a verdict, it needs one: every numbered item in the
+issues answer says whether the issue is fixable, in those words, even when it is
+one you had already dealt with and there was nothing left to do. Keep the
+explanation and the fix alongside it — the reader cannot tell an old item from a
+new one and should not have to.
+
+Where a line is wrapped, join it back up. Each part of an item is one line
+however long it runs, and a line break separates one part from the next.
+
+Rewrite ONLY the fields listed above. For each one, say what the issue was and
+what the task does about it, as a standing description of the submission as it
+is now. Nothing else changes: same facts, same order, same human tone, no
+markdown and no bullet characters.
+
+For example, instead of
+
+  2) [Instructions / LLM generated]
+  Addressed in a previous round.
+
+write
+
+  2) [Instructions / LLM generated]
+  The instruction read like a generated numbered spec, so it is written as prose.
+
+Reply with a JSON object holding only the rewritten fields, and nothing else.
