@@ -31,7 +31,9 @@ import {
   initRtdb,
   pushLog,
   setTicker,
+  publishRefreshResult,
   startWorkerHeartbeat,
+  watchUsageRefresh,
   watchSettings,
   watchMachineIndex,
   watchSystem,
@@ -42,7 +44,7 @@ import { startConnectServer } from './connect.js';
 import { checkClaude } from './claude.js';
 import { dropboxConfigured } from './dropbox.js';
 import { workOnTask, reuploadTask } from './task.js';
-import { readClaudeUsage } from './usage.js';
+import { readClaudeUsage, refreshClaudeUsage } from './usage.js';
 import { acquireLock, releaseLock, releaseLockSync, workerProcessAlive } from './lock.js';
 
 /** uid -> what it is doing, for the status the dashboard reads. */
@@ -446,6 +448,38 @@ async function main() {
   });
 
   startWorkerHeartbeat(snapshot, 10_000);
+
+  /*
+   * The dashboard asking for the current figures.
+   *
+   * Worth a button because nothing else can produce them: the percentages come
+   * from rate-limit headers, so on an idle worker they stay as old as the last
+   * task. The heartbeat above republishes the same stale numbers every ten
+   * seconds; only a call to the API makes them newer.
+   */
+  watchUsageRefresh(async (at) => {
+    log('🔄', 'usage_refresh', 'asking Anthropic for the current usage figures');
+    try {
+      const usage = await refreshClaudeUsage();
+      await publishRefreshResult({
+        ok: true,
+        requested_at: at,
+        refreshed: Boolean(usage.refreshed),
+        reason: usage.reason || null,
+      });
+      await publishNow();
+      log(
+        usage.refreshed ? '📈' : '➖',
+        'usage_refreshed',
+        usage.refreshed
+          ? `${usage.session_5h_pct}% of the 5-hour window, ${usage.weekly_7d_pct}% of the week`
+          : `could not ask just now (${usage.reason || 'unknown'}) — showing what was last read`
+      );
+    } catch (err) {
+      await publishRefreshResult({ ok: false, requested_at: at, error: err.message });
+      log('⚠️', 'usage_refresh_failed', err.message, { level: 'warn' });
+    }
+  });
   startConnectServer(connectState);
 
   await recoverOrphans();

@@ -183,6 +183,13 @@ export const config = {
      */
     usageCache: process.env.CLAUDE_USAGE_CACHE || '',
 
+    /**
+     * Claude Code's OAuth credentials, which the worker reads to ask the usage
+     * endpoint the same question the CLI asks. Read only, never written, and
+     * never logged. Empty means the usual place.
+     */
+    credentials: process.env.CLAUDE_CREDENTIALS || '',
+
     /** Extra CLI arguments, split on spaces. Escape hatch for anything not modelled here. */
     extraArgs: String(process.env.CLAUDE_ARGS || '').split(/\s+/).filter(Boolean),
   },

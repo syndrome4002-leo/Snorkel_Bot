@@ -98,7 +98,19 @@
       ],
       "$workspace": {
         ".read": true,
-        ".write": false
+        ".write": false,
+        "//": [
+          "A browser may write one thing here: refresh_request, which asks that worker",
+          "to find out its current Claude usage. Everything else under a worker is the",
+          "process reporting on itself, through the Admin SDK, which these rules do not",
+          "apply to."
+        ],
+        "$workerId": {
+          "refresh_request": {
+            ".write": true,
+            ".validate": "newData.isString() && newData.val().length < 40"
+          }
+        }
       }
     },
     "machines_index": {

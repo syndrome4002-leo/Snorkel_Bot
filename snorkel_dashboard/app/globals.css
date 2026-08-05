@@ -934,11 +934,28 @@ button.machine:hover { background: var(--hover); }
 .usage-window-label { color: var(--muted); font-variant-numeric: tabular-nums; }
 .usage-window .meter-track { height: 6px; width: 84px; margin: 0; }
 .usage-reset { font-size: 11px; }
+/* A window that has ended: the bar is empty because the figure is unknown, not
+   because nothing has been used. */
+.usage-window.rolled .meter-track { opacity: 0.45; }
+.usage-window.rolled .usage-figure { color: var(--muted); font-style: italic; }
 
 .usage-running {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
 }
+.usage-refresh {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1;
+}
+.usage-refresh:hover { background: var(--hover); color: var(--text); border-color: transparent; }
+.usage-refresh.asking { opacity: 0.6; cursor: default; }
+.usage-refresh.asking:hover { background: transparent; }
+
 .usage-when { cursor: default; opacity: 0.6; }
 /* A gauge that has not been written for hours still draws a full bar, which
    reads as current. Fading it is the cheapest way to say otherwise. */

@@ -20,6 +20,21 @@ export const tickerPath = (machine) => `machines/${machine}/ticker`;
 /* Scoped, so one deployment's usage bar does not show another's workers. */
 export const workersPath = () => scoped('workers');
 
+/**
+ * Asks a worker to find out its current Claude usage.
+ *
+ * The figures come from rate-limit headers the API sends back, so nothing local
+ * can make them newer — on an idle worker they stay as old as the last task it
+ * ran. The worker answers this by making one small call, which is the only
+ * thing that produces a current number.
+ *
+ * A timestamp rather than a flag, so clicking again while the first is still
+ * running is a fresh request instead of a write nobody notices.
+ */
+export function refreshWorkerUsage(workerId) {
+  return set(ref(rtdb(), `${workersPath()}/${workerId}/refresh_request`), new Date().toISOString());
+}
+
 /** Queues a command for one machine. Returns its id so the caller can watch it. */
 async function queue(machine, type, extra = {}) {
   if (!machine) throw new Error('Pick a machine first.');

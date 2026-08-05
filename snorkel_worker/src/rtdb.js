@@ -52,6 +52,42 @@ export function watchSystem(onChange) {
   return () => ref.off('value', handler);
 }
 
+/**
+ * Watches for the dashboard asking this worker to refresh its usage figures.
+ *
+ * The one thing a browser may write under `workers/` — everything else there is
+ * this process reporting on itself, and the rules keep it that way. The request
+ * is a timestamp rather than a flag, so a second click while the first is still
+ * running is a new request rather than an unnoticed repeat.
+ */
+export function watchUsageRefresh(onRequest) {
+  if (!db) return () => {};
+  const ref = db.ref(`${WORKER()}/refresh_request`);
+  let handled = null;
+
+  const handler = (snapshot) => {
+    const at = snapshot.val();
+    if (!at || at === handled) return;
+    handled = at;
+    onRequest(at);
+  };
+  ref.on('value', handler);
+  return () => ref.off('value', handler);
+}
+
+/** What came of it, so the dashboard can stop showing a spinner. */
+export async function publishRefreshResult(result) {
+  if (!db) return;
+  try {
+    await db.ref(`${WORKER()}/refresh_result`).set({
+      at: new Date().toISOString(),
+      ...result,
+    });
+  } catch (err) {
+    console.warn('[rtdb] could not publish the refresh result:', err.message);
+  }
+}
+
 /*
  * The machines the dashboard has been told to work.
  *

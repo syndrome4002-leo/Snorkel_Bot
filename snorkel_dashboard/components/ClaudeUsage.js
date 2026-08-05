@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { watchWorkers } from '@/lib/commands';
+import { refreshWorkerUsage, watchWorkers } from '@/lib/commands';
 
 function when(iso) {
   if (!iso) return '';
@@ -36,20 +36,83 @@ function until(iso) {
  * worker — and the same window across several workers — line up in a column
  * instead of shifting with the length of "resets in 3 days".
  */
-function Window({ label, pct, reset }) {
+function Window({ label, pct, reset, rolled }) {
   const value = Number.isFinite(pct) ? pct : null;
   // Colour only once it matters; a quiet bar for most of its life.
   const tone = value === null ? '' : value >= 90 ? ' bad' : value >= 70 ? ' warn' : '';
 
   return (
-    <div className="usage-window" title={reset ? `${label} resets ${until(reset)}` : label}>
+    <div
+      className={`usage-window${rolled ? ' rolled' : ''}`}
+      title={
+        rolled
+          ? `${label}: this window reset ${until(reset)}, so the last figure is about a window that has ended. ` +
+            'The worker could not reach the usage endpoint to replace it, so this is from the local cache.'
+          : reset
+            ? `${label} resets ${until(reset)}`
+            : label
+      }
+    >
       <span className="usage-window-label">{label}</span>
       <span className="meter-track">
         <span className={`meter-fill${tone}`} style={{ width: `${value ?? 0}%` }} />
       </span>
-      <span className="usage-figure">{value === null ? '—' : `${value}%`}</span>
-      {reset ? <span className="usage-reset muted">{until(reset)}</span> : null}
+      <span className="usage-figure">{value === null ? (rolled ? 'rolled' : '—') : `${value}%`}</span>
+      {reset && !rolled ? <span className="usage-reset muted">{until(reset)}</span> : null}
     </div>
+  );
+}
+
+/**
+ * Asks the worker for the current figures.
+ *
+ * The worker asks Anthropic directly — the same endpoint Claude Code uses — and
+ * caches the answer for fifteen minutes, so this button is for wanting it sooner
+ * than that. The endpoint is rate limited, which the tooltip says, because a
+ * refused click otherwise looks like a broken button.
+ *
+ * "Asking" clears itself when the worker publishes a newer timestamp rather
+ * than after a fixed wait, so it reflects what happened rather than a guess.
+ */
+function RefreshButton({ worker, usage }) {
+  const [asked, setAsked] = useState(null);
+  const [error, setError] = useState('');
+  const writtenAt = usage?.written_at || null;
+
+  useEffect(() => {
+    if (asked && writtenAt && writtenAt > asked) setAsked(null);
+  }, [asked, writtenAt]);
+
+  // A worker that is not running cannot answer, and the request would sit in
+  // the database until it next started.
+  if (!worker.online) return null;
+
+  const ask = async () => {
+    setError('');
+    setAsked(new Date().toISOString());
+    try {
+      await refreshWorkerUsage(worker.id);
+    } catch (err) {
+      setAsked(null);
+      setError(err.message);
+    }
+  };
+
+  return (
+    <button
+      className={`usage-refresh${asked ? ' asking' : ''}`}
+      onClick={ask}
+      disabled={Boolean(asked)}
+      title={
+        error ||
+        'Ask this worker for its current Claude usage.\n\n' +
+          'It asks Anthropic directly, the same way Claude Code does. That ' +
+          'endpoint is rate limited, so a second click straight after the first ' +
+          'will be turned away — give it a minute.'
+      }
+    >
+      {asked ? '…' : '⟳'}
+    </button>
   );
 }
 
@@ -73,8 +136,8 @@ function WorkerRow({ worker }) {
 
       {usage?.available ? (
         <span className="usage-windows">
-          <Window label="5h" pct={usage.session_5h_pct} reset={usage.reset_5h} />
-          <Window label="7d" pct={usage.weekly_7d_pct} reset={usage.reset_7d} />
+          <Window label="5h" pct={usage.session_5h_pct} reset={usage.reset_5h} rolled={usage.rolled_5h} />
+          <Window label="7d" pct={usage.weekly_7d_pct} reset={usage.reset_7d} rolled={usage.rolled_7d} />
         </span>
       ) : (
         <span className="muted usage-none">{usage?.reason || 'no usage figures yet'}</span>
@@ -87,6 +150,8 @@ function WorkerRow({ worker }) {
           {running.map((t) => String(t.uid).slice(0, 8)).join(' ')}
         </span>
       ) : null}
+
+      <RefreshButton worker={worker} usage={usage} />
 
       {usage?.written_at ? (
         <span
