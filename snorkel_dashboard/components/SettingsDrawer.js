@@ -14,15 +14,17 @@ const FIELDS = [
     group: 'Auto-start',
     key: 'revise_limit',
     label: 'Revise tasks limit',
-    help: 'While fewer than this many tasks are awaiting revision, this machine starts new ones on its own. Empty or 0 turns auto-start off.',
+    help:
+      'While fewer than this many tasks are awaiting revision, this machine starts new ones on its own — as soon as the count drops below it, not on a timer. Empty or 0 turns auto-start off.',
     min: 0,
     placeholder: 'off',
   },
   {
     group: 'Auto-start',
     key: 'try_new_task_every_min',
-    label: 'Try new task in (minutes)',
-    help: 'How often the machine checks the limit and, if it is under, starts a task. Defaults to 5.',
+    label: 'Wait after a failed start (minutes)',
+    help:
+      'A task is started as soon as the revise list is under the limit above — there is no timer for it. This is only how long to wait after an attempt that did not work, because Snorkel handing out nothing is not something that changes second to second. Defaults to 5.',
     min: 1,
     placeholder: '5',
   },

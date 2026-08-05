@@ -573,6 +573,18 @@ function logEvent(emoji, event, message, extra = {}) {
  */
 let lastRevisionReport = null;
 let lastReviseCount = null;
+/*
+ * When a start may next be attempted, after one that did not work.
+ *
+ * There is no schedule for starting tasks any more. A start is attempted
+ * whenever the revise list is under its limit, because that is the only
+ * condition that decides whether there is room for one — polling on a timer
+ * meant a list that dropped below the limit sat unnoticed until the next tick.
+ *
+ * A failed attempt is the exception: the platform declining to hand out a task
+ * is not something that changes second to second, so it backs off for
+ * `try_new_task_every_min` before trying again. Null means "no reason to wait".
+ */
 let nextAutoTryAt = null;
 /** When the upload sweep next runs, and what it found the last time it did. */
 let nextSubmitCheckAt = null;
@@ -649,10 +661,35 @@ function updateTicker() {
   }
 
   const countText = lastReviseCount === null ? 'count unknown yet' : `${lastReviseCount} awaiting, limit ${limit}`;
-  const when = humanIn(nextAutoTryAt);
+
+  /*
+   * There is no schedule to count down to. Either it is waiting out a failed
+   * attempt, or it is waiting for the list to shorten — and those are different
+   * enough that showing a timer for both would say nothing useful about either.
+   */
+  const waiting = humanIn(nextAutoTryAt);
+  if (waiting && waiting !== 'due now') {
+    setTicker('tries', {
+      emoji: '🚫',
+      message: `Snorkel handed out nothing — trying again ${waiting} (${countText})`,
+    });
+    return;
+  }
+
+  if (lastReviseCount !== null && lastReviseCount >= limit) {
+    setTicker('tries', {
+      emoji: '🟡',
+      message: `ready — waiting for the revise list to drop below ${limit} (${countText})`,
+    });
+    return;
+  }
+
   setTicker('tries', {
-    emoji: when === 'due now' ? '🤖' : '⏳',
-    message: when ? `try new task ${when} — ${countText}` : `try new task pending — ${countText}`,
+    emoji: '🤖',
+    message:
+      lastReviseCount === null
+        ? `ready — ${countText}`
+        : `ready to start on the next revise check (${countText})`,
   });
 }
 
@@ -736,9 +773,19 @@ async function maybeAutoStart(reviseCount) {
   }
 
   if (reviseCount >= limit) {
-    logEvent('⏸️', 'auto_skip', `${reviseCount} awaiting revision, limit is ${limit} — not starting`);
+    // Quietly. This is the ordinary state of a busy account, and it is checked
+    // every time a count arrives — saying so each time would be most of the log.
     return;
   }
+
+  /*
+   * Backing off after an attempt that did not work.
+   *
+   * Every other guard below is a condition that clears on its own and is worth
+   * re-checking the moment anything changes. "Snorkel handed out no task" is
+   * not: asking again immediately gets the same answer, so it waits.
+   */
+  if (nextAutoTryAt && Date.now() < new Date(nextAutoTryAt).getTime()) return;
 
   /*
    * The daily cap stops the work at its source.
@@ -797,21 +844,34 @@ async function maybeAutoStart(reviseCount) {
   try {
     const result = await runFullPipeline({}, () => {});
     if (result.snorkel.saved) {
+      // It worked, so there is nothing to wait for: the task it just started is
+      // what holds the next one off now.
+      nextAutoTryAt = null;
       logEvent('✅', 'auto_done', `started ${result.snorkel.task.UID}`, { uid: result.snorkel.task.UID });
     } else {
-      logEvent('⚠️', 'auto_warn', result.snorkel.warning, { level: 'warn' });
+      backOff(result.snorkel.warning);
     }
   } catch (err) {
     // Both of these are ordinary outcomes, not faults: the site may hand out
     // nothing, and a task may already be in build.
     if (err.code === 'START_UNAVAILABLE') {
-      logEvent('🚫', 'auto_unavailable', 'Snorkel handed out no task this time');
+      backOff('Snorkel handed out no task this time');
     } else if (err.code === 'TASK_IN_BUILD') {
+      // Not a failed attempt: it will clear when the build finishes, and the
+      // next count will pick it up.
       logEvent('⏸️', 'auto_skip', err.message);
     } else {
-      logEvent('❌', 'auto_failed', err.message, { level: 'error' });
+      backOff(err.message, { level: 'error' });
     }
   }
+}
+
+/** Waits before trying again, and says how long for. */
+function backOff(why, { level = 'warn' } = {}) {
+  const wait = minutes(settings.try_new_task_every_min, DEFAULT_TRY_EVERY);
+  nextAutoTryAt = new Date(Date.now() + wait * 60000).toISOString();
+  logEvent('🚫', 'auto_unavailable', `${why} — trying again in ${wait} min`, { level });
+  updateTicker();
 }
 
 // --------------------------------------------------------- revisions ----
@@ -1372,6 +1432,21 @@ async function applyRevisionReport({ uids = [], rows = [], checked_at, next_chec
     logEvent('❌', 'revision_failed', err.message, { level: 'error' });
   }
 
+  /*
+   * And this count is what decides whether to start a task.
+   *
+   * Not a timer: the revise list being under its limit is the only thing that
+   * says there is room for another task, so the moment that becomes true is the
+   * moment to act. maybeAutoStart does the rest of the deciding.
+   *
+   * After the feedback collection above, not before — that reads task pages in
+   * the same tab, and starting a task underneath it would abandon whatever it
+   * was in the middle of.
+   */
+  await maybeAutoStart(uids.length).catch((err) =>
+    logEvent('❌', 'auto_failed', err.message, { level: 'error' })
+  );
+
   updateTicker();
   return outcome;
 }
@@ -1395,6 +1470,29 @@ hub.onRevisions = async (msg) => {
 async function tick() {
   const inBuild = await findInBuildTask(machineId()).catch(() => null);
   inBuildUid = inBuild ? inBuild.UID : null;
+
+  /*
+   * The revise count is what normally triggers a start, and it arrives on the
+   * extension's own schedule. This covers the two gaps that leaves: a back-off
+   * that expires between counts, and a server that has been running a while
+   * without the extension ever reporting one.
+   *
+   * Cheap to do every minute — maybeAutoStart returns at the first guard that
+   * says no, and the common ones are all local.
+   */
+  if (systemEnabled) {
+    if (lastReviseCount !== null) {
+      await maybeAutoStart(lastReviseCount).catch((err) =>
+        logEvent('❌', 'auto_failed', err.message, { level: 'error' })
+      );
+    } else if (Number(settings.revise_limit) > 0 && hub.isConnected('snorkel')) {
+      // Nothing to decide on yet. Rather than wait for the extension's own
+      // alarm, ask for a count now — once, because lastReviseCount is set the
+      // moment one arrives.
+      await requestReviseCount('auto-start has no count yet').catch(() => {});
+    }
+  }
+
   updateTicker();
 }
 
@@ -1410,7 +1508,6 @@ function minutes(value, fallback) {
 const DEFAULT_TRY_EVERY = 5;
 const DEFAULT_CHECK_EVERY = 5;
 
-let autoTryTimer = null;
 
 /**
  * Asks the extension to read the revise list now.
@@ -1454,27 +1551,15 @@ async function requestReviseCount(why) {
 }
 
 /** Re-arms the auto-start timer whenever its interval changes. */
+/**
+ * Nothing to schedule any more — kept because the settings watcher calls it.
+ *
+ * Starting tasks used to run on a timer of its own. It does not: a start is
+ * attempted whenever the revise list is reported under its limit, and the once
+ * a minute tick below covers the gap after a failed attempt. The setting that
+ * drove the timer is now how long to wait after one that did not work.
+ */
 function scheduleAutoTry() {
-  const every = minutes(settings.try_new_task_every_min, DEFAULT_TRY_EVERY);
-  if (autoTryTimer) clearInterval(autoTryTimer);
-
-  nextAutoTryAt = new Date(Date.now() + every * 60000).toISOString();
-  autoTryTimer = setInterval(async () => {
-    nextAutoTryAt = new Date(Date.now() + every * 60000).toISOString();
-    try {
-      // Uses the most recent count from the extension's own sweep rather than
-      // asking for a fresh one: the two run on their own intervals, and forcing
-      // a page reload here would fight with the revise check.
-      if (lastReviseCount !== null) await maybeAutoStart(lastReviseCount);
-      // No count yet means auto-start has nothing to decide on. Rather than
-      // skip and wait for the extension's own alarm, ask for one now.
-      else await requestReviseCount('auto-start has no count yet');
-    } catch (err) {
-      logEvent('❌', 'auto_failed', err.message, { level: 'error' });
-    }
-    updateTicker();
-  }, every * 60000);
-  autoTryTimer.unref?.();
   updateTicker();
 }
 
