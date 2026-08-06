@@ -1060,6 +1060,34 @@ async function stashDifficultyFile(uid, file) {
   }
 }
 
+/*
+ * How many tasks one collect_feedback command carries.
+ *
+ * Small on purpose. A command's results arrive all at once at the end, so the
+ * batch is also the amount of work at risk if it times out — and reading a task
+ * is minutes of page loading and pane stitching, not seconds.
+ */
+const FEEDBACK_BATCH = 3;
+
+/**
+ * What to allow one batch, in milliseconds.
+ *
+ * Per task rather than per command: the waits inside one are generous on
+ * purpose — ninety seconds for the row to appear, two minutes for the review
+ * page — because a slow page is common and a lost read is expensive. Three of
+ * those in series do not fit in a budget written for one.
+ */
+function feedbackTimeoutFor(count) {
+  return Math.max(config.commandTimeoutMs, 60000 + count * 150000);
+}
+
+/** Splits a list into fixed-size batches, keeping the order. */
+function inBatches(items, size) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 async function handleRevisionReport(uids, rows = []) {
   // Reading the list is harmless, but opening task pages to collect feedback is
   // work, and work is what the switch stops.
@@ -1131,7 +1159,41 @@ async function handleRevisionReport(uids, rows = []) {
   );
 
   logEvent('📥', 'feedback_start', `collecting feedback for ${wanted.length} task(s)`);
-  const result = await hub.command('snorkel', { type: 'collect_feedback', uids: wanted });
+
+  /*
+   * Every task in the list, in one sweep — but not in one command.
+   *
+   * Reading a task means loading the home page, opening its review page and
+   * stitching several Monaco panes together, and the command carrying all of
+   * them had a fixed four minutes for the lot. One slow task spent the budget,
+   * the command timed out, and everything already read was thrown away with it:
+   * the results only come back at the end. The next sweep then started again
+   * from the top and hit the same wall, which is why some tasks never seemed to
+   * get read at all.
+   *
+   * So they go in small batches, each with a budget scaled to its size. A batch
+   * that fails costs that batch, not the sweep, and what came back before it is
+   * already stored.
+   */
+  const result = { collected: [], failures: [] };
+  for (const batch of inBatches(wanted, FEEDBACK_BATCH)) {
+    try {
+      const part = await hub.command(
+        'snorkel',
+        { type: 'collect_feedback', uids: batch },
+        feedbackTimeoutFor(batch.length)
+      );
+      result.collected.push(...(part.collected || []));
+      result.failures.push(...(part.failures || []));
+    } catch (err) {
+      /*
+       * Named, so a task that was never read is distinguishable from one that
+       * was read and had nothing to say.
+       */
+      logEvent('⚠️', 'feedback_failed', `${batch.join(', ')}: ${err.message}`, { level: 'warn' });
+      result.failures.push(...batch.map((uid) => ({ uid, error: err.message })));
+    }
+  }
 
   let stored = 0;
   for (const item of result.collected || []) {
