@@ -421,7 +421,13 @@ async function askTab(tabId, message) {
   await ensureContentScripts(tabId);
   const res = await chrome.tabs.sendMessage(tabId, message);
   if (!res) throw new Error(`No response from the page for ${message.type}.`);
-  if (!res.ok) throw new Error(res.error || `${message.type} failed.`);
+  if (!res.ok) {
+    const failure = new Error(res.error || `${message.type} failed.`);
+    // Carried across the boundary so the server can act on the kind of failure
+    // rather than on the wording of it.
+    if (res.code) failure.code = res.code;
+    throw failure;
+  }
   return res;
 }
 

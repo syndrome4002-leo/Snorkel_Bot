@@ -406,13 +406,34 @@
     await SnorkelBot.waitFor(() => tableRows() || null, { timeout: 30000, interval: 400 }).catch(() => 0);
     await expandRevisionTable();
 
+    /*
+     * A task can be finished and ready to hand in without having a row here.
+     * The list holds what the platform is currently offering, and a submission
+     * it has not put back yet — or has moved elsewhere — simply is not on it.
+     *
+     * That is a "not now", not a fault: the work is done and waiting, and the
+     * row usually turns up on a later sweep. It gets its own code so the server
+     * can leave this task for later and spend the sweep on another one, rather
+     * than trying the same absent row every few minutes.
+     */
     const row = await SnorkelBot.waitFor(
       () => rowsFor(projectKey).find((r) => (r.uid || '').toLowerCase() === wanted) || null,
       { timeout: msg.timeout || 90000, label: `a "Revise task" row for ${msg.uid}` }
-    );
+    ).catch(() => null);
+
+    if (!row) {
+      const listed = rowsFor(projectKey).length;
+      const failure = new Error(
+        `${msg.uid} is not in the revise list (${listed} row(s) there now) — nothing to open.`
+      );
+      failure.code = 'ROW_NOT_LISTED';
+      throw failure;
+    }
 
     if (!row.anchor) {
-      throw new Error(`The row for ${msg.uid} has no "Revise task" link to follow.`);
+      const failure = new Error(`The row for ${msg.uid} has no "Revise task" link to follow.`);
+      failure.code = 'ROW_NOT_LISTED';
+      throw failure;
     }
 
     SnorkelBot.click(clickTarget(row.anchor));

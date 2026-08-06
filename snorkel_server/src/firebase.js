@@ -738,7 +738,7 @@ export async function findInBuildTask(machine) {
  * nothing to fetch and nothing to attach. Those are skipped rather than failed —
  * they are mid-flight, not broken.
  */
-export async function findReadyToSubmit(machine, { excludeNew = false } = {}) {
+export async function findReadyToSubmit(machine, { excludeNew = false, skip = [] } = {}) {
   if (!db) return null;
 
   const snap = await db
@@ -777,8 +777,18 @@ export async function findReadyToSubmit(machine, { excludeNew = false } = {}) {
   const heldByCap = excludeNew ? eligible.filter((t) => t.is_new_task === true).length : 0;
   if (excludeNew) eligible = eligible.filter((t) => t.is_new_task !== true);
 
+  /*
+   * Parked tasks are finished and eligible in every respect except that the
+   * platform is not currently offering a row to open them by. Counted, not
+   * hidden: "nothing to submit" and "three waiting for their rows to come back"
+   * are different situations and the ticker should not say the first for both.
+   */
+  const skipping = new Set(skip.map(String));
+  const parked = eligible.filter((t) => skipping.has(String(t.UID))).length;
+  if (parked) eligible = eligible.filter((t) => !skipping.has(String(t.UID)));
+
   eligible.sort((a, b) => String(a.updated_at || '').localeCompare(String(b.updated_at || '')));
-  return { task: eligible[0] || null, eligible: eligible.length, waiting, heldByCap };
+  return { task: eligible[0] || null, eligible: eligible.length, waiting, heldByCap, parked };
 }
 
 /**

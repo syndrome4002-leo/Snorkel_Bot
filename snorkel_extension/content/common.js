@@ -150,7 +150,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   Promise.resolve()
     .then(() => handler(msg))
     .then((data) => sendResponse({ ok: true, url: location.href, ...data }))
-    .catch((err) => sendResponse({ ok: false, url: location.href, error: String(err && err.message || err) }));
+    .catch((err) =>
+      sendResponse({
+        ok: false,
+        url: location.href,
+        error: String((err && err.message) || err),
+        // What kind of failure it was, where the handler said. Without this the
+        // caller gets a sentence and has to match on its wording to tell "the
+        // page is not offering this task" apart from "something broke".
+        code: (err && err.code) || null,
+      })
+    );
 
   return true; // keep the message channel open for the async response
 });

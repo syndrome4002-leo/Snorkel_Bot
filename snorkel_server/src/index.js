@@ -719,10 +719,11 @@ function updateSubmitTicker() {
 
   if (!lastSubmitScan) return say('⏳', `${head} — nothing looked at yet`);
 
-  const { eligible, waiting, heldByCap, cap } = lastSubmitScan;
+  const { eligible, waiting, heldByCap, cap, parked: parkedCount } = lastSubmitScan;
   const bits = [];
   if (eligible) bits.push(`${eligible} ready`);
   if (waiting) bits.push(`${waiting} waiting on Dropbox`);
+  if (parkedCount) bits.push(`${parkedCount} waiting for a row on the revise list`);
   if (heldByCap) {
     bits.push(
       `${heldByCap} held until tomorrow` + (cap ? ` (${cap.used} of ${cap.limit} submitted today)` : '')
@@ -1028,6 +1029,12 @@ async function handleRevisionReport(uids, rows = []) {
   // Always says something. An empty report used to return in silence, which
   // looked identical to the report never arriving.
   console.log(`[revisions] extension reported ${uids.length} awaiting revision`);
+  /*
+   * A task parked for having no row is waiting for exactly this. The list is the
+   * authority on what can be opened, so its arrival answers the question sooner
+   * than the timer would.
+   */
+  unparkListed(uids);
   if (!uids.length) return { considered: 0, collected: 0 };
 
   const { wanted, reasons, unknown } = await findFeedbackCandidates(uids);
@@ -1798,6 +1805,41 @@ let submitBlocked = null;
 
 const SUBMIT_BLOCK_MAX_MINUTES = 60;
 
+/*
+ * Tasks whose row was not on the revise list when we went to submit them.
+ *
+ * A finished task and a row to open it are two different things: the list holds
+ * what the platform is currently offering, and a submission it has not put back
+ * yet is simply not on it. The work is done and nothing is wrong — it is just
+ * not openable this minute.
+ *
+ * So the task is parked rather than retried, and the sweep moves on to another
+ * one. Retrying the same absent row is ninety seconds of waiting per sweep, and
+ * for as long as it goes on, every other finished task waits behind it.
+ *
+ * uid -> when to stop parking it. The revise list itself lifts this early: if a
+ * later reading of the list has the uid in it, there is a row again and there is
+ * nothing left to wait for.
+ */
+const parked = new Map();
+const PARK_MINUTES = 15;
+
+function parkedUids() {
+  const now = Date.now();
+  for (const [uid, until] of parked) if (now >= until) parked.delete(uid);
+  return [...parked.keys()];
+}
+
+/** Called with whatever the revise list currently holds. */
+function unparkListed(uids = []) {
+  for (const uid of uids) {
+    if (!parked.delete(String(uid))) continue;
+    logEvent('🔓', 'submit_unparked', `${uid} is back on the revise list — it can be submitted again`, {
+      uid,
+    });
+  }
+}
+
 /** True while the platform is still refusing, and says so once when it stops. */
 function submitStillBlocked() {
   if (!submitBlocked) return false;
@@ -1828,7 +1870,14 @@ function submitStillBlocked() {
  * whole thing owns the browser tab for minutes, so a queue of them would just be
  * a slower way to do the same work with more ways to interleave badly.
  */
-async function maybeSubmitCheck() {
+/*
+ * At most this many tasks are attempted in one sweep, and only when the earlier
+ * ones turned out to have no row to open — which costs nothing but the lookup.
+ * A sweep that actually uploads something stops after that one, as it always did.
+ */
+const MAX_SUBMIT_TRIES_PER_SWEEP = 3;
+
+async function maybeSubmitCheck(attempt = 0) {
   if (!systemEnabled) return;
   if (submitInFlight) return;
   if (!hub.isConnected('snorkel')) return;
@@ -1839,7 +1888,11 @@ async function maybeSubmitCheck() {
   const capped = await submitAllowanceLeft();
   const atCap = capped.limited && capped.left <= 0;
 
-  const found = await findReadyToSubmit(machineId(), { excludeNew: atCap }).catch((err) => {
+  const found = await findReadyToSubmit(machineId(), {
+    excludeNew: atCap,
+    // Skipped for now, not skipped for good — see `parked`.
+    skip: parkedUids(),
+  }).catch((err) => {
     console.warn('[server] could not look for tasks to check:', err.message);
     return null;
   });
@@ -1852,6 +1905,7 @@ async function maybeSubmitCheck() {
     eligible: found.eligible || 0,
     waiting: found.waiting || 0,
     heldByCap: found.heldByCap || 0,
+    parked: found.parked || 0,
     cap: capped.limited ? { used: capped.used, limit: capped.limit } : null,
   };
 
@@ -1907,6 +1961,10 @@ async function maybeSubmitCheck() {
   logEvent('📤', 'submit_start', `${uid} — uploading ${task.file_name || 'the task zip'} and running the checks`, {
     uid,
   });
+
+  // Set when this task turned out not to be openable, so the sweep can spend
+  // itself on a different one instead of waiting for the next tick.
+  let moveOn = false;
 
   try {
     const result = await hub.command(
@@ -2048,7 +2106,20 @@ async function maybeSubmitCheck() {
       });
     }
   } catch (err) {
-    if (err.code === 'START_UNAVAILABLE') {
+    if (err.code === 'ROW_NOT_LISTED') {
+      /*
+       * Nothing to open, so nothing was attempted: no upload, no checks, no
+       * form. The task stays exactly as it was, at "ready to submit".
+       */
+      parked.set(uid, Date.now() + PARK_MINUTES * 60000);
+      moveOn = true;
+      logEvent(
+        '🕗',
+        'submit_parked',
+        `${err.message} Leaving it for up to ${PARK_MINUTES} min and trying another task.`,
+        { uid, level: 'warn' }
+      );
+    } else if (err.code === 'START_UNAVAILABLE') {
       /*
        * The platform would not open the task. Wait for the revise backlog to
        * come down rather than asking again in three minutes — the answer will
@@ -2078,6 +2149,17 @@ async function maybeSubmitCheck() {
     submitInFlight = null;
     updateTicker();
     publishNow();
+  }
+
+  /*
+   * On to the next finished task, now rather than in three minutes.
+   *
+   * Bounded because each round is a fresh look at the list and a fresh browser
+   * job: if several tasks in a row have no row on the list, that is the state of
+   * the list, not something to work through in one sweep.
+   */
+  if (moveOn && attempt + 1 < MAX_SUBMIT_TRIES_PER_SWEEP) {
+    return maybeSubmitCheck(attempt + 1);
   }
 }
 
