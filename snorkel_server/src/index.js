@@ -29,7 +29,11 @@ import { randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
-import { dailySubmitLimit as readDailyLimit, revisionCheckLateBy as lateBy } from './limits.js';
+import {
+  dailySubmitLimit as readDailyLimit,
+  revisionCheckDueAt as dueAt,
+  revisionCheckLateBy as lateBy,
+} from './limits.js';
 import { requireToken, authEnabled } from './auth.js';
 import { ExtensionHub } from './hub.js';
 import { locateTaskFile, deleteTaskFile } from './localfile.js';
@@ -638,11 +642,17 @@ function updateTicker() {
   if (!lastRevisionReport) {
     setTicker('checks', { emoji: '🔌', message: 'waiting for the extension to report in' });
   } else {
-    const { next_check_at: next, checked_at: last } = lastRevisionReport;
+    const { checked_at: last } = lastRevisionReport;
     const ago = last ? Math.round((Date.now() - new Date(last).getTime()) / 60000) : null;
     const agoText =
       ago === null ? '' : ago <= 0 ? ' (last checked just now)' : ` (last checked ${ago} min ago)`;
-    const when = humanIn(next);
+    /*
+     * The time the server will actually act on, not the browser's raw answer.
+     * A check the server asked for leaves the alarm's old time in place, and
+     * showing that reads "due now" beside a server that has just checked.
+     */
+    const due = dueAt(lastRevisionReport, settings.check_revise_every_min);
+    const when = humanIn(due ? new Date(due).toISOString() : null);
     setTicker('checks', {
       emoji: when === 'due now' ? '🔄' : '⏳',
       message: when
@@ -2172,6 +2182,8 @@ async function maybeSubmitCheck(attempt = 0) {
        * be a lie the rest of the system then acts on.
        */
       if (form?.submitted) {
+        // The run finished, so the announcement has done its job.
+        announcedSent.delete(uid);
         await markSent(uid);
         const after = await submitAllowanceLeft();
         logEvent(
@@ -2258,6 +2270,24 @@ async function maybeSubmitCheck(attempt = 0) {
           (lastReviseCount === null
             ? ' — waiting until the revise list has been read'
             : ` with ${lastReviseCount} awaiting revision — waiting for that to drop`),
+        { uid, level: 'warn' }
+      );
+    } else if (announcedSent.has(uid)) {
+      /*
+       * The run failed after the form went in.
+       *
+       * Which is not a failed submission: the platform has the task, and the
+       * status already says so because the page announced the click as it
+       * happened. What is missing is everything the normal path would have done
+       * afterwards — the tracking row above all — so this says which task needs
+       * that done by hand rather than leaving a bare error to be read as "it did
+       * not go".
+       */
+      logEvent(
+        '⚠️',
+        'submit_incomplete',
+        `${uid} WAS submitted, but the run did not finish (${err.message}). ` +
+          `Its status is "sent"; the tracking sheet row was not written.`,
         { uid, level: 'warn' }
       );
     } else {
@@ -2417,6 +2447,42 @@ watchSettings((value) => {
  * the extension's own alarm next fires — which with a long check interval could
  * be half an hour of nothing happening for no visible reason.
  */
+/*
+ * Tasks the browser has told us it submitted, before the run that submitted them
+ * had finished.
+ */
+const announcedSent = new Set();
+
+/**
+ * Records a submission the moment the page says it happened.
+ *
+ * The click is the point of no return, and everything after it — the
+ * confirmation dialog, the page navigating, the run returning through the
+ * extension and the socket — is a chance for the fact to be lost. When it is
+ * lost, the platform has the task and the database still says "ready to submit":
+ * the same finished task is offered again while the reviewer already has it.
+ *
+ * Only the status is written here. The sheet row and the daily count belong to
+ * the normal path, which knows what was filled and with which times.
+ */
+hub.onEvent((event) => {
+  if (event.type !== 'progress' || event.step !== 'submitted') return;
+
+  const uid = String(event.message || '').trim();
+  if (!uid || announcedSent.has(uid)) return;
+  announcedSent.add(uid);
+
+  logEvent('📮', 'task_sent', `${uid} was submitted — recorded now, before the run reports back`, {
+    uid,
+  });
+  markSent(uid).catch((err) =>
+    logEvent('⚠️', 'task_sent', `${uid} was submitted but could not be recorded: ${err.message}`, {
+      uid,
+      level: 'warn',
+    })
+  );
+});
+
 hub.onEvent((event) => {
   if (event.type !== 'connected' || event.role !== 'snorkel') return;
 

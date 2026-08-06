@@ -73,6 +73,19 @@ check('the 43-minute case is late, and by how much', () => {
   assert.equal(Math.round(late / MIN), 37, 'late by the overdue time, less the grace');
 });
 
+check('a check that has just happened is never late', () => {
+  // The case that made it check every minute: the server asks for a check, the
+  // extension reports when it read the list and nothing about its alarm, so the
+  // old — now past — next time is kept and reads as overdue straight away.
+  const justNow = { next_check_at: at(-38), checked_at: at(-0.2) };
+  assert.equal(revisionCheckLateBy(justNow, 5, NOW), 0);
+});
+
+check('and it becomes late again once the interval is up', () => {
+  const stale = { next_check_at: at(-38), checked_at: at(-7) };
+  assert.ok(revisionCheckLateBy(stale, 5, NOW) > 0, 'seven minutes on a five-minute interval');
+});
+
 check('a report with no next time falls back to the interval', () => {
   // Late: last checked 20 minutes ago on a 5-minute interval.
   assert.ok(revisionCheckLateBy({ checked_at: at(-20) }, 5, NOW) > 0);

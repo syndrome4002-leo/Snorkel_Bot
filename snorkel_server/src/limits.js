@@ -32,7 +32,9 @@ export function dailySubmitLimit(raw) {
 export const REVISION_CHECK_GRACE_MS = 60000;
 
 /**
- * How late the revise check is, in milliseconds, or 0 if it is not late.
+ * When the revise list is next due to be read, as a timestamp, or null if there
+ * is nothing to be due — the extension has not reported at all yet, which is a
+ * different problem with its own message.
  *
  * The schedule lives in the browser — chrome.alarms, in a service worker Chrome
  * suspends whenever it feels like it — so "every five minutes" is a best effort
@@ -45,19 +47,46 @@ export const REVISION_CHECK_GRACE_MS = 60000;
  * Neither means there is nothing to be late for — the extension has not reported
  * at all yet, which is a different problem with its own message.
  */
-export function revisionCheckLateBy(report, everyMinutes, now = Date.now()) {
-  if (!report) return 0;
+export function revisionCheckDueAt(report, everyMinutes) {
+  if (!report) return null;
 
   const next = report.next_check_at ? new Date(report.next_check_at).getTime() : NaN;
   const last = report.checked_at ? new Date(report.checked_at).getTime() : NaN;
+  const interval = Math.max(1, Number(everyMinutes) || 5) * 60000;
 
-  const due = Number.isFinite(next)
-    ? next
-    : Number.isFinite(last)
-      ? last + Math.max(1, Number(everyMinutes) || 5) * 60000
-      : NaN;
+  /*
+   * The later of the two, not the first one available.
+   *
+   * A check the server asked for reports when it happened and nothing about the
+   * browser's alarm — so `next_check_at` stays as it was, in the past, and on
+   * its own it says the check is still overdue the moment after one finished.
+   * That is a check a minute, every minute, forever.
+   *
+   * A check that has just happened is not late no matter what any schedule says,
+   * which is the whole rule: once done, not again until the interval is up.
+   */
+  const fromSchedule = Number.isFinite(next) ? next : NaN;
+  const fromLastCheck = Number.isFinite(last) ? last + interval : NaN;
 
-  if (!Number.isFinite(due)) return 0;
+  const due = Number.isFinite(fromSchedule)
+    ? Number.isFinite(fromLastCheck)
+      ? Math.max(fromSchedule, fromLastCheck)
+      : fromSchedule
+    : fromLastCheck;
+
+  return Number.isFinite(due) ? due : null;
+}
+
+/**
+ * How late that check is, in milliseconds, or 0 if it is not late.
+ *
+ * The same due time the ticker shows, so what the dashboard says and what the
+ * server does cannot disagree — a ticker reading "due now" beside a server that
+ * has decided otherwise is how this looked while it was wrong.
+ */
+export function revisionCheckLateBy(report, everyMinutes, now = Date.now()) {
+  const due = revisionCheckDueAt(report, everyMinutes);
+  if (due === null) return 0;
   const late = now - (due + REVISION_CHECK_GRACE_MS);
   return late > 0 ? late : 0;
 }

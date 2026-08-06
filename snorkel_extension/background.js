@@ -92,6 +92,14 @@ function send(payload) {
   return false;
 }
 
+/*
+ * The run a page's own reports belong to.
+ *
+ * One at a time by construction — `busy` keeps a second run off the tab — so
+ * this is simply "the run in flight", and it is null between runs.
+ */
+let openRequestId = null;
+
 function progress(requestId, step, message) {
   log(step, message || '');
   send({ type: 'progress', requestId, step, message: message || '', at: Date.now() });
@@ -277,6 +285,8 @@ async function handleServerMessage(msg) {
       return void send({ type: 'result', requestId, ok: false, error: 'Extension is busy.' });
     }
     busy = true;
+    // From here until the finally below, this is the run a page report belongs to.
+    openRequestId = requestId;
     try {
       const result = await submitCheck(requestId, msg.options || msg || {});
       send({ type: 'result', requestId, ok: true, ...result });
@@ -290,6 +300,7 @@ async function handleServerMessage(msg) {
       });
     } finally {
       busy = false;
+      openRequestId = null;
     }
     return;
   }
@@ -762,7 +773,19 @@ async function listRevisions() {
         (res.count ? ' — ' + res.revisions.map((r) => r.uid).join(', ') : '')
     );
   }
-  return { revisions: res.revisions, count: res.count, checked_at: new Date().toISOString() };
+  /*
+   * The alarm's own next firing, included even when the server asked for this
+   * check rather than the alarm. Without it the server is told when the list was
+   * read and nothing about when it will be read again — so it keeps the previous
+   * answer, which is by then in the past, and concludes the check is overdue the
+   * moment after one finished.
+   */
+  return {
+    revisions: res.revisions,
+    count: res.count,
+    checked_at: new Date().toISOString(),
+    next_check_at: await nextRevisionCheckAt(),
+  };
 }
 
 /** When Chrome will next fire the revision alarm, as an ISO string. */
@@ -929,6 +952,7 @@ async function submitCheck(requestId, options) {
     progress(requestId, 'verdict_form', `${uid} is ${options.verdict} — filling the form that says so`);
     const form = await askTab(tab.id, {
       type: 'SUBMIT_VERDICT_FORM',
+      uid,
       verdict: options.verdict,
       answers: options.answers || {},
       times: options.times || {},
@@ -1026,6 +1050,9 @@ async function submitCheck(requestId, options) {
       progress(requestId, 'fill_form', 'both checks passed — writing the answers onto the form');
       form = await askTab(tab.id, {
         type: 'SUBMIT_FILL_FORM',
+        // Carried so the page can name the task the instant it submits it —
+        // see SnorkelBot.report().
+        uid,
         pace_scale: paceScale,
         answers: options.answers,
         times: options.times || null,
@@ -1136,6 +1163,18 @@ async function collectFeedback(requestId, uids, options) {
 // --------------------------------------------------- popup / lifecycle ----
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  /*
+   * One exception to "content-script traffic is handled per-tab": a page saying
+   * something happened, rather than answering a question it was asked.
+   *
+   * It goes straight out as progress on whatever run is open, because the point
+   * of it is to arrive before the run ends — see SnorkelBot.report().
+   */
+  if (sender.tab && msg && msg.type === 'BOT_REPORT') {
+    if (openRequestId) progress(openRequestId, msg.step, msg.detail || '');
+    return false;
+  }
+
   if (sender.tab) return false; // content-script traffic is handled per-tab
   if (!msg || typeof msg.type !== 'string') return false;
 

@@ -1118,7 +1118,7 @@
    * that cannot be undone — after it, a reviewer has the task — so it does not
    * happen because a field was missing from a message.
    */
-  async function handIn(want, filled, skipped, blockers = []) {
+  async function handIn(want, filled, skipped, blockers = [], submitUid = null) {
     if (!want) return false;
 
     /*
@@ -1151,6 +1151,18 @@
     // The last click of the whole run, and the one that cannot be undone.
     await pause('beforeSubmit');
     SnorkelBot.click(button);
+
+    /*
+     * Said now, not in the result.
+     *
+     * From here on the page is navigating and this script is on borrowed time.
+     * Everything below — the confirmation, the wait, returning through the
+     * background, the socket — is a chance for the fact of the submission to be
+     * lost, and losing it means the platform has the task and the database does
+     * not: still "ready to submit", waiting to be submitted a second time.
+     */
+    SnorkelBot.report('submitted', submitUid);
+
     // Some builds ask to confirm; some do not. Either is fine.
     const confirmed = await confirmDialog('Submit', { timeout: 6000 });
     filled.push(`submitted${confirmed.appeared ? ' and confirmed' : ''}`);
@@ -1260,7 +1272,7 @@
      * a form that is not claiming a fix. Looking for them would only produce
      * two "not on this page" lines on every single one of these.
      */
-    const submitted = await handIn(msg.auto_submit === true, filled, skipped, blockers);
+    const submitted = await handIn(msg.auto_submit === true, filled, skipped, blockers, msg.uid || null);
 
     return { verdict, filled, skipped, blockers, submitted, page_url: location.href };
   });
@@ -1381,7 +1393,7 @@
       (ticked ? filled : skipped).push(`send to reviewer${ticked ? '' : ' (would not tick)'}`);
     }
 
-    const submitted = await handIn(msg.auto_submit === true, filled, skipped, blockers);
+    const submitted = await handIn(msg.auto_submit === true, filled, skipped, blockers, msg.uid || null);
 
     return {
       filled,

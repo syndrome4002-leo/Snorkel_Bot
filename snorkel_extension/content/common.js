@@ -18,6 +18,32 @@ var SnorkelBot = {
     this.handlers[type] = fn;
   },
 
+  /**
+   * Tells the background something happened, without waiting for the handler to
+   * finish.
+   *
+   * A handler's return value is the only thing that normally leaves this page,
+   * and it leaves at the end. That is fine for describing what happened — and
+   * wrong for anything that has already happened and cannot be undone, because
+   * everything after it is a chance for the report to be lost. Submitting the
+   * form is the one action of that kind: the click lands, the page navigates,
+   * this script is torn down mid-sentence, and the server is still waiting for a
+   * reply that will never come — with the task submitted and nothing recording
+   * it.
+   *
+   * Fire and forget on purpose. If nobody is listening, the run carries on.
+   */
+  report(step, detail) {
+    try {
+      chrome.runtime.sendMessage({ type: 'BOT_REPORT', step, detail: detail ?? null }, () => {
+        // Reading lastError is what stops Chrome logging "no receiver" noise.
+        void chrome.runtime.lastError;
+      });
+    } catch {
+      /* the page is going away, which is exactly when this is called */
+    }
+  },
+
   sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   },
