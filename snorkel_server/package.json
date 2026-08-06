@@ -11,7 +11,8 @@
     "seed": "node scripts/seed-sample.mjs",
     "seed:delete": "node scripts/seed-sample.mjs --delete",
     "dropbox:auth": "node scripts/dropbox-auth.mjs",
-    "backfill:new-task": "node scripts/backfill-is-new-task.mjs"
+    "backfill:new-task": "node scripts/backfill-is-new-task.mjs",
+    "test": "node test/scoping.test.mjs"
   },
   "engines": {
     "node": ">=18"

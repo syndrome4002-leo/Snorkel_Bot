@@ -4,7 +4,8 @@
  * The worker takes no commands: it watches Firestore for work and gets on with
  * it. What it needs from here is the other two directions —
  *
- *   read   /machines/<id>/settings   how many tasks it may run at once
+ *   read   /machines/<id>/settings   how many tasks it may run at once — read for
+ *                                     every machine it works for, not for itself
  *   write  /machines/<id>/logs       so its progress shows up on the dashboard
  *          /machines/<id>/ticker     the one line that updates in place
  *          /machines/<id>/worker     what it is doing right now
@@ -19,7 +20,6 @@ import { config } from './config.js';
 import { firebaseStatus } from './firebase.js';
 import { machineId, machineInfo } from './machine.js';
 
-const SETTINGS = () => `machines/${machineId()}/settings`;
 const LOGS = () => `machines/${machineId()}/logs`;
 const TICKER = () => `machines/${machineId()}/ticker`;
 /*
@@ -210,12 +210,122 @@ export async function initRtdb() {
 
 // ------------------------------------------------------------ settings ----
 
+/*
+ * Settings are per machine, and a worker belongs to no machine in particular.
+ *
+ * That is the whole difficulty. The dashboard writes "Max tasks at once" under
+ * the machine whose tasks you are looking at, because that is the machine you
+ * have on screen. This worker usually runs on a different computer from all of
+ * them — so reading its own branch, which is what it used to do, meant reading a
+ * branch nobody ever writes to, and quietly keeping the env default while the
+ * dashboard showed the number you asked for.
+ *
+ * So it reads the branches of the machines it works for, and its own on top.
+ * Its own still wins: a worker with settings of its own has been configured
+ * deliberately, and that should beat what the machines it serves ask for.
+ */
+const subscriptions = new Map(); // machine id -> { ref, handler }
+const perMachine = new Map(); // machine id -> its settings, as last seen
+let onSettings = null;
+
+/**
+ * One settings object out of several branches.
+ *
+ * Where two machines disagree about a number, the smaller wins. Every number
+ * here is a ceiling — tasks at once, fix attempts — so the smaller of two
+ * answers is the one that breaks nothing: obeying a limit that is stricter than
+ * one machine wanted is a slow day, obeying one that is looser than the other
+ * wanted is the overload the setting exists to prevent. Disagreements are
+ * reported rather than merged silently.
+ */
+export function mergeBranches(own, others) {
+  const merged = {};
+  const clashes = [];
+
+  for (const value of others) {
+    for (const [key, next] of Object.entries(value || {})) {
+      if (next === null || next === undefined) continue;
+      const current = merged[key];
+      if (current === undefined) {
+        merged[key] = next;
+        continue;
+      }
+      if (current === next) continue;
+      clashes.push(key);
+      if (typeof current === 'number' && typeof next === 'number') {
+        merged[key] = Math.min(current, next);
+      }
+    }
+  }
+
+  for (const [key, value] of Object.entries(own || {})) {
+    if (value !== null && value !== undefined) merged[key] = value;
+  }
+
+  return { merged, clashes: [...new Set(clashes)] };
+}
+
+function mergeSettings() {
+  const others = [...perMachine.entries()].filter(([id]) => id !== machineId()).map(([, value]) => value);
+  return mergeBranches(perMachine.get(machineId()), others);
+}
+
+function emitSettings() {
+  if (!onSettings) return;
+  const { merged, clashes } = mergeSettings();
+  onSettings(merged, {
+    sources: [...perMachine.keys()],
+    clashes,
+    // False while a branch has been subscribed to but has not answered yet.
+    // Startup waits for this: acting on half the settings would mean claiming
+    // three tasks in the second before the branch saying one arrives.
+    complete: perMachine.size === subscriptions.size,
+  });
+}
+
+function unwatchMachine(id) {
+  const sub = subscriptions.get(id);
+  if (sub) sub.ref.off('value', sub.handler);
+  subscriptions.delete(id);
+  perMachine.delete(id);
+}
+
+function watchMachine(id) {
+  const ref = db.ref(`machines/${id}/settings`);
+  const handler = (snapshot) => {
+    perMachine.set(id, snapshot.val() || {});
+    emitSettings();
+  };
+  ref.on('value', handler);
+  subscriptions.set(id, { ref, handler });
+}
+
+/**
+ * Starts on this machine's own branch and stays there until settingsFrom() says
+ * otherwise — the machine list arrives a moment later, and until it does its own
+ * branch is the only one it can name.
+ */
 export function watchSettings(onChange) {
   if (!db) return () => {};
-  const ref = db.ref(SETTINGS());
-  const handler = (snapshot) => onChange(snapshot.val() || {});
-  ref.on('value', handler);
-  return () => ref.off('value', handler);
+  onSettings = onChange;
+  settingsFrom([]);
+  return () => {
+    for (const id of [...subscriptions.keys()]) unwatchMachine(id);
+    onSettings = null;
+  };
+}
+
+/** Which machines' settings to obey. Called again whenever that list changes. */
+export function settingsFrom(machineIds) {
+  if (!db || !onSettings) return;
+  const wanted = new Set([machineId(), ...machineIds]);
+  for (const id of [...subscriptions.keys()]) {
+    if (!wanted.has(id)) unwatchMachine(id);
+  }
+  for (const id of wanted) {
+    if (!subscriptions.has(id)) watchMachine(id);
+  }
+  emitSettings();
 }
 
 // ------------------------------------------------------- machine index ----

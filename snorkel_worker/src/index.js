@@ -38,6 +38,7 @@ import {
   watchDeleteRequests,
   watchUsageRefresh,
   watchSettings,
+  settingsFrom,
   watchMachineIndex,
   watchSystem,
   goOffline,
@@ -74,6 +75,9 @@ function staticFixLimit() {
   if (Number.isFinite(fromDashboard) && fromDashboard > 0) return Math.floor(fromDashboard);
   return Math.max(1, config.worker.maxStaticFixAttempts);
 }
+
+/** What this worker takes from the machines' settings. The rest is the server's. */
+const WORKER_SETTINGS = new Set(['worker_max_concurrent', 'static_fix_limit']);
 
 function maxConcurrent() {
   const fromDashboard = Number(settings.worker_max_concurrent);
@@ -368,30 +372,6 @@ async function main() {
   }
 
   /*
-   * The first snapshot is awaited rather than just subscribed to. Settings
-   * arrive asynchronously, so polling straight away would use the env default
-   * for a second or two — long enough to claim three tasks when the dashboard
-   * says one, which is exactly the mistake the setting exists to prevent.
-   */
-  const firstSettings = new Promise((resolve) => {
-    let seen = false;
-    watchSettings((value) => {
-      const before = seen ? maxConcurrent() : null;
-      settings = value || {};
-      if (!seen) {
-        seen = true;
-        return resolve();
-      }
-      const after = maxConcurrent();
-      if (after !== before) {
-        log('⚙️', 'settings', `max concurrent tasks: ${before} -> ${after}`);
-        updateTicker();
-        publishNow();
-      }
-    });
-  });
-
-  /*
    * Whose tasks to work. This is what lets the worker sit on a different machine
    * from the one that produced the task: it is told, rather than assuming it is
    * the machine in question. Awaited for the same reason as the settings — the
@@ -414,6 +394,11 @@ async function main() {
     watchMachineIndex((ids) => {
       const before = machines;
       machines = ids;
+      // Their settings are this worker's settings — see rtdb.js — so a machine
+      // added or removed on the dashboard changes what this worker obeys, not
+      // just whose tasks it takes. (Nothing happens on the first call: the
+      // settings are not subscribed to until just below, once this list exists.)
+      settingsFrom(machines);
       if (!seen) {
         seen = true;
         return resolve();
@@ -429,11 +414,77 @@ async function main() {
     });
   });
 
-  await Promise.race([
-    Promise.all([firstSettings, firstMachines]),
-    // Without the Realtime Database there is no snapshot coming at all.
-    new Promise((resolve) => setTimeout(resolve, 5000)),
-  ]);
+  /*
+   * Five seconds for both, not five each: a worker that cannot reach the
+   * Realtime Database should start late, not twice as late.
+   */
+  const startBy = Date.now() + 5000;
+  const outOfTime = () => new Promise((resolve) => setTimeout(resolve, Math.max(0, startBy - Date.now())));
+
+  // Without the Realtime Database there is no snapshot coming at all.
+  await Promise.race([firstMachines, outOfTime()]);
+
+  /*
+   * The first snapshot is awaited rather than just subscribed to. Settings
+   * arrive asynchronously, so polling straight away would use the env default
+   * for a second or two — long enough to claim three tasks when the dashboard
+   * says one, which is exactly the mistake the setting exists to prevent.
+   *
+   * "The first snapshot" means the first one with every branch reporting: they
+   * come from the machines this worker works for, so there are usually several,
+   * and the earliest arrival is not the whole answer. Which is also why this is
+   * set up after the machine list and not before it — subscribing to the
+   * branches one at a time as the list trickles in would let the wait finish
+   * against a branch that is merely the first to answer.
+   */
+  let settingsSources = [];
+  const firstSettings = new Promise((resolve) => {
+    let seen = false;
+    watchSettings((value, meta) => {
+      const before = seen ? maxConcurrent() : null;
+      settings = value || {};
+
+      const sources = meta?.sources || [];
+      if (sources.join(',') !== settingsSources.join(',')) {
+        settingsSources = sources;
+        if (seen) log('⚙️', 'settings', `now reading settings from ${sources.join(', ') || 'nowhere'}`);
+      }
+      /*
+       * Two machines asking for different numbers is not something to resolve
+       * quietly — whoever set the second one is watching for it to take effect.
+       *
+       * Only the settings this worker actually obeys are worth a line. Most of
+       * what is in that branch is the server's, and two machines having
+       * different sheet owners is normal rather than a problem.
+       */
+      const clashes = (meta?.clashes || []).filter((key) => WORKER_SETTINGS.has(key));
+      if (clashes.length) {
+        log(
+          '⚠️',
+          'settings_clash',
+          `${clashes.join(', ')} differ between ${sources.join(' and ')} — using the lower number`,
+          { level: 'warn' }
+        );
+      }
+
+      if (!seen) {
+        if (!meta || meta.complete) {
+          seen = true;
+          resolve();
+        }
+        return;
+      }
+      const after = maxConcurrent();
+      if (after !== before) {
+        log('⚙️', 'settings', `max concurrent tasks: ${before} -> ${after}`);
+        updateTicker();
+        publishNow();
+      }
+    });
+  });
+  settingsFrom(machines);
+
+  await Promise.race([firstSettings, outOfTime()]);
 
   watchSystem((enabled) => {
     if (enabled === systemEnabled) return;

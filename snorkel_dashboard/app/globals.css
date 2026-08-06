@@ -805,6 +805,9 @@ button.machine:hover { background: var(--hover); }
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* Clipped at the card's own rounded edge rather than by the frame, so
+     anything that does not fit is cut where you can see it happening. */
+  overflow: hidden;
 }
 
 .workspace {
@@ -822,8 +825,14 @@ button.machine:hover { background: var(--hover); }
 .workspace > .card { min-height: 0; display: flex; flex-direction: column; }
 .workspace > .card { margin: 0; }
 /* Level with the table beside it, so the two panes end on the same line. */
-/* Fills its card, which fills the row — so the two panes always end level. */
-.workspace .logs { flex: 1 1 auto; min-height: 0; max-height: none; }
+/*
+ * Fills what is left of its card, which fills the row — so the two panes always
+ * end level. What is left, specifically: the countdown lines below are given
+ * their height first and the stream takes the remainder. Letting the stream grow
+ * to fill everything is what pushed them off the bottom of the card, where the
+ * frame clipped them.
+ */
+.workspace .logs { flex: 1 1 auto; min-height: 80px; max-height: none; }
 
 @media (max-width: 1000px) {
   .workspace { grid-template-columns: 1fr; }
@@ -852,6 +861,9 @@ button.machine:hover { background: var(--hover); }
 /* The countdown line: attached to the log box, visually part of it but outside
    the scrolling area so it never scrolls away. */
 .tickers {
+  /* Never squeezed. These lines are the answer to "when does anything happen
+     next", which is most of what the panel is for. */
+  flex: 0 0 auto;
   margin-top: -1px;
   border: 1px solid var(--line);
   border-top: 0;

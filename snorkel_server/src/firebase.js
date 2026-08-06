@@ -18,6 +18,28 @@ import { diffRounds, describeDiff, madeThingsWorse, signaturesOf } from './check
 import { deleteFile } from './dropbox.js';
 
 /**
+ * Whether a task document belongs to this deployment.
+ *
+ * One Firebase project can carry several set-ups that have nothing to do with
+ * each other — different people, different Snorkel accounts, different machines
+ * — and they share this collection. So "is a new task already in progress" and
+ * "how many went out today" are questions about *our* tasks; answered over the
+ * whole collection, somebody else building a task stops us from starting one,
+ * and their submissions spend our daily limit. Both of which happened.
+ *
+ * Documents written before the workspace was recorded fall back to the machine:
+ * this server created them, so its own id is on them. It is the narrower test —
+ * it would miss a second server in the same workspace — but it only applies to
+ * documents already written, and every one saved from now on carries the
+ * workspace outright.
+ */
+export function ours(task) {
+  if (!task) return false;
+  if (task.workspace) return task.workspace === config.workspace;
+  return task.machine_id === machineId();
+}
+
+/**
  * Records that could not reach Firestore are appended here as one JSON object
  * per line, in full. Nothing is lost while the database is unreachable, and
  * flushPending() replays the file once it comes back.
@@ -304,6 +326,13 @@ export async function saveTask(task, meta = {}) {
     // Which computer actually ran this. Lets the dashboard show one machine's
     // work when several report into the same project.
     machine_id: machineId(),
+    /*
+     * Which deployment this task belongs to — see ours(). The machine alone is
+     * not enough to answer that: a deployment is a set of machines, and the
+     * questions that matter ("is one of ours already in build") are asked about
+     * the set.
+     */
+    workspace: config.workspace,
     file_name: task.file_name ? String(task.file_name) : null,
     initial_infos: task.initial_infos ? String(task.initial_infos) : '',
     source_url: meta.page_url || null,
@@ -394,6 +423,10 @@ export async function markUploaded(uid, extra = {}) {
  *
  * Not scoped to a machine: the limit is about the Snorkel account, and two
  * machines each submitting up to the limit would be twice the intended number.
+ * It is scoped to the deployment, though — another set-up sharing this Firebase
+ * project is a different Snorkel account, and its submissions are not ours to
+ * count. Filtered in memory because the date range already uses the one field a
+ * query may range over.
  */
 export async function countSentToday({ newOnly = true } = {}) {
   if (!db) return { count: 0, uids: [], since: null };
@@ -417,7 +450,7 @@ export async function countSentToday({ newOnly = true } = {}) {
   const field = newOnly ? 'submitted_new_at' : 'sent_at';
   const snap = await db.collection(config.firebase.collection).where(field, '>=', since).get();
 
-  const uids = snap.docs.map((d) => d.id);
+  const uids = snap.docs.filter((d) => ours(d.data())).map((d) => d.id);
 
   return { count: uids.length, uids, since };
 }
@@ -868,9 +901,17 @@ export async function findNewTaskInProgress() {
       .collection(config.firebase.collection)
       .where('is_new_task', '==', true)
       .where('task_status', '==', status)
-      .limit(1)
+      /*
+       * Read several and pick ours, rather than reading one and hoping.
+       * Somebody else's unfinished task is not a reason to hold ours back, and
+       * with limit(1) their document was frequently the one that came back.
+       * Fifty is far more unfinished new tasks than can exist across every
+       * deployment at once — a new task is one per account at a time.
+       */
+      .limit(50)
       .get();
-    if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    const mine = snap.docs.find((doc) => ours(doc.data()));
+    if (mine) return { id: mine.id, ...mine.data() };
   }
   return null;
 }
@@ -879,10 +920,16 @@ export async function findNewTaskInProgress() {
  * The most recently updated task whose file has not reached Dropbox yet.
  * Filtering happens in memory on purpose: a where() + orderBy() on different
  * fields would require a composite index to be created by hand first.
+ *
+ * Scoped to this machine rather than this deployment, which is stricter and has
+ * to be: what gets uploaded is a file in this computer's download folder, and a
+ * task built on another machine has no file here to upload.
  */
 export async function findPendingUpload() {
-  const recent = await listTasks(50);
-  return recent.find((t) => t.file_uploaded !== true && t.UID) || null;
+  const recent = await listTasks(100);
+  return (
+    recent.find((t) => t.file_uploaded !== true && t.UID && t.machine_id === machineId()) || null
+  );
 }
 
 export async function listTasks(limit = 50) {
