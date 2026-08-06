@@ -29,7 +29,7 @@ import { randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
-import { dailySubmitLimit as readDailyLimit } from './limits.js';
+import { dailySubmitLimit as readDailyLimit, revisionCheckLateBy as lateBy } from './limits.js';
 import { requireToken, authEnabled } from './auth.js';
 import { ExtensionHub } from './hub.js';
 import { locateTaskFile, deleteTaskFile } from './localfile.js';
@@ -1566,6 +1566,15 @@ async function tick() {
    * says no, and the common ones are all local.
    */
   if (systemEnabled) {
+    /*
+     * A check that should already have happened, asked for rather than waited
+     * for. See revisionCheckLateBy().
+     */
+    const late = revisionCheckLateBy();
+    if (late) {
+      await requestReviseCount(`the check was due ${Math.round(late / 60000)} min ago`).catch(() => {});
+    }
+
     if (lastReviseCount !== null) {
       await maybeAutoStart(lastReviseCount).catch((err) =>
         logEvent('❌', 'auto_failed', err.message, { level: 'error' })
@@ -1607,6 +1616,12 @@ const DEFAULT_CHECK_EVERY = 5;
  * of taking it from a page reload in the first place.
  */
 let askingForCount = false;
+let lastCountError = { message: '', at: 0 };
+
+/** This deployment's numbers, applied to the rule in limits.js. */
+function revisionCheckLateBy() {
+  return lateBy(lastRevisionReport, settings.check_revise_every_min);
+}
 
 async function requestReviseCount(why) {
   if (!systemEnabled) return;
@@ -1629,7 +1644,17 @@ async function requestReviseCount(why) {
     // rather than idling until the next tick.
     if (lastReviseCount !== null) await maybeAutoStart(lastReviseCount);
   } catch (err) {
-    logEvent('⚠️', 'revise_check', `could not read the revise list: ${err.message}`, { level: 'warn' });
+    /*
+     * Once, not once a minute. The catch-up above retries every tick for as long
+     * as the check is late, and a browser that is going to refuse will refuse
+     * every time — three hundred identical lines would push out the log that
+     * says what else was happening.
+     */
+    const now = Date.now();
+    if (lastCountError.message !== err.message || now - lastCountError.at > 10 * 60000) {
+      lastCountError = { message: err.message, at: now };
+      logEvent('⚠️', 'revise_check', `could not read the revise list: ${err.message}`, { level: 'warn' });
+    }
   } finally {
     askingForCount = false;
   }

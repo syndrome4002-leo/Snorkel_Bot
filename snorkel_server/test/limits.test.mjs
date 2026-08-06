@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { dailySubmitLimit } from '../src/limits.js';
+import { dailySubmitLimit, revisionCheckLateBy } from '../src/limits.js';
 
 let failures = 0;
 
@@ -54,5 +54,46 @@ check('a negative number is not a negative cap', () => {
   assert.equal(dailySubmitLimit(-1), null);
 });
 
-console.log(failures ? `\n${failures} limit check(s) failed` : '\nthe daily limit holds');
+const MIN = 60000;
+const at = (isoOffsetMin) => new Date(Date.UTC(2026, 7, 6, 12, 0, 0) + isoOffsetMin * MIN).toISOString();
+const NOW = Date.UTC(2026, 7, 6, 12, 0, 0);
+
+check('a check due in the future is not late', () => {
+  assert.equal(revisionCheckLateBy({ next_check_at: at(4), checked_at: at(-1) }, 5, NOW), 0);
+});
+
+check('a check due a minute ago is still inside its grace', () => {
+  // The browser's alarm is allowed to be a little late before the server steps
+  // in — otherwise the two race each other every time.
+  assert.equal(revisionCheckLateBy({ next_check_at: at(-0.5), checked_at: at(-5) }, 5, NOW), 0);
+});
+
+check('the 43-minute case is late, and by how much', () => {
+  const late = revisionCheckLateBy({ next_check_at: at(-38), checked_at: at(-43) }, 5, NOW);
+  assert.equal(Math.round(late / MIN), 37, 'late by the overdue time, less the grace');
+});
+
+check('a report with no next time falls back to the interval', () => {
+  // Late: last checked 20 minutes ago on a 5-minute interval.
+  assert.ok(revisionCheckLateBy({ checked_at: at(-20) }, 5, NOW) > 0);
+  // Not late: checked 2 minutes ago.
+  assert.equal(revisionCheckLateBy({ checked_at: at(-2) }, 5, NOW), 0);
+});
+
+check('a longer interval is respected', () => {
+  assert.equal(revisionCheckLateBy({ checked_at: at(-20) }, 30, NOW), 0);
+});
+
+check('no report at all is not "late"', () => {
+  // The extension has never reported. That is a different problem, with its own
+  // message — asking for a count here would say the wrong thing about it.
+  assert.equal(revisionCheckLateBy(null, 5, NOW), 0);
+  assert.equal(revisionCheckLateBy({}, 5, NOW), 0);
+});
+
+check('an unreadable timestamp does not read as infinitely late', () => {
+  assert.equal(revisionCheckLateBy({ next_check_at: 'soon' }, 5, NOW), 0);
+});
+
+console.log(failures ? `\n${failures} limit check(s) failed` : '\nthe limits hold');
 process.exit(failures ? 1 : 0);
