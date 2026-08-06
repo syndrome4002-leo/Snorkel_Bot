@@ -29,6 +29,7 @@ import { randomUUID } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
+import { dailySubmitLimit as readDailyLimit } from './limits.js';
 import { requireToken, authEnabled } from './auth.js';
 import { ExtensionHub } from './hub.js';
 import { locateTaskFile, deleteTaskFile } from './localfile.js';
@@ -286,8 +287,10 @@ async function assertNoTaskInBuild(options = {}) {
   const allowance = await submitAllowanceLeft();
   if (allowance.limited && allowance.left <= 0) {
     const error = new Error(
-      `Today's limit of ${allowance.limit} new task(s) has been reached ` +
-        `(${allowance.used} submitted). Pass {"force": true} to start one anyway.`
+      (allowance.limit === 0
+        ? `New tasks are switched off — "new tasks per day" is set to 0.`
+        : `Today's limit of ${allowance.limit} new task(s) has been reached ` +
+          `(${allowance.used} submitted).`) + ` Pass {"force": true} to start one anyway.`
     );
     error.code = 'DAILY_LIMIT';
     throw error;
@@ -822,7 +825,9 @@ async function maybeAutoStart(reviseCount) {
     logEvent(
       '🛑',
       'daily_limit',
-      `${allowance.used} of ${allowance.limit} new tasks submitted today — not starting another`
+      allowance.limit === 0
+        ? 'new tasks are switched off — "new tasks per day" is set to 0'
+        : `${allowance.used} of ${allowance.limit} new tasks submitted today — not starting another`
     );
     return;
   }
@@ -1768,10 +1773,13 @@ function autoSubmit() {
   return settings.auto_submit === true;
 }
 
-/** Empty or 0 means no daily cap. */
+/**
+ * Today's cap, as the dashboard has it. See limits.js for what the value means:
+ * empty is no limit, 0 is none. It used to read 0 as no limit too, so setting
+ * the cap to 0 to stop new tasks turned the cap off instead.
+ */
 function dailySubmitLimit() {
-  const n = Number(settings.daily_submit_limit);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+  return readDailyLimit(settings.daily_submit_limit);
 }
 
 /**
