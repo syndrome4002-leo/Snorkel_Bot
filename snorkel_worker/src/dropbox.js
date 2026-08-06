@@ -125,10 +125,22 @@ export async function downloadFile(remotePath, destPath) {
 
   if (!res.ok) {
     const detail = await readError(res);
-    const hint = /not_found/.test(detail)
+    const missing = /not_found/.test(detail);
+    const hint = missing
       ? ` Nothing is stored at ${target} — it may already have been taken by an earlier run.`
       : '';
-    throw new Error(`Dropbox download failed (HTTP ${res.status}): ${detail}.${hint}`);
+    const failure = new Error(`Dropbox download failed (HTTP ${res.status}): ${detail}.${hint}`);
+    /*
+     * "It is not there" is a different answer from "it would not come".
+     *
+     * Dropbox is a handover point, not storage: whoever takes a file deletes it.
+     * So a missing file usually means somebody already has it — which, when the
+     * somebody is an earlier run of this worker, means the work is on disk and
+     * the download was never needed. Marked so the caller can look before
+     * treating it as a failure.
+     */
+    if (missing) failure.code = 'DROPBOX_NOT_FOUND';
+    throw failure;
   }
 
   const bytes = Buffer.from(await res.arrayBuffer());

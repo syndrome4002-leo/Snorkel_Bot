@@ -98,6 +98,21 @@ export async function findTaskDir(uid) {
   return null;
 }
 
+/**
+ * Whether a folder holds anything.
+ *
+ * An empty folder is what a half-finished unpack leaves behind, and treating one
+ * as a completed download would hand Claude an empty working directory and call
+ * it a resume.
+ */
+async function hasContent(dir) {
+  try {
+    return (await readdir(dir)).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Where a task's folder should be created. */
 export function taskDirFor(uid) {
   return path.join(config.workDir, `${uid}_submission`);
@@ -395,7 +410,51 @@ export async function workOnTask(task, { log, onSession } = {}) {
       taskDir = alreadyFetched;
       say('📂', 'resumed', `already downloaded — working in ${taskDir}`);
     } else {
-      taskDir = await fetchAndUnpack(task, say);
+      try {
+        taskDir = await fetchAndUnpack(task, say);
+      } catch (err) {
+        /*
+         * The file is not in Dropbox, and the record says it should be.
+         *
+         * Which is a contradiction only until you remember what Dropbox is here:
+         * a handover point that whoever takes a file empties. So "not there"
+         * almost always means an earlier run already took it — and if that run
+         * was this worker, the unpacked folder is on this disk right now.
+         *
+         * The stamp above is the tidy version of this check and misses it when
+         * the two fields disagree: `downloaded_at` set and `dropbox_path` still
+         * pointing at the file the download deleted. Then the task is asked to
+         * fetch a file nobody has, forever, while the work sits in the folder
+         * next to it.
+         *
+         * So the folder is the fallback, and Dropbox's own answer is what
+         * triggers it — no guessing about which of the two fields is stale.
+         */
+        if (err.code !== 'DROPBOX_NOT_FOUND') throw err;
+
+        const onDisk = await findTaskDir(uid);
+        if (!onDisk || !(await hasContent(onDisk))) throw err;
+
+        taskDir = onDisk;
+        say(
+          '📂',
+          'resumed',
+          `${path.basename(task.dropbox_path || task.file_name || '')} is no longer in Dropbox, ` +
+            `but the unpacked folder is here — working in ${taskDir}`,
+          { level: 'warn' }
+        );
+
+        /*
+         * And put the record straight, so the next round takes the quiet path
+         * above instead of asking Dropbox the same question again.
+         */
+        await patchTask(uid, {
+          dropbox_path: null,
+          file_uploaded: false,
+          local_path: taskDir,
+          downloaded_at: task.downloaded_at || new Date().toISOString(),
+        });
+      }
     }
   } else {
     taskDir = await findTaskDir(uid);
@@ -615,7 +674,10 @@ export async function workOnTask(task, { log, onSession } = {}) {
   const turns = session.turns;
   const prose = turns.length > 1 ? turns[turns.length - 2].text : '';
   const { answers, ignored, problems } = await normaliseAnswers(
-    parseJsonReply(turns[turns.length - 1].text)
+    parseJsonReply(turns[turns.length - 1].text),
+    // A verdict run answers the form that verdict produces, whose questions and
+    // options are not the fixable form's.
+    { stage }
   );
 
   if (triage && !answers.validity_required) answers.validity_required = triage.verdict;

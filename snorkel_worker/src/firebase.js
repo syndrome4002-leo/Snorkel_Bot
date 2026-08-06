@@ -455,13 +455,34 @@ export async function markTriaged(uid, status, note = '') {
   return patch;
 }
 
-/** The end state: Claude is done and the zip is back on Dropbox. */
+/**
+ * The end state: Claude is done and, if there was anything to upload, the zip is
+ * back on Dropbox.
+ *
+ * `file_uploaded` follows from whether an upload actually happened, rather than
+ * being asserted. It used to be hard-coded true, which was right for the path
+ * that had just uploaded a zip and wrong for the one that never uploads
+ * anything: a task ending at a verdict has nothing to pack — the folder is the
+ * reviewer's own file — so it was being recorded as having a file in Dropbox
+ * that had never been put there.
+ *
+ * The claim matters. `file_uploaded` is what the submit sweep reads as "there is
+ * a file to fetch and attach", and what the lost-upload sweep reads as "this one
+ * is fine". A task that says yes and means no is a submission that goes looking
+ * for a file nobody uploaded.
+ *
+ * The evidence is the path: the two callers that upload pass `dropbox_path`, and
+ * the verdict caller passes `needs_upload: false` and no path. Any path already
+ * on the record is left alone — it may still point at a real file from an
+ * earlier step, and this function has no way to know.
+ */
 export async function markReady(uid, extra = {}) {
   if (!db) throw new Error(describe(initError));
   const now = new Date().toISOString();
+  const uploaded = Boolean(extra.dropbox_path) && extra.needs_upload !== false;
   const patch = {
     task_status: TASK_STATUS_READY,
-    file_uploaded: true,
+    file_uploaded: uploaded,
     worker_finished_at: now,
     worker_pid: null,
     worker_error: null,
@@ -533,6 +554,12 @@ export async function findLostUploads(machineIds = []) {
       // Only ones the server has already consumed. A task waiting for its first
       // upload is the worker's ordinary business, not this.
       if (task.file_uploaded === true) continue;
+      /*
+       * And never one that has nothing to upload. A verdict task's folder is the
+       * reviewer's own file, unchanged — packing it and calling it a rebuilt
+       * submission would upload their file back to them as our work.
+       */
+      if (task.needs_upload === false) continue;
       if (!task.submit_file_served_at) continue;
 
       /*

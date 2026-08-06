@@ -115,12 +115,31 @@ export async function answerSchema() {
   return schemaCache;
 }
 
-/** Only the keys a given run is allowed to produce. */
+/**
+ * Only the keys a given run is allowed to produce, with the options that stage
+ * actually offers.
+ *
+ * The same question can be asked by two different forms with two different sets
+ * of answers. "What issue did you find with the task/components?" is one: the
+ * fixable form lists seven categories about the instructions and the tests, and
+ * the unfixable form lists two about scope and the environment. They share a
+ * name and a meaning and nothing else.
+ *
+ * Handing the fixable list to a run that will fill the unfixable form is how a
+ * task ends up with answers that match none of the boxes on the page, which the
+ * form filler then — correctly — refuses to guess at, leaving the question
+ * blank.
+ */
 export async function schemaForStage(stage) {
   const schema = await answerSchema();
   if (!stage) return schema;
   return Object.fromEntries(
-    Object.entries(schema).filter(([, spec]) => !spec.stages || spec.stages.includes(stage))
+    Object.entries(schema)
+      .filter(([, spec]) => !spec.stages || spec.stages.includes(stage))
+      .map(([key, spec]) => {
+        const forStage = spec.enum_by_stage && spec.enum_by_stage[stage];
+        return [key, forStage ? { ...spec, enum: forStage } : spec];
+      })
   );
 }
 

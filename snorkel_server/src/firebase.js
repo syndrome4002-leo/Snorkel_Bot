@@ -938,7 +938,15 @@ export async function findNewTaskInProgress() {
 export async function findPendingUpload() {
   const recent = await listTasks(100);
   return (
-    recent.find((t) => t.file_uploaded !== true && t.UID && t.machine_id === machineId()) || null
+    recent.find(
+      (t) =>
+        t.file_uploaded !== true &&
+        // A verdict task has no file and never will — it is not pending, it is
+        // finished.
+        t.needs_upload !== false &&
+        t.UID &&
+        t.machine_id === machineId()
+    ) || null
   );
 }
 

@@ -64,6 +64,26 @@
       "the task leaks solution information",
       "the oracle does not implement the solution following the instructions",
       "less than 10 fail-to-pass tests in test suite"
+    ],
+    "enum_by_stage": {
+      "invalid": [
+        "PR scope needs to be changed or reduced",
+        "Environment Issues"
+      ]
+    }
+  },
+  "environment_issue_specifics": {
+    "question": "2b",
+    "label": "If Environment Issues was selected above, what specific issues did you find with the task?",
+    "stages": [
+      "invalid"
+    ],
+    "list": true,
+    "when": "\"Environment Issues\" is one of the issues found; leave it out otherwise",
+    "enum": [
+      "Image/Dependency Build Failures",
+      "Oracle timeout",
+      "External-network dependency at build/solve time"
     ]
   },
   "issues_in_detail": {

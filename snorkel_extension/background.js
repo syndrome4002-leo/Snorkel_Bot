@@ -997,6 +997,13 @@ async function submitCheck(requestId, options) {
     run_prescriptiveness: options.run_prescriptiveness !== false,
     pace_scale: paceScale,
     checkTimeout: options.checkTimeout || 600000,
+    /*
+     * What to do when the platform cannot run a check at all — see runCheck().
+     * Passed through rather than decided here: how long to wait before clicking
+     * a button again is policy, and policy comes from the server.
+     */
+    check_retries: options.check_retries,
+    check_retry_wait_ms: options.check_retry_wait_ms,
   });
 
   progress(

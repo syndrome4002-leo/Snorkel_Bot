@@ -232,9 +232,18 @@ export function pushLog(entry) {
     })
     .catch((err) => console.warn('[rtdb] could not push a log line:', err.message));
 
-  // A line about a task goes to that task's own history as well. Written from
-  // the same call so no caller has to remember to do both.
-  if (line.uid) pushTaskLog(line.uid, line);
+  /*
+   * A line about a task goes to that task's own history as well. Written from
+   * the same call so no caller has to remember to do both.
+   *
+   * Unless it repeats. A sweep that runs every minute and says the same sentence
+   * each time is worth seeing in the machine stream, where it scrolls past among
+   * everything else — but a task's history is capped, and 1,440 copies of "not
+   * starting anything, this one is still in build" a day evict the handful of
+   * lines that say what actually happened to it. The task's own record then
+   * reads as though nothing ever did.
+   */
+  if (line.uid && !entry.recurring) pushTaskLog(line.uid, line);
 }
 
 const taskLogsSinceTrim = new Map();

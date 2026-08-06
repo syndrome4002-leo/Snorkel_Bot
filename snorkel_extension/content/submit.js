@@ -440,6 +440,48 @@
     return null;
   }
 
+  /*
+   * The platform failing to run the check at all, as opposed to running it and
+   * not liking the task.
+   *
+   * These are different outcomes that look similar from here: no verdict panel
+   * appears either way. But a check that FAILED has an answer and re-running it
+   * would only get the same answer, while a check that never ran has no answer
+   * and re-running it is the whole remedy.
+   *
+   * Matched on short text only, and never inside the result panel. The build
+   * logs of a genuinely failing check quote whatever the task's own tests
+   * printed — including, on a task that talks to an API, the words this pattern
+   * looks for. Reading that as a platform fault would retry a check that had
+   * already given its answer.
+   */
+  const API_ERROR = /(feedback\s*api\s*error|error fetching feedback|failed to (?:run|fetch|start)|something went wrong)/i;
+  const API_ERROR_MAX_CHARS = 200;
+
+  function platformErrorText(field) {
+    // Toasts render at the top of the document rather than inside the field, so
+    // both are searched.
+    const scopes = [field, document.body].filter(Boolean);
+    for (const scope of scopes) {
+      for (const el of $$('*', scope)) {
+        if (el.closest(RESULT_PANEL)) continue;
+        const own = ownTextOf(el);
+        if (!own || own.length > API_ERROR_MAX_CHARS) continue;
+        if (API_ERROR.test(own)) return own;
+      }
+    }
+    return '';
+  }
+
+  /** An element's own words, not its descendants' — see platformErrorText(). */
+  function ownTextOf(el) {
+    let out = '';
+    for (const node of el.childNodes) {
+      if (node.nodeType === 3) out += node.nodeValue;
+    }
+    return SnorkelBot.normText(out);
+  }
+
   /**
    * The build logs, which live behind a collapsed accordion.
    *
@@ -582,7 +624,7 @@
     return { field: $(selector), passes, opened };
   }
 
-  async function runCheck(key, spec, timeoutMs) {
+  async function runCheck(key, spec, timeoutMs, opts = {}) {
     let field = $(spec.field);
 
     if (!field) {
@@ -624,27 +666,68 @@
       );
     }
 
-    SnorkelBot.click(button);
+    /*
+     * Click, wait, and click again if the platform said it could not run it.
+     *
+     * The retry is here rather than in the server's sweep because everything
+     * around the button is already right: the zip is attached, the sections are
+     * open, the page is on this task. Failing the whole submission over it would
+     * throw away a large upload and start again from the beginning, minutes
+     * later, for the sake of one button.
+     */
+    const attempts = Math.max(1, Number(opts.checkRetries) || 3);
+    const waitBetween = Math.max(0, Number(opts.checkRetryWaitMs) ?? 180000);
+    const tried = [];
 
-    const panel = await SnorkelBot.waitFor(
-      () => {
-        const found = $(RESULT_PANEL, field);
-        if (!found) return null;
-        if (!verdictOf(found)) return null;
-        // A panel identical to the one already there is last run's, not this one.
-        if (before && SnorkelBot.text(found) === beforeText) return null;
-        return found;
-      },
-      { timeout: timeoutMs, interval: 1000, label: `the ${spec.label} result` }
-    );
+    for (let attempt = 1; ; attempt++) {
+      SnorkelBot.click(button);
 
-    return {
-      key,
-      label: spec.label,
-      verdict: verdictOf(panel),
-      summary: summaryOf(panel),
-      logs: await readBuildLogs(panel),
-    };
+      const outcome = await SnorkelBot.waitFor(
+        () => {
+          const found = $(RESULT_PANEL, field);
+          // A panel identical to the one already there is last run's, not this one.
+          const fresh = found && (!before || SnorkelBot.text(found) !== beforeText);
+          if (fresh && verdictOf(found)) return { panel: found };
+
+          // Only while there is no answer — see platformErrorText().
+          const problem = fresh ? '' : platformErrorText(field);
+          if (problem) return { problem };
+          return null;
+        },
+        { timeout: timeoutMs, interval: 1000, label: `the ${spec.label} result` }
+      ).catch((err) => ({ timedOut: err }));
+
+      if (outcome.panel) {
+        return {
+          key,
+          label: spec.label,
+          verdict: verdictOf(outcome.panel),
+          summary: summaryOf(outcome.panel),
+          logs: await readBuildLogs(outcome.panel),
+          ...(tried.length ? { attempts: attempt, platform_errors: tried } : {}),
+        };
+      }
+
+      // A wait that simply ran out is not something a second click improves: the
+      // platform took the job and has not come back within the budget, and
+      // clicking again would queue a second build behind the first.
+      if (outcome.timedOut) throw outcome.timedOut;
+
+      tried.push(outcome.problem);
+      if (attempt >= attempts) {
+        throw new Error(
+          `${spec.label} could not be run: the platform said "${outcome.problem}" on ` +
+            `${attempt} attempt(s), ${Math.round(waitBetween / 60000)} min apart.`
+        );
+      }
+
+      console.log(
+        `[snorkel-bot] ${spec.label}: "${outcome.problem}" — waiting ` +
+          `${Math.round(waitBetween / 60000)} min and clicking it again ` +
+          `(attempt ${attempt + 1} of ${attempts})`
+      );
+      await SnorkelBot.sleep(waitBetween);
+    }
   }
 
   /**
@@ -688,7 +771,12 @@
 
     for (const [key, spec] of wanted) {
       await pause('beforeCheck');
-      results.push(await runCheck(key, spec, timeout));
+      results.push(
+        await runCheck(key, spec, timeout, {
+          checkRetries: msg.check_retries,
+          checkRetryWaitMs: msg.check_retry_wait_ms,
+        })
+      );
     }
 
     const failed = results.filter((r) => r.verdict !== 'pass');
@@ -736,6 +824,17 @@
       kind: 'multi',
       only: 'invalid',
       label: 'what issue did you find with the task',
+    },
+    /*
+     * Only appears once "Environment Issues" is one of the answers above, and
+     * marked optional on the page — so an answer that does not mention the
+     * environment simply leaves it out, and nothing is filled.
+     */
+    {
+      key: 'environment_issue_specifics',
+      kind: 'multi',
+      only: 'invalid',
+      label: 'what specific issues did you find with the task',
     },
     {
       key: 'why_unfixable',
@@ -919,15 +1018,17 @@
     const wanted = (values || []).map((v) => SnorkelBot.normText(v).toLowerCase());
 
     const options = boxes.map((box) => {
-      const label = SnorkelBot.normText(
+      // Kept as the page writes it, for the report. Matching is done on the
+      // lower-cased copy; a person reading "pr scope" in a log has to work out
+      // whether that is what the page says or what we made of it.
+      const shown = SnorkelBot.normText(
         box.getAttribute('aria-label') || SnorkelBot.text(box) || box.getAttribute('value') || ''
-      )
-        .replace(/<[^>]*>/g, '')
-        .toLowerCase();
+      ).replace(/<[^>]*>/g, '');
+      const label = shown.toLowerCase();
       // Substring both ways: the stored answers are shortened versions of the
       // option text ("oracle" for "Oracle Solution"), and the option text is
       // sometimes a shortened version of the answer.
-      return { box, label, want: all || wanted.some((w) => label.includes(w) || w.includes(label)) };
+      return { box, shown, label, want: all || wanted.some((w) => label.includes(w) || w.includes(label)) };
     });
 
     /*
@@ -944,7 +1045,15 @@
         unticked: 0,
         of: boxes.length,
         missed: [],
-        why: `none of ${JSON.stringify(values)} matched the options on this page`,
+        /*
+         * Both halves, because either one alone is unactionable. "None of these
+         * matched" says the answer was wrong without saying what would have been
+         * right, and the page's own list is what tells you whether the answer
+         * came from the wrong form or the labels have simply changed.
+         */
+        why:
+          `none of ${JSON.stringify(values)} matched the options on this page ` +
+          `(offered: ${JSON.stringify(options.map((o) => o.shown))})`,
       };
     }
 

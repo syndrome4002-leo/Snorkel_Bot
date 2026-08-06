@@ -489,6 +489,27 @@ async function runDropboxStep(uid, options = {}) {
     return { task, skipped: true, reason: 'Already uploaded (pass {"force":true} to redo it).' };
   }
 
+  /*
+   * The worker already has this one.
+   *
+   * `downloaded_at` set with no `dropbox_path` is the worker saying "I took the
+   * file and emptied the handover point". Uploading again would put a second
+   * copy there and record a path to it — and the worker, on its next attempt,
+   * reads that path, finds nothing (it deleted the first copy, and this second
+   * one it never asked for), and fails on a file it does not need because the
+   * unpacked folder has been sitting on its disk the whole time.
+   *
+   * Nothing is lost by declining: what the worker produces is uploaded by the
+   * worker when it is finished.
+   */
+  if (task.downloaded_at && !task.dropbox_path && !options.force) {
+    return {
+      task,
+      skipped: true,
+      reason: `The worker downloaded this task at ${task.downloaded_at} and is working on it.`,
+    };
+  }
+
   // Fail fast with a clear message rather than starting an upload for a file
   // that is not there.
   const file = await locateTaskFile(task);
@@ -816,7 +837,11 @@ async function maybeAutoStart(reviseCount) {
   // a task is in build.
   const inBuild = await findInBuildTask(machineId()).catch(() => null);
   if (inBuild) {
-    logEvent('⏸️', 'auto_skip', `${inBuild.UID} is in build — nothing to start`, { uid: inBuild.UID });
+    // Said every minute for as long as the build lasts — see pushLog().
+    logEvent('⏸️', 'auto_skip', `${inBuild.UID} is in build — nothing to start`, {
+      uid: inBuild.UID,
+      recurring: true,
+    });
     return;
   }
 
@@ -836,7 +861,8 @@ async function maybeAutoStart(reviseCount) {
       'auto_skip',
       `${unfinished.UID} is a new task at "${unfinished.task_status}" ` +
         `on ${unfinished.machine_id || 'another machine'} — not starting another`,
-      { uid: unfinished.UID }
+      // Repeats every minute until that task is handed in — see pushLog().
+      { uid: unfinished.UID, recurring: true }
     );
     return;
   }
@@ -1877,6 +1903,22 @@ function submitStillBlocked() {
  */
 const MAX_SUBMIT_TRIES_PER_SWEEP = 3;
 
+/*
+ * What to do when the platform answers a check button with an error instead of
+ * a result.
+ *
+ * Its own retry, close to the button, rather than failing the submission and
+ * letting the sweep start again: everything around that click — the upload, the
+ * open sections, the page being on this task — is already right, and a whole
+ * re-upload is an expensive way to press a button twice.
+ *
+ * Three attempts three minutes apart. The platform's own recovery is the thing
+ * being waited for, and if nine minutes of it does not help, a fourth click is
+ * unlikely to be what does.
+ */
+const CHECK_RETRIES = 3;
+const CHECK_RETRY_WAIT_MS = 3 * 60000;
+
 async function maybeSubmitCheck(attempt = 0) {
   if (!systemEnabled) return;
   if (submitInFlight) return;
@@ -1998,10 +2040,21 @@ async function maybeSubmitCheck(attempt = 0) {
           // Stretches the pauses between actions on the form. Left at 1 unless
           // somebody has asked for slower.
           pace_scale: Number(settings.submit_pace) > 0 ? Number(settings.submit_pace) : 1,
+          check_retries: CHECK_RETRIES,
+          check_retry_wait_ms: CHECK_RETRY_WAIT_MS,
         },
       },
-      // Two platform builds back to back, on a zip this size.
-      config.submitTimeoutMs
+      /*
+       * Two platform builds back to back, on a zip this size — plus room for the
+       * waiting the retries above do.
+       *
+       * Without the second part the retry would be pointless: the browser would
+       * still be waiting out its three minutes when the server gave up on the
+       * command, and the submission would fail anyway, just later. A failed
+       * check errors in seconds, so what has to be covered is the waiting, not
+       * another full build. Both checks, worst case.
+       */
+      config.submitTimeoutMs + 2 * (CHECK_RETRIES - 1) * (CHECK_RETRY_WAIT_MS + 30000)
     );
 
     /*
@@ -2021,6 +2074,24 @@ async function maybeSubmitCheck(attempt = 0) {
       await markTaken(uid, result.page_uid || null);
       await adoptTakenTask(result.taken, result.page_uid);
       return;
+    }
+
+    /*
+     * A check that had to be asked for more than once still counts as a clean
+     * run — but silently is the wrong way to do it. The platform failing to
+     * start a build is worth seeing in the log, both as an explanation for a
+     * submission that took an extra ten minutes and as the thing to point at if
+     * it starts happening every time.
+     */
+    for (const ran of result.results || []) {
+      if (!ran.platform_errors?.length) continue;
+      logEvent(
+        '🔁',
+        'check_retried',
+        `${uid}: ${ran.label} would not run — "${ran.platform_errors[0]}" — ` +
+          `clicked again and got ${ran.verdict} on attempt ${ran.attempts}`,
+        { uid, level: 'warn' }
+      );
     }
 
     await saveStaticCheck(uid, result);

@@ -7,7 +7,7 @@
  * nowhere to go and no way to notice it went missing.
  */
 
-import { answerSchema } from './prompts.js';
+import { answerSchema, schemaForStage } from './prompts.js';
 
 /**
  * Pulls the JSON out of a reply.
@@ -293,8 +293,11 @@ export function missingVerdicts(answers) {
   return items.filter((item) => !HAS_VERDICT.test(item.text)).map((item) => item.head.slice(0, 80));
 }
 
-export async function normaliseAnswers(parsed) {
-  const schema = await answerSchema();
+export async function normaliseAnswers(parsed, { stage = null } = {}) {
+  // Checked against the stage's own options where they differ from the general
+  // ones — otherwise a perfectly good answer to the unfixable form's question is
+  // rejected for not being one of the fixable form's categories.
+  const schema = stage ? await schemaForStage(stage) : await answerSchema();
   const answers = {};
   const ignored = [];
   const problems = [];

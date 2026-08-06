@@ -86,7 +86,9 @@ const chosen = (window, testid) => {
 const ANSWERS = {
   validity_required: 'invalid',
   duplicate: 'invalid/Not Fixable',
-  what_issues_found: ['the instructions are overly-prescriptive'],
+  // This form's own options, not the fixable questionnaire's — see the schema.
+  what_issues_found: ['Environment Issues'],
+  environment_issue_specifics: ['Oracle timeout'],
   why_unfixable:
     'instruction.md asks for a retry policy the tests never exercise, and the oracle implements a different one.',
   what_makes_difficult: 'The retry budget interacts with the dispatcher in a way that is easy to miss.',
@@ -145,6 +147,8 @@ const TIMES = { review: 41, complete: 73 };
     for (const key of [
       'validity_required',
       'duplicate',
+      'what_issues_found',
+      'environment_issue_specifics',
       'why_unfixable',
       'what_makes_difficult',
       'comments_for_reviewer',
@@ -158,22 +162,36 @@ const TIMES = { review: 41, complete: 73 };
     }
 
     /*
-     * "What issue did you find" is the one field left open. Its options on THIS
-     * form are not the fixable questionnaire's — the page offers "PR scope needs
-     * to be changed or reduced" and "Environment Issues" — so the stored answer
-     * never matches and the field is left alone.
+     * The same question, answered with the OTHER form's vocabulary.
      *
-     * That is the correct behaviour until the real option list is known: the
-     * guard in fillMulti means a mismatch reports itself instead of clearing a
-     * question. Asserted, so the day the vocabulary is filled in this starts
-     * failing and says so.
+     * This is what a task looked like before the schema knew that the unfixable
+     * form asks with its own two options: seven categories about instructions
+     * and tests, none of which is on this page. It must still be refused rather
+     * than guessed at — fillMulti unticks as well as ticks, so a guess would
+     * clear the question instead of leaving it short — and the report must name
+     * what the page offered, or nobody can tell a wrong answer from a renamed
+     * option.
      */
-    check(
-      'a question whose options are not known is left alone, and says so',
-      !res.filled.some((f) => f.startsWith('what_issues_found')) &&
-        res.skipped.some((sk) => /^what_issues_found .*matched the options/.test(sk)),
-      `filled=${JSON.stringify(res.filled)} skipped=${JSON.stringify(res.skipped)}`
-    );
+    {
+      const window = load('unfixable.html');
+      const res = await window.SnorkelBot.handlers.SUBMIT_VERDICT_FORM({
+        verdict: 'invalid',
+        answers: { ...ANSWERS, what_issues_found: ['the instructions are overly-prescriptive'] },
+        times: TIMES,
+      });
+      const said = res.skipped.find((sk) => sk.startsWith('what_issues_found')) || '';
+      check(
+        'the fixable form’s categories are refused here, not guessed at',
+        !res.filled.some((f) => f.startsWith('what_issues_found')) && /matched the options/.test(said),
+        `filled=${JSON.stringify(res.filled)} skipped=${JSON.stringify(res.skipped)}`
+      );
+      check(
+        'and the report says what the page did offer',
+        /offered:.*PR scope needs to be changed or reduced/.test(said) &&
+          /Environment Issues/.test(said),
+        said || '(nothing reported)'
+      );
+    }
 
     check(
       'it does not submit unless asked',
