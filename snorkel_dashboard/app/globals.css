@@ -35,6 +35,14 @@
 
   --radius: 10px;
   --radius-sm: 7px;
+
+  /*
+   * Roughly what the sticky header, the fixed usage bar, and a card's own
+   * heading and padding take out of the viewport. Used to size the panes that
+   * scroll inside themselves, so they end where the bar begins instead of
+   * disappearing behind it.
+   */
+  --chrome: 260px;
   --hover: rgba(16, 24, 40, 0.05);
   --press: rgba(16, 24, 40, 0.09);
 }
@@ -119,10 +127,26 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * The page is a frame, not a document.
+ *
+ * Header at the top, Claude bar at the bottom, and everything between them
+ * scrolls inside its own pane. Nothing scrolls the window itself — which is why
+ * the header and the bar no longer need to be sticky or fixed to stay put, and
+ * why the panes size themselves off their container instead of guessing how
+ * much chrome to subtract from the viewport.
+ */
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  /* Enough for the fixed usage bar plus a little air. */
-  padding: 0 0 76px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -135,8 +159,7 @@ body {
 /* Sticky, so the system switch and the status pills stay reachable however far
    down the log you are. */
 header {
-  position: sticky;
-  top: 0;
+  flex: 0 0 auto;
   z-index: 20;
   display: flex;
   flex-wrap: wrap;
@@ -325,12 +348,36 @@ textarea:focus { background: var(--card); }
 .steps li { margin: 2px 0; }
 .steps li.done { color: var(--text); }
 
+/*
+ * The table scrolls inside itself rather than growing the page.
+ *
+ * The header is sticky and the Claude bar is fixed, so a page that grows with
+ * the task list scrolls the middle out from under both — and the column headings
+ * go with it. Capping the height here keeps the whole frame still and gives the
+ * sticky `thead` a container to stick to.
+ *
+ * The height is what is left of the viewport once the chrome is accounted for.
+ * `dvh` rather than `vh` so a mobile browser hiding its address bar does not
+ * leave a gap; the floor stops it collapsing to nothing on a short window.
+ */
 .table-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
   margin-top: 12px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
+.table-wrap::-webkit-scrollbar { width: 10px; height: 10px; }
+.table-wrap::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.table-wrap::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: content-box; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 /* Sticky, so the columns stay named while a long list scrolls under them. */
@@ -741,21 +788,53 @@ button.machine:hover { background: var(--hover); }
 }
 
 /* --- logs beside the tasks --- */
+/*
+ * Everything between the two bars. `min-height: 0` is what lets it shrink — a
+ * flex item defaults to the size of its content, and without it the cards inside
+ * would push the bars off the screen instead of scrolling.
+ */
+.main-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.main-area > .card,
+.main-area > .workspace > .card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .workspace {
   display: grid;
   /* The logs column is capped so the table keeps the room it needs; below
      1000px they stack, logs first. */
   grid-template-columns: minmax(300px, 32%) 1fr;
-  align-items: start;
+  /* `stretch`, not `start`: both columns fill the row so their panes can scroll
+     inside a known height rather than growing to fit their contents. */
+  align-items: stretch;
   gap: 16px;
   margin: 16px 20px;
+  min-height: 0;
 }
+.workspace > .card { min-height: 0; display: flex; flex-direction: column; }
 .workspace > .card { margin: 0; }
-.workspace .logs { max-height: min(60vh, 620px); }
+/* Level with the table beside it, so the two panes end on the same line. */
+/* Fills its card, which fills the row — so the two panes always end level. */
+.workspace .logs { flex: 1 1 auto; min-height: 0; max-height: none; }
 
 @media (max-width: 1000px) {
   .workspace { grid-template-columns: 1fr; }
-  .workspace .logs { max-height: 320px; }
+  /* Stacked rather than side by side, so neither should take the whole screen. */
+  /*
+   * Stacked rather than side by side. The frame still does not scroll, so the
+   * column between the bars does, and each pane keeps a workable size in it.
+   */
+  .main-area { overflow: auto; }
+  .workspace .logs { max-height: 320px; flex: 0 0 auto; }
+  .table-wrap { max-height: 60dvh; }
 }
 
 /* A narrow column cannot hold the log's four columns. */
@@ -869,10 +948,7 @@ button.machine:hover { background: var(--hover); }
 .bar-machines::-webkit-scrollbar { display: none; }
 
 .usage-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: 0 0 auto;
   z-index: 30;
   display: flex;
   align-items: center;

@@ -214,7 +214,7 @@ export default function Page() {
 
       {/* Logs on the left, tasks on the right: the logs are a narrow running
           column, the table needs the width. */}
-      <div className={selected ? 'workspace' : ''}>
+      <div className={`main-area${selected ? ' workspace' : ''}`}>
         {selected ? <SystemLogs machine={selected} /> : null}
         <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} onDelete={remove_task} />
       </div>
