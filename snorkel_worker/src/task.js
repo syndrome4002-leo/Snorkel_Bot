@@ -710,8 +710,10 @@ export async function workOnTask(task, { log, onSession } = {}) {
   say(
     '📝',
     'answers_saved',
-    `${saved.fields} field(s) stored` +
-      (saved.changed.length ? `, changed: ${saved.changed.join(', ')}` : ', nothing changed')
+    saved.unchanged
+      ? `no answer needed changing — the ${saved.fields} already stored still describe the task`
+      : `${saved.fields} field(s) stored` +
+          (saved.changed.length ? `, changed: ${saved.changed.join(', ')}` : ', nothing changed')
   );
 
   // -------------------------------------------------------- back up -------

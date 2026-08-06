@@ -280,3 +280,24 @@ export async function readClaudeUsage() {
     source: primary,
   };
 }
+
+/**
+ * Whether an error from Claude means "there is no usage left", as opposed to
+ * something wrong with the particular task it was working on.
+ *
+ * Deliberately narrow. A task that fails for its own reasons should be tried
+ * again; only an exhausted subscription is a reason to stop trying everything,
+ * and being too eager here would stall the worker on a fault it could have
+ * worked around. The wording comes from the CLI, which says things like
+ * "You're out of extra usage · resets 5:10am (Europe/Berlin)".
+ */
+export function outOfUsage(message) {
+  const text = String(message || '');
+  if (!text) return false;
+  return (
+    /\bout of (?:extra )?usage\b/i.test(text) ||
+    /usage limit reached/i.test(text) ||
+    /reached your usage limit/i.test(text) ||
+    /\blimit reached\b[^.]*\bresets\b/i.test(text)
+  );
+}

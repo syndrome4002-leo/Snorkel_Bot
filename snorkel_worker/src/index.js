@@ -48,7 +48,7 @@ import { startConnectServer } from './connect.js';
 import { checkClaude } from './claude.js';
 import { dropboxConfigured } from './dropbox.js';
 import { deleteTaskFolder, workOnTask, reuploadTask } from './task.js';
-import { readClaudeUsage, refreshClaudeUsage } from './usage.js';
+import { readClaudeUsage, refreshClaudeUsage, outOfUsage } from './usage.js';
 import { acquireLock, releaseLock, releaseLockSync, workerProcessAlive } from './lock.js';
 
 /** uid -> what it is doing, for the status the dashboard reads. */
@@ -94,6 +94,9 @@ async function snapshot() {
     running: running.size,
     max_concurrent: maxConcurrent(),
     static_fix_limit: staticFixLimit(),
+    // Null unless Claude has said there is nothing left to spend.
+    paused_until: pausedUntil,
+    paused_reason: pauseReason || null,
     tasks: [...running.values()].map((t) => ({ uid: t.uid, from: t.from, started_at: t.startedAt })),
     poll_seconds: config.worker.pollSeconds,
     working_for: machines,
@@ -148,6 +151,70 @@ async function recoverOrphans() {
   }
 }
 
+/*
+ * Set when Claude says the subscription is spent, and until when.
+ *
+ * Without it the worker spends the rest of the night doing this, once every
+ * poll: claim a task, start Claude, get told there is no usage left, put the
+ * task back, claim it again. Nothing progresses, and the task's history is
+ * pushed out of the log stream by hundreds of identical failures — so the one
+ * thing you would want to read in the morning is the thing that gets lost.
+ */
+let pausedUntil = null;
+let pauseReason = '';
+
+/**
+ * When to try again after running out.
+ *
+ * The reset time from the usage figures rather than the one in Claude's message:
+ * it is already an exact timestamp, where the message says something like
+ * "resets 5:10am (Europe/Berlin)" that would have to be parsed, in a timezone
+ * that is not necessarily this machine's, into a time that may be tomorrow.
+ *
+ * Half an hour if the figures cannot say. Waiting slightly too long costs one
+ * cycle of doing nothing; waiting too little costs the storm this exists to stop.
+ */
+async function usageResetsAt() {
+  try {
+    const usage = await readClaudeUsage();
+    const at = usage && usage.reset_5h ? new Date(usage.reset_5h) : null;
+    if (at && Number.isFinite(at.getTime()) && at.getTime() > Date.now()) return at;
+  } catch {
+    // Fall through to the fixed wait.
+  }
+  return new Date(Date.now() + 30 * 60000);
+}
+
+async function pauseForUsage(message) {
+  const until = await usageResetsAt();
+  // Do not let a later failure from a task that was already running shorten a
+  // pause that is already set.
+  if (pausedUntil && new Date(pausedUntil).getTime() >= until.getTime()) return;
+  pausedUntil = until.toISOString();
+  pauseReason = String(message || 'Claude is out of usage').slice(0, 200);
+  const minutes = Math.max(1, Math.round((until.getTime() - Date.now()) / 60000));
+  log(
+    '⏳',
+    'usage_pause',
+    `Claude is out of usage — claiming nothing for ${minutes} min, until ${until.toLocaleTimeString()}`,
+    { level: 'warn' }
+  );
+  updateTicker();
+  publishNow();
+}
+
+/** True while the pause is in force. Clears itself, and says so, once it is over. */
+function pausedForUsage() {
+  if (!pausedUntil) return false;
+  if (Date.now() < new Date(pausedUntil).getTime()) return true;
+  pausedUntil = null;
+  pauseReason = '';
+  log('▶️', 'usage_pause', 'usage should have reset — taking work again');
+  updateTicker();
+  publishNow();
+  return false;
+}
+
 async function startTask(task) {
   const uid = String(task.UID || task.id);
   const from = task.task_status;
@@ -178,9 +245,20 @@ async function startTask(task) {
       });
     } catch (err) {
       log('❌', 'task_failed', `${uid}: ${err.message}`, { level: 'error', uid });
-      await releaseTask(uid, from, err.message).catch((e) =>
-        console.error(`[worker] could not release ${uid}:`, e.message)
-      );
+      // Put the task back first — it is not at fault and must stay claimable —
+      // then stop taking anything until there is usage to work with.
+      if (outOfUsage(err.message)) await pauseForUsage(err.message);
+      const put = await releaseTask(uid, from, err.message).catch((e) => {
+        console.error(`[worker] could not release ${uid}:`, e.message);
+        return null;
+      });
+      /*
+       * Say when it will be tried again. Without this the task simply goes quiet
+       * for up to an hour, which reads like the worker forgot about it.
+       */
+      if (put && put.failures > 0) {
+        logRetry(uid, put);
+      }
     } finally {
       running.delete(uid);
       publishNow();
@@ -189,6 +267,17 @@ async function startTask(task) {
   })();
 
   return true;
+}
+
+/** One line on when a failed task comes round again, and how often it has failed. */
+function logRetry(uid, put) {
+  log(
+    '⏭️',
+    'task_retry',
+    `${uid} will be tried again in ${put.retryInMinutes} min` +
+      (put.failures > 1 ? ` (${put.failures} failures in a row)` : ''),
+    { uid }
+  );
 }
 
 function updateTicker() {
@@ -201,6 +290,18 @@ function updateTicker() {
       message: running.size
         ? `System disabled — finishing ${running.size} task(s), then stopping`
         : 'System disabled — claiming nothing',
+    });
+    return;
+  }
+
+  if (pausedUntil && Date.now() < new Date(pausedUntil).getTime()) {
+    const minutes = Math.max(1, Math.round((new Date(pausedUntil).getTime() - Date.now()) / 60000));
+    setTicker('worker', {
+      emoji: '⏳',
+      event: 'worker',
+      message: running.size
+        ? `Claude is out of usage — finishing ${running.size} task(s), nothing new for ${minutes} min`
+        : `Claude is out of usage — taking nothing for ${minutes} min`,
     });
     return;
   }
@@ -287,6 +388,14 @@ async function poll() {
      * it for a slot.
      */
     await recoverLostUploads();
+
+    /*
+     * Deliberately after the recovery above: rebuilding a zip from a folder that
+     * is already on disk needs no Claude at all, so there is no reason for an
+     * exhausted subscription to hold it up. Everything below this line does need
+     * Claude.
+     */
+    if (pausedForUsage()) return;
 
     // Ask for more than there is room for: some will already be claimed by the
     // time we get to them, and a short list would leave slots idle.

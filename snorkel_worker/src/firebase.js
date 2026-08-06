@@ -211,6 +211,36 @@ const docRef = (uid) => db.collection(config.firebase.collection).doc(String(uid
  * first. The lists here are short, so a handful of small exact queries beats one
  * broad one that has to be filtered afterwards.
  */
+/*
+ * How long a task is left alone after the worker failed on it, by attempt.
+ *
+ * A failure is usually not a coincidence: the same task, resumed into the same
+ * session, reaches the same conclusion. Without a wait it is re-claimed on the
+ * next poll thirty seconds later, and each of those attempts is a full Claude
+ * session — a task failing overnight ran up a session every half minute until
+ * somebody noticed.
+ *
+ * It escalates rather than giving up, because plenty of failures are worth
+ * retrying eventually: a lost network, a full disk, a usage window that resets.
+ * An hour apart is cheap enough to leave running and slow enough to notice.
+ */
+const RETRY_WAIT_MINUTES = [5, 15, 45, 60];
+
+/** Whether enough time has passed since this task last failed. */
+export function retryDue(task) {
+  if (!task || !task.worker_failed_at) return true;
+  const failedAt = new Date(task.worker_failed_at).getTime();
+  if (!Number.isFinite(failedAt)) return true;
+  const failures = Math.max(1, Number(task.worker_failures) || 1);
+  const wait = RETRY_WAIT_MINUTES[Math.min(failures, RETRY_WAIT_MINUTES.length) - 1];
+  return Date.now() >= failedAt + wait * 60000;
+}
+
+/** What retryDue() is waiting for, in minutes. Exported for the failure message. */
+export function retryWaitMinutes(failures) {
+  return RETRY_WAIT_MINUTES[Math.min(Math.max(1, failures), RETRY_WAIT_MINUTES.length) - 1];
+}
+
 export async function findWorkableTasks(machineIds = [], limit = 10, staticFixLimit = null) {
   if (!db) return [];
 
@@ -239,6 +269,9 @@ export async function findWorkableTasks(machineIds = [], limit = 10, staticFixLi
    * builds. Past the limit it stays at "static check fail" for a person.
    */
   const eligible = [...found.values()].filter((task) => {
+    // Failures repeat. Trying again immediately buys a second identical failure
+    // at the price of a whole Claude session — see retryDue().
+    if (!retryDue(task)) return false;
     if (task.task_status !== TASK_STATUS_STATIC_FAIL) return true;
     const cap = staticFixLimit ?? config.worker.maxStaticFixAttempts;
     const attempts = Number(task.static_fix_attempts || 0);
@@ -288,21 +321,32 @@ export async function claimTask(uid, fromStatus) {
   });
 }
 
-/** Puts a task back after a failure, with the reason attached. */
+/**
+ * Puts a task back after a failure, with the reason attached.
+ *
+ * Counts the failure too. Consecutive failures are what the retry wait is based
+ * on, and the count is kept on the task rather than in this process so it
+ * survives a restart — a worker restarted in a loop would otherwise reset the
+ * wait to nothing every time.
+ */
 export async function releaseTask(uid, toStatus, reason) {
-  if (!db) return;
+  if (!db) return { failures: 0, retryInMinutes: 0 };
   const now = new Date().toISOString();
+  const before = await docRef(uid).get().catch(() => null);
+  const failures = (Number(before?.data()?.worker_failures) || 0) + 1;
   await docRef(uid).set(
     {
       task_status: toStatus,
       worker_error: reason ? String(reason).slice(0, 2000) : null,
       worker_failed_at: now,
+      worker_failures: failures,
       worker_pid: null,
       updated_at: now,
     },
     { merge: true }
   );
   console.log(`[firebase] ${uid} -> back to "${toStatus}" (${reason || 'no reason given'})`);
+  return { failures, retryInMinutes: retryWaitMinutes(failures) };
 }
 
 /**
@@ -323,22 +367,50 @@ export async function releaseTask(uid, toStatus, reason) {
  */
 export async function saveAnswers(uid, answers, meta = {}) {
   if (!db) throw new Error(describe(initError));
-  if (!answers || !Object.keys(answers).length) {
-    throw new Error('Refusing to save an empty answers object.');
-  }
 
   const ref = docRef(uid);
   const snap = await ref.get();
   const existing = snap.exists && snap.data().answers && !Array.isArray(snap.data().answers)
     ? snap.data().answers
     : {};
+
+  /*
+   * An empty reply means two different things depending on what is already here.
+   *
+   * On a revision it is an ordinary outcome, and one the prompt asks for: it
+   * requests the answers that CHANGED and says to leave out anything still
+   * correct, so a round that fixed the code without altering what the form says
+   * about it correctly returns nothing. Treating that as a failure put the task
+   * back to "needs revision", where it was picked up again half a minute later,
+   * ran the same Claude session to the same conclusion, and failed the same way
+   * — for as long as nobody was watching, at the cost of a full session each
+   * time.
+   *
+   * With no stored answers there is nothing to fall back on, so an empty reply
+   * is a genuinely failed extraction and still stops the run.
+   */
+  const empty = !answers || !Object.keys(answers).length;
+  if (empty && !Object.keys(existing).length) {
+    throw new Error('Refusing to save an empty answers object.');
+  }
   const history = Array.isArray(snap.data()?.answers_history) ? snap.data().answers_history : [];
 
   const now = new Date().toISOString();
   const merged = { ...existing, ...answers };
-  const changed = Object.keys(answers).filter(
+  const changed = Object.keys(answers || {}).filter(
     (key) => JSON.stringify(existing[key]) !== JSON.stringify(answers[key])
   );
+
+  /*
+   * Nothing to merge and nothing worth a history entry — the stored answers are
+   * already what this round would have written. The round is still visible in
+   * the log and in `feedbacks`; a history entry holding no fields would only
+   * make the answer history harder to read.
+   */
+  if (empty) {
+    console.log(`[firebase] ${uid} -> revision changed no answers; keeping the ${Object.keys(existing).length} already stored`);
+    return { fields: Object.keys(existing).length, changed: [], round: history.length, unchanged: true };
+  }
 
   await ref.set(
     {
@@ -372,6 +444,10 @@ export async function markTriaged(uid, status, note = '') {
     triaged_at: now,
     worker_pid: null,
     worker_error: null,
+    // A run that got somewhere clears the failure record, so an old failure
+    // cannot go on delaying a task that is now working.
+    worker_failures: 0,
+    worker_failed_at: null,
     updated_at: now,
   };
   await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
@@ -389,6 +465,10 @@ export async function markReady(uid, extra = {}) {
     worker_finished_at: now,
     worker_pid: null,
     worker_error: null,
+    // A run that got somewhere clears the failure record, so an old failure
+    // cannot go on delaying a task that is now working.
+    worker_failures: 0,
+    worker_failed_at: null,
     updated_at: now,
     ...extra,
   };
