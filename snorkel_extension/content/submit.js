@@ -834,6 +834,10 @@
       key: 'environment_issue_specifics',
       kind: 'multi',
       only: 'invalid',
+      // Marked optional on the page, and only shown once "Environment Issues" is
+      // one of the answers above. Leaving it blank is an ordinary outcome, so it
+      // must not be what stops a form being handed in.
+      optional: true,
       label: 'what specific issues did you find with the task',
     },
     {
@@ -866,7 +870,8 @@
     { key: 'what_issues_found', kind: 'multi', label: 'what issues did you find with the task' },
     { key: 'issues_in_detail', kind: 'text', label: 'describe each issue in detail' },
     { key: 'files_changed', kind: 'text', testid: 'field-textarea-files_changed' },
-    { key: 'added_PR_explain', kind: 'text', label: 'if you added to the pr in any way' },
+    // "NA if the PR was not touched" — a question that often does not apply.
+    { key: 'added_PR_explain', kind: 'text', optional: true, label: 'if you added to the pr in any way' },
     { key: 'senior_estimated_time', kind: 'radio', testid: 'field-radio-sr-engineer-aht' },
     { key: 'what_makes_difficult', kind: 'text', label: 'what makes this task difficult' },
   ];
@@ -1113,8 +1118,25 @@
    * that cannot be undone — after it, a reviewer has the task — so it does not
    * happen because a field was missing from a message.
    */
-  async function handIn(want, filled, skipped) {
+  async function handIn(want, filled, skipped, blockers = []) {
     if (!want) return false;
+
+    /*
+     * A question we had something to say about, and failed to say.
+     *
+     * The platform validates on submit rather than by disabling the button, so
+     * pressing it here produces a rejection and a half-filled form — the worst of
+     * both, because the run is spent and the task still needs somebody. Not
+     * submitting leaves exactly the same form, filled as far as it goes, with
+     * everything it is missing written down.
+     *
+     * Fields that are optional, or simply not rendered on this page, do not count:
+     * those are questions that did not apply, not questions left blank.
+     */
+    if (blockers.length) {
+      skipped.push('submit (not handed in — ' + blockers.join(', ') + ' still unanswered)');
+      return false;
+    }
 
     const button = $$('button').find((b) => SnorkelBot.normText(SnorkelBot.text(b)).toLowerCase() === 'submit');
     if (!button) {
@@ -1146,6 +1168,16 @@
     const times = msg.times || {};
     const filled = [];
     const skipped = [];
+    /*
+     * The questions that were meant to be answered and were not. Kept apart from
+     * `skipped`, which also collects the ones that did not apply — the difference
+     * decides whether this form may be handed in. See handIn().
+     */
+    const blockers = [];
+    const miss = (spec, why) => {
+      skipped.push(spec.key + ' (' + why + ')');
+      if (!spec.optional) blockers.push(spec.key);
+    };
 
     await expandSections();
 
@@ -1162,7 +1194,7 @@
         label: `the ${spec.key} question`,
       });
       const res = await fillRadio(field, wanted[spec.key]);
-      res.ok ? filled.push(spec.key) : skipped.push(`${spec.key} (${res.why})`);
+      res.ok ? filled.push(spec.key) : miss(spec, res.why);
       await pause('radio');
     }
 
@@ -1174,32 +1206,32 @@
 
       const value = answers[spec.key] ?? (spec.fallback ? answers[spec.fallback] : undefined);
       if (value === undefined || value === null || value === '') {
-        skipped.push(`${spec.key} (no answer stored)`);
+        miss(spec, 'no answer stored');
         continue;
       }
 
       const field = findField(spec);
       if (!field) {
-        skipped.push(`${spec.key} (field not on this page)`);
+        miss(spec, 'field not on this page');
         continue;
       }
 
       try {
         if (spec.kind === 'radio') {
           const res = await fillRadio(field, value);
-          res.ok ? filled.push(spec.key) : skipped.push(`${spec.key} (${res.why})`);
+          res.ok ? filled.push(spec.key) : miss(spec, res.why);
         } else if (spec.kind === 'multi') {
           const res = await fillMulti(field, Array.isArray(value) ? value : [value]);
           if (res.ticked || res.unticked) {
             filled.push(`${spec.key} (${res.ticked} ticked${res.unticked ? `, ${res.unticked} cleared` : ''})`);
           }
-          if (!res.ok) skipped.push(`${spec.key} (${res.why})`);
+          if (!res.ok) miss(spec, res.why);
         } else {
           const how = await fillText(field, String(value));
-          how ? filled.push(`${spec.key} (${how})`) : skipped.push(`${spec.key} (no input in the field)`);
+          how ? filled.push(`${spec.key} (${how})`) : miss(spec, 'no input in the field');
         }
       } catch (err) {
-        skipped.push(`${spec.key} (${err.message})`);
+        miss(spec, err.message);
       }
       await pause('field');
     }
@@ -1208,12 +1240,14 @@
       const minutes = times[time.key];
       if (!Number.isFinite(Number(minutes))) {
         skipped.push(`${time.key} time (nothing sent)`);
+        blockers.push(`${time.key} time`);
         continue;
       }
       const field = fieldByLabel(time.label);
       const box = field && $('input', field);
       if (!box) {
         skipped.push(`${time.key} time (field not on this page)`);
+        blockers.push(`${time.key} time`);
         continue;
       }
       setNativeValue(box, String(minutes));
@@ -1226,9 +1260,9 @@
      * a form that is not claiming a fix. Looking for them would only produce
      * two "not on this page" lines on every single one of these.
      */
-    const submitted = await handIn(msg.auto_submit === true, filled, skipped);
+    const submitted = await handIn(msg.auto_submit === true, filled, skipped, blockers);
 
-    return { verdict, filled, skipped, submitted, page_url: location.href };
+    return { verdict, filled, skipped, blockers, submitted, page_url: location.href };
   });
 
   SnorkelBot.on('SUBMIT_FILL_FORM', async (msg) => {
@@ -1236,26 +1270,33 @@
     const answers = msg.answers || {};
     const filled = [];
     const skipped = [];
+    // See handIn(): a question left blank stops the form being handed in, a
+    // question that did not apply does not.
+    const blockers = [];
+    const miss = (spec, why) => {
+      skipped.push(spec.key + ' (' + why + ')');
+      if (!spec.optional) blockers.push(spec.key);
+    };
 
     await expandSections();
 
     for (const spec of FORM_FIELDS) {
       const value = answers[spec.key] ?? (spec.fallback ? answers[spec.fallback] : undefined);
       if (value === undefined || value === null || value === '') {
-        skipped.push(`${spec.key} (no answer stored)`);
+        miss(spec, 'no answer stored');
         continue;
       }
 
       const field = findField(spec);
       if (!field) {
-        skipped.push(`${spec.key} (field not on this page)`);
+        miss(spec, 'field not on this page');
         continue;
       }
 
       try {
         if (spec.kind === 'radio') {
           const res = await fillRadio(field, value);
-          res.ok ? filled.push(spec.key) : skipped.push(`${spec.key} (${res.why})`);
+          res.ok ? filled.push(spec.key) : miss(spec, res.why);
         } else if (spec.kind === 'multi') {
           const res = await fillMulti(field, Array.isArray(value) ? value : [value]);
           // Both, when some took and some did not: "3 ticked" alone would hide
@@ -1265,13 +1306,13 @@
               `${spec.key} (${res.ticked} ticked` + (res.unticked ? `, ${res.unticked} cleared)` : ')')
             );
           }
-          if (!res.ok) skipped.push(`${spec.key} (${res.why})`);
+          if (!res.ok) miss(spec, res.why);
         } else {
           const how = await fillText(field, String(value));
-          how ? filled.push(`${spec.key} (${how})`) : skipped.push(`${spec.key} (no input in the field)`);
+          how ? filled.push(`${spec.key} (${how})`) : miss(spec, 'no input in the field');
         }
       } catch (err) {
-        skipped.push(`${spec.key} (${err.message})`);
+        miss(spec, err.message);
       }
       await pause('field');
     }
@@ -1340,11 +1381,12 @@
       (ticked ? filled : skipped).push(`send to reviewer${ticked ? '' : ' (would not tick)'}`);
     }
 
-    const submitted = await handIn(msg.auto_submit === true, filled, skipped);
+    const submitted = await handIn(msg.auto_submit === true, filled, skipped, blockers);
 
     return {
       filled,
       skipped,
+      blockers,
       submitted,
       send_to_reviewer: wantReviewer,
       filled_at: new Date().toISOString(),

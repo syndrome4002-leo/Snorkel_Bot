@@ -237,7 +237,10 @@ async function startTask(task) {
   (async () => {
     try {
       await workOnTask(claimed, {
-        log: (emoji, event, message) => log(emoji, event, message, { uid }),
+        // The fourth argument is forwarded, not dropped: it carries level and the
+        // routing flags, and a line marked `recurring` that arrives without it
+        // goes straight into the task history this is meant to keep clear.
+        log: (emoji, event, message, extra = {}) => log(emoji, event, message, { uid, ...extra }),
         onSession: (line) => {
           // Claude's own chatter is noisy; keep it on the console only.
           if (line.trim()) console.log(`[claude:${uid.slice(0, 8)}] ${line.trim()}`);
@@ -356,7 +359,9 @@ async function recoverLostUploads() {
         `${uid} has had no file in Dropbox for ${task.stranded_for_minutes} min — rebuilding it`,
         { uid }
       );
-      await reuploadTask(task, { log: (e, ev, m) => log(e, ev, m, { uid }) });
+      await reuploadTask(task, {
+        log: (e, ev, m, extra = {}) => log(e, ev, m, { uid, ...extra }),
+      });
     } catch (err) {
       // Left as it is. Repeating the message every poll would be noise, but the
       // alternative is a task that is quietly stuck, which is worse.

@@ -2111,6 +2111,23 @@ async function maybeSubmitCheck(attempt = 0) {
           level: 'warn',
         });
       }
+      /*
+       * Said separately from the gaps above, and in the words that matter: the
+       * form is ready and waiting, and it is waiting on a person. Buried in the
+       * gap list it reads as one more field that did not fill, when it is the
+       * difference between a task that went out and one that did not.
+       */
+      if (form?.blockers?.length && autoSubmit()) {
+        logEvent(
+          '✋',
+          'submit_withheld',
+          `${uid} is filled in but NOT submitted — ${form.blockers.join(', ')} ` +
+            `${form.blockers.length === 1 ? 'has' : 'have'} no answer, and the platform ` +
+            `rejects a form with a question left blank. Fill ${form.blockers.length === 1 ? 'it' : 'them'} ` +
+            `in and submit, or leave it for the next round.`,
+          { uid, level: 'warn' }
+        );
+      }
       if (form) await patchTask(uid, { form_filled: { ...form, times } });
 
       /*

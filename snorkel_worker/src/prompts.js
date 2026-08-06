@@ -169,6 +169,33 @@ function describeFields(schema) {
  * pull against every instruction about tone in the question sheet. Reformatting
  * something already written is a much smaller ask than writing it twice.
  */
+/**
+ * Asked when the extraction came back without a question the form requires.
+ *
+ * Deliberately narrow: the keys named and nothing else. A broad "check your
+ * answers" turn invites rewriting the ones that were fine, and those have
+ * already been through the narration and formatting checks.
+ */
+export async function gapPrompt(stage, keys) {
+  const schema = await schemaForStage(stage);
+  const wanted = Object.fromEntries(keys.filter((key) => schema[key]).map((key) => [key, schema[key]]));
+
+  return [
+    'These questions on the submission form have no answer yet:',
+    '',
+    describeFields(wanted),
+    '',
+    'Answer them now, from the task you have just been working on. Same wording and',
+    'tone as the answers above — plain language, no markdown, nothing about rounds or',
+    'feedback or checks, and for a key with allowed values use one of them exactly as',
+    'written.',
+    '',
+    'Reply with a JSON object holding only those keys and nothing else around it. If',
+    'one genuinely does not apply to this task, leave it out rather than inventing',
+    'something for it.',
+  ].join('\n');
+}
+
 export async function extractPrompt(stage = null) {
   return fill(await template('extract'), { fields: describeFields(await schemaForStage(stage)) });
 }
@@ -264,6 +291,7 @@ export async function revisionPrompt({
   applied = [],
   lessons = '',
   difficultyFile = null,
+  missingAnswers = [],
 }) {
   const rounds = Array.isArray(feedbacks) ? feedbacks : [];
   const latest = rounds[rounds.length - 1] || null;
@@ -281,6 +309,7 @@ export async function revisionPrompt({
     scorecard: scorecard(rounds),
     history: roundHistory(rounds, applied),
     lessons: lessons ? `\n${lessons}` : '',
+    missing_answers: missingAnswersBlock(missingAnswers),
     difficulty_file: difficultyFile
       ? `\nThe platform's own difficulty check results are in the task folder as\n` +
         `${difficultyFile} — the agent simulation and the per-verifier statistics\n` +
@@ -289,6 +318,33 @@ export async function revisionPrompt({
         `why.\n`
       : '',
   });
+}
+
+/**
+ * The answers this task has never had.
+ *
+ * A revision is asked for what CHANGED, because everything else is already
+ * stored and merging over it leaves the rest untouched. That assumes there is a
+ * "rest" — and for a submission somebody made by hand, which this system only
+ * took on when it came back for revision, there is not. Nothing was ever
+ * recorded, so a round that writes only its changes produces a form with three
+ * answers on it and the other nine blank.
+ *
+ * So the round is told which ones are missing, by name. Not "write everything
+ * out again": most of the form is about the task rather than about this round,
+ * and a question already answered correctly should not be re-answered for the
+ * sake of it.
+ */
+function missingAnswersBlock(keys) {
+  if (!keys || !keys.length) return '';
+  return (
+    `\nThis task has no stored answer for:\n\n` +
+    keys.map((key) => `  - ${key}`).join('\n') +
+    `\n\nWrite each of those out in full this round, whether or not this round\n` +
+    `changed anything about them — they are not on record anywhere, so leaving one\n` +
+    `out leaves that question blank on the submitted form. Answer them as standing\n` +
+    `descriptions of the task as it is now.\n`
+  );
 }
 
 /**

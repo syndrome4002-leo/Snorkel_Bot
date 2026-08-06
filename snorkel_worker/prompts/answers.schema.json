@@ -174,20 +174,23 @@
     "stages": [
       "revision"
     ],
-    "number": true
+    "number": true,
+    "supplied_by_server": true
   },
   "review_time_min": {
     "question": "6",
     "stages": [
       "revision"
     ],
-    "number": true
+    "number": true,
+    "supplied_by_server": true
   },
   "submission_time_min": {
     "question": "7",
     "stages": [
       "revision"
     ],
-    "number": true
+    "number": true,
+    "supplied_by_server": true
   }
 }

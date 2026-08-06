@@ -398,9 +398,16 @@ export function pushLog(entry) {
     })
     .catch((err) => console.warn('[rtdb] could not push a log line:', err.message));
 
-  // A line about a task goes to that task's own history as well. Written from
-  // the same call so no caller has to remember to do both.
-  if (line.uid) pushTaskLog(line.uid, line);
+  /*
+   * A line about a task goes to that task's own history as well. Written from
+   * the same call so no caller has to remember to do both.
+   *
+   * Unless it repeats on a timer. The machine stream is a running commentary and
+   * can carry those; a task's history is capped, so a line that says the same
+   * thing every few minutes spends that cap on itself and pushes out the lines
+   * that say what happened.
+   */
+  if (line.uid && !entry.recurring) pushTaskLog(line.uid, line);
 }
 
 const taskLogsSinceTrim = new Map();

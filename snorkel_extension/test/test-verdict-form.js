@@ -201,6 +201,65 @@ const TIMES = { review: 41, complete: 73 };
     console.log(`        filled: ${res.filled.join(', ')}`);
   }
 
+  /*
+   * A form with a required question left blank is filled, and not handed in.
+   *
+   * The platform validates on submit rather than by disabling the button, so
+   * pressing it produces a rejection and a half-filled form — the run spent and
+   * the task still needing somebody. Not submitting leaves the same form, with
+   * everything it is missing written down next to it.
+   */
+  {
+    const window = load('unfixable.html');
+    const short = { ...ANSWERS };
+    delete short.comments_for_reviewer;
+    const res = await window.SnorkelBot.handlers.SUBMIT_VERDICT_FORM({
+      verdict: 'invalid',
+      answers: short,
+      times: TIMES,
+      auto_submit: true,
+    });
+
+    check(
+      'a required answer missing means the form is not handed in',
+      res.submitted === false && res.blockers.includes('comments_for_reviewer'),
+      `submitted=${res.submitted} blockers=${JSON.stringify(res.blockers)}`
+    );
+    check(
+      'and everything there is an answer for is still filled',
+      res.filled.some((f) => f.startsWith('validity_required')) &&
+        res.filled.some((f) => f.startsWith('what_issues_found')),
+      `filled=${JSON.stringify(res.filled)}`
+    );
+    check(
+      'the refusal says so rather than going quiet',
+      res.skipped.some((sk) => sk.startsWith('submit (not handed in')),
+      JSON.stringify(res.skipped)
+    );
+  }
+
+  /*
+   * An optional question left blank is not a reason to hold a form back. "If
+   * Environment Issues was selected above" does not apply unless it was.
+   */
+  {
+    const window = load('unfixable.html');
+    const noFollowUp = { ...ANSWERS, what_issues_found: ['PR scope needs to be changed or reduced'] };
+    delete noFollowUp.environment_issue_specifics;
+    const res = await window.SnorkelBot.handlers.SUBMIT_VERDICT_FORM({
+      verdict: 'invalid',
+      answers: noFollowUp,
+      times: TIMES,
+      auto_submit: true,
+    });
+
+    check(
+      'an optional question left blank does not hold the form back',
+      res.blockers.length === 0,
+      `blockers=${JSON.stringify(res.blockers)} skipped=${JSON.stringify(res.skipped)}`
+    );
+  }
+
   // ---- valid-as-is --------------------------------------------------------
   {
     const window = load('valid-as-is.html');

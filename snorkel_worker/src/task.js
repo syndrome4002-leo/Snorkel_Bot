@@ -24,10 +24,12 @@ import { openSession } from './claude.js';
 import {
   documentPaths,
   extractPrompt,
+  gapPrompt,
   fixPrompt,
   introPrompt,
   noteFingerprint,
   revisionPrompt,
+  schemaForStage,
   rewritePrompt,
   reviewerNotes,
   lessonPrompt,
@@ -96,6 +98,37 @@ export async function findTaskDir(uid) {
   }
 
   return null;
+}
+
+/**
+ * The questions this task has no answer for.
+ *
+ * Every key the revision stage can write, minus three sets of exceptions:
+ * the ones already stored; the ones that only apply in certain circumstances,
+ * where no answer means the question did not apply rather than that it was
+ * skipped; and the handling times, which the server draws once per task and
+ * sends with the submission. Those last are on no task's record at all — asking
+ * for them would report the same three gaps on every task forever, and get back
+ * numbers that the form then ignores.
+ */
+export async function missingAnswerKeys(task) {
+  return missingForStage('revision', task.answers);
+}
+
+/** The same question asked of any stage's answer set. */
+export async function missingForStage(stage, answers) {
+  const stored = answers && !Array.isArray(answers) ? answers : {};
+  const schema = await schemaForStage(stage);
+
+  return Object.entries(schema)
+    .filter(([, spec]) => !spec.when && !spec.supplied_by_server)
+    .map(([key]) => key)
+    .filter((key) => {
+      const value = stored[key];
+      if (value === undefined || value === null) return true;
+      if (Array.isArray(value)) return value.length === 0;
+      return String(value).trim() === '';
+    });
 }
 
 /**
@@ -485,7 +518,10 @@ export async function workOnTask(task, { log, onSession } = {}) {
       say(
         '⏳',
         'claude_working',
-        `still working ${uid} — ${Math.round((Date.now() - beatStarted) / 60000)} min so far`
+        `still working ${uid} — ${Math.round((Date.now() - beatStarted) / 60000)} min so far`,
+        // Every five minutes for as long as the build runs, and eight rounds of
+        // that would be the whole of this task's history — see pushLog().
+        { recurring: true }
       ),
     HEARTBEAT_MS
   );
@@ -621,6 +657,26 @@ export async function workOnTask(task, { log, onSession } = {}) {
 
       difficultyFile = await fetchDifficultyFile(task, taskDir, say);
 
+      /*
+       * A task this system never submitted has no answers on record.
+       *
+       * It was submitted by hand and only came to us when the reviewer sent it
+       * back, so there is nothing for this round's changes to merge over — and a
+       * revision, which is asked only for what changed, would store three
+       * answers and leave the other nine blank on the form. Named here so the
+       * round writes them out as well.
+       */
+      const gaps = await missingAnswerKeys(task);
+      if (gaps.length) {
+        say(
+          '📝',
+          'answers_missing',
+          `${uid} has no stored answer for ${gaps.length} question(s) — asking for them ` +
+            `in full this round: ${gaps.join(', ')}`,
+          { level: 'warn' }
+        );
+      }
+
       await session.send(
         await revisionPrompt({
           uid,
@@ -629,6 +685,7 @@ export async function workOnTask(task, { log, onSession } = {}) {
           applied,
           lessons: await lessonsBlock({ source: 'review' }),
           difficultyFile,
+          missingAnswers: gaps,
         })
       );
 
@@ -681,6 +738,46 @@ export async function workOnTask(task, { log, onSession } = {}) {
   );
 
   if (triage && !answers.validity_required) answers.validity_required = triage.verdict;
+
+  /*
+   * Anything the extraction left out, asked for once.
+   *
+   * The extract turn is told to leave out keys that do not apply, which is right
+   * — but "does not apply" and "I did not write one" look identical from here,
+   * and the platform rejects a form with a required question blank. A fixable
+   * task recovers on its own: it comes back for revision and the next round
+   * fills the gap. A verdict task has exactly one round, so whatever is missing
+   * when this turn ends is missing on the form somebody submits.
+   *
+   * One turn, and the answers already written are left alone.
+   */
+  const gaps = await missingForStage(stage, answers);
+  if (gaps.length) {
+    say('📝', 'answers_gaps', `${gaps.join(', ')} came back empty — asking for ${gaps.length === 1 ? 'it' : 'them'}`, {
+      level: 'warn',
+    });
+    try {
+      const filled = await session.send(await gapPrompt(stage, gaps));
+      const { answers: extra } = await normaliseAnswers(parseJsonReply(filled.text), { stage });
+      const got = gaps.filter((key) => {
+        const value = extra[key];
+        const has = Array.isArray(value) ? value.length > 0 : value != null && String(value).trim() !== '';
+        if (has) answers[key] = value;
+        return has;
+      });
+      const still = gaps.filter((key) => !got.includes(key));
+      say(
+        still.length ? '⚠️' : '✅',
+        'answers_gaps',
+        still.length ? `${got.length} written, still empty: ${still.join(', ')}` : `${got.length} written`,
+        still.length ? { level: 'warn' } : {}
+      );
+    } catch (err) {
+      // Whatever was written stands. A missing answer is a question left blank;
+      // losing the run over it would be the whole task.
+      say('⚠️', 'answers_gaps', `could not ask again: ${err.message}`, { level: 'warn' });
+    }
+  }
 
   /*
    * "Addressed in a previous round" is not an answer.

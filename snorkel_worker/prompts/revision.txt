@@ -18,7 +18,7 @@ Automated Checks ( maybe all could be passed ):
 {{automated_checks}}
 
 =================================================================================
-{{difficulty_file}}{{scorecard}}{{lessons}}{{history}}
+{{difficulty_file}}{{scorecard}}{{lessons}}{{history}}{{missing_answers}}
 Pls fix all issues that is addressed in the Automated Checks above, and update the
 task based on the Reviewer Note if this is the first time with that note.
 
