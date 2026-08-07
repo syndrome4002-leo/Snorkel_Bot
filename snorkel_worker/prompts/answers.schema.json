@@ -128,21 +128,6 @@
     "text": true,
     "when": "NA if the PR was not touched"
   },
-  "duplicate": {
-    "question": "2 of the reviewer form",
-    "label": "[Duplicate] What is your analysis of the Sentinel task you downloaded above?",
-    "stages": [
-      "revision",
-      "invalid",
-      "valid-as-is"
-    ],
-    "enum": [
-      "fixable",
-      "invalid",
-      "valid-as-is"
-    ],
-    "note": "The page says \"Ensure your selection matches the question above\" — same question, same options, so the same values as validity_required."
-  },
   "what_makes_difficult": {
     "question": "6",
     "label": "What makes this task difficult?",

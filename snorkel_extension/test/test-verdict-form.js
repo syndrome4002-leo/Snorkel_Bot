@@ -85,7 +85,6 @@ const chosen = (window, testid) => {
 
 const ANSWERS = {
   validity_required: 'invalid',
-  duplicate: 'invalid/Not Fixable',
   // This form's own options, not the fixable questionnaire's — see the schema.
   what_issues_found: ['Environment Issues'],
   environment_issue_specifics: ['Oracle timeout'],
@@ -265,7 +264,7 @@ const TIMES = { review: 41, complete: 73 };
     const window = load('valid-as-is.html');
     const res = await window.SnorkelBot.handlers.SUBMIT_VERDICT_FORM({
       verdict: 'valid-as-is',
-      answers: { ...ANSWERS, validity_required: 'valid-as-is', duplicate: 'Valid-as-is' },
+      answers: { ...ANSWERS, validity_required: 'valid-as-is' },
       times: TIMES,
       pace_scale: 0.01,
     });

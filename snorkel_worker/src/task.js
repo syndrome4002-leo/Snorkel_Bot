@@ -740,6 +740,15 @@ export async function workOnTask(task, { log, onSession } = {}) {
   if (triage && !answers.validity_required) answers.validity_required = triage.verdict;
 
   /*
+   * The form asks the validity question twice — the second is labelled
+   * "[Duplicate]" and the page says "Ensure your selection matches the question
+   * above". So it is one answer, stored once: the schema has no key for the
+   * second, and the form filler reads `validity_required` for both. Storing two
+   * copies only created the chance of a submission contradicting itself, and
+   * then of one of the copies using a wording the page does not offer.
+   */
+
+  /*
    * Anything the extraction left out, asked for once.
    *
    * The extract turn is told to leave out keys that do not apply, which is right

@@ -818,6 +818,12 @@
    */
   const VERDICT_FIELDS = [
     { key: 'validity_required', kind: 'radio', testid: 'field-multidimensionradio-segments-valid' },
+    /*
+     * Asked twice on the page, answered once in the database: this question is
+     * labelled "[Duplicate]" and says "Ensure your selection matches the question
+     * above", so there is no answer of its own to store — `fallback` is the
+     * ordinary path here, not the exception.
+     */
     { key: 'duplicate', kind: 'radio', testid: 'field-radio-ec-valid', fallback: 'validity_required' },
     {
       key: 'what_issues_found',
@@ -865,6 +871,12 @@
 
   const FORM_FIELDS = [
     { key: 'validity_required', kind: 'radio', testid: 'field-multidimensionradio-segments-valid' },
+    /*
+     * Asked twice on the page, answered once in the database: this question is
+     * labelled "[Duplicate]" and says "Ensure your selection matches the question
+     * above", so there is no answer of its own to store — `fallback` is the
+     * ordinary path here, not the exception.
+     */
     { key: 'duplicate', kind: 'radio', testid: 'field-radio-ec-valid', fallback: 'validity_required' },
     { key: 'where_task_had_issues', kind: 'multi', label: 'select where the task had issues' },
     { key: 'what_issues_found', kind: 'multi', label: 'what issues did you find with the task' },
