@@ -37,7 +37,20 @@ export default function RootLayout({ children }) {
           an effect would render the wrong one and correct it a frame later —
           visible as a flash of white on every load for anyone using dark.
         */}
+        {/*
+          Suppressed for the same reason as <html> above, but a different cause:
+          browser extensions inject their own scripts into <head>, and one that
+          arrives before React hydrates shifts everything after it along by one.
+          React then compares this script against the extension's — a src to
+          chrome-extension://… where it expected the theme snippet — and reports
+          a mismatch in our HTML that is not in our HTML.
+
+          Nothing here is derived from the page, the clock or the environment:
+          the content is a fixed string. So there is no real mismatch this could
+          hide.
+        */}
         <script
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{
             __html:
               "try{var t=localStorage.getItem('snorkelbot.theme');" +
