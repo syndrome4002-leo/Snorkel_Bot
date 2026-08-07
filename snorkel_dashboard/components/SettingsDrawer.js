@@ -79,6 +79,15 @@ const FIELDS = [
   },
   {
     group: 'Worker',
+    key: 'open_in_editor',
+    type: 'checkbox',
+    fallback: false,
+    label: 'Open each task in VS Code',
+    help:
+      'On means the worker opens a task’s folder in VS Code once it has it — after unzipping a new task, or on finding the folder again for a revision — so you can watch it and step in. The worker still sends the prompts itself. To add something by hand, reopen the task’s existing conversation in the Claude panel and type there: the worker continues that same session next round. Starting a New Conversation instead leaves the worker on its own one, so your message would not be seen. Machines with no screen ignore this and say so in the log.',
+  },
+  {
+    group: 'Worker',
     key: 'claude_model',
     type: 'text',
     label: 'Model to build with',

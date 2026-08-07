@@ -10,7 +10,7 @@
     "dev": "node --watch src/index.js",
     "check": "node scripts/check.mjs",
     "once": "node scripts/run-one.mjs",
-    "test": "node test/checksigns.test.mjs && node test/answers-narration.test.mjs && node test/settings-merge.test.mjs && node test/out-of-usage.test.mjs && node test/retry-backoff.test.mjs && node test/verdict-answers.test.mjs && node test/resume-download.test.mjs && node test/log-routing.test.mjs && node test/adopted-answers.test.mjs && node test/one-session.test.mjs",
+    "test": "node test/checksigns.test.mjs && node test/answers-narration.test.mjs && node test/settings-merge.test.mjs && node test/out-of-usage.test.mjs && node test/retry-backoff.test.mjs && node test/verdict-answers.test.mjs && node test/resume-download.test.mjs && node test/log-routing.test.mjs && node test/adopted-answers.test.mjs && node test/one-session.test.mjs && node test/editor.test.mjs",
     "usage": "node scripts/usage-report.mjs"
   },
   "engines": {

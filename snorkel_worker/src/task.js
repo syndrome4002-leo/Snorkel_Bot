@@ -21,6 +21,7 @@ import { config } from './config.js';
 import { unzipTo, zipFolder } from './archive.js';
 import { downloadFile, deleteFile, uploadFile } from './dropbox.js';
 import { openSession, latestSessionFor } from './claude.js';
+import { openInEditor } from './editor.js';
 import {
   answersBlock,
   documentPaths,
@@ -441,7 +442,10 @@ export async function deleteTaskFolder(uid) {
  * `task` is the record as it looked *before* being claimed, so `worked_from`
  * tells us which of the two paths to take.
  */
-export async function workOnTask(task, { log, onSession, model = '', resumeSessions = true } = {}) {
+export async function workOnTask(
+  task,
+  { log, onSession, model = '', resumeSessions = true, openEditor } = {}
+) {
   const uid = String(task.UID || task.id);
   const from = task.task_status;
   const say = log || (() => {});
@@ -526,6 +530,13 @@ export async function workOnTask(task, { log, onSession, model = '', resumeSessi
     }
     say('📂', 'found', `working in ${taskDir}`);
   }
+
+  /*
+   * Both paths above end with a folder, which is the moment to put it on screen
+   * — a build has just unpacked it, a revision has just found it, and neither
+   * has spent anything on Claude yet. Never fails the task: see editor.js.
+   */
+  await openInEditor(taskDir, { log: say, enabled: openEditor });
 
   // ------------------------------------------------------------- Claude ---
   const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;

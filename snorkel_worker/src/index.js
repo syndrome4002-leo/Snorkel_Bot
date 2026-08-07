@@ -77,7 +77,13 @@ function staticFixLimit() {
 }
 
 /** What this worker takes from the machines' settings. The rest is the server's. */
-const WORKER_SETTINGS = new Set(['worker_max_concurrent', 'static_fix_limit', 'claude_model', 'resume_sessions']);
+const WORKER_SETTINGS = new Set([
+  'worker_max_concurrent',
+  'static_fix_limit',
+  'claude_model',
+  'resume_sessions',
+  'open_in_editor',
+]);
 
 /**
  * Which model to build tasks with.
@@ -254,6 +260,10 @@ async function startTask(task) {
         model: claudeModel(),
         // One task, one conversation — unless the dashboard says otherwise.
         resumeSessions: settings.resume_sessions !== false,
+        // Put the folder on screen, if this machine has a screen and wants it.
+        // Unset on the dashboard leaves the decision to this machine's .env.
+        openEditor:
+          settings.open_in_editor === undefined ? undefined : settings.open_in_editor !== false,
         // The fourth argument is forwarded, not dropped: it carries level and the
         // routing flags, and a line marked `recurring` that arrives without it
         // goes straight into the task history this is meant to keep clear.

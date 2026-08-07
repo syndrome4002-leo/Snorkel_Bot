@@ -194,6 +194,30 @@ export const config = {
     extraArgs: String(process.env.CLAUDE_ARGS || '').split(/\s+/).filter(Boolean),
   },
 
+  editor: {
+    /**
+     * Open each task's folder in an editor while the worker works on it.
+     *
+     * Off unless asked for: a worker on a headless box has nothing to open a
+     * window on, and a worker running five tasks at once would open five. The
+     * dashboard's switch overrides this per machine.
+     */
+    enabled: bool(process.env.OPEN_IN_EDITOR, false),
+
+    /** The editor's command-line launcher. VS Code installs this as `code`. */
+    command: process.env.EDITOR_COMMAND || 'code',
+
+    /**
+     * Arguments before the folder. `--reuse-window` would put every task in the
+     * one window, which is the opposite of what this is for, so the default is
+     * a window per task folder.
+     */
+    args: String(process.env.EDITOR_ARGS || '').split(/\s+/).filter(Boolean),
+
+    /** How long to wait for the launcher before treating it as failed. */
+    timeoutSeconds: num(process.env.EDITOR_TIMEOUT_SECONDS, 20),
+  },
+
   dropbox: {
     appKey: process.env.DROPBOX_APP_KEY || '',
     appSecret: process.env.DROPBOX_APP_SECRET || '',
