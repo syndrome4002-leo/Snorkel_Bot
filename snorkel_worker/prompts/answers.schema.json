@@ -138,9 +138,10 @@
     ],
     "enum": [
       "fixable",
-      "invalid/Not Fixable",
-      "Valid-as-is"
-    ]
+      "invalid",
+      "valid-as-is"
+    ],
+    "note": "The page says \"Ensure your selection matches the question above\" — same question, same options, so the same values as validity_required."
   },
   "what_makes_difficult": {
     "question": "6",

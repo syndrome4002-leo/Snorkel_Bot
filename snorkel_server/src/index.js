@@ -753,14 +753,30 @@ function updateSubmitTicker() {
 
   if (!lastSubmitScan) return say('⏳', `${head} — nothing looked at yet`);
 
-  const { eligible, waiting, heldByCap, cap, parked: parkedCount } = lastSubmitScan;
+  const {
+    eligible,
+    waiting,
+    heldByCap,
+    cap,
+    parked: parkedCount,
+    heldReason,
+    reviseLimit,
+  } = lastSubmitScan;
   const bits = [];
   if (eligible) bits.push(`${eligible} ready`);
   if (waiting) bits.push(`${waiting} waiting on Dropbox`);
   if (parkedCount) bits.push(`${parkedCount} waiting for a row on the revise list`);
   if (heldByCap) {
+    /*
+     * The two reasons a new task is held back read very differently: one clears
+     * at midnight, the other as soon as a revision is handed in.
+     */
     bits.push(
-      `${heldByCap} held until tomorrow` + (cap ? ` (${cap.used} of ${cap.limit} submitted today)` : '')
+      heldReason === 'backlog'
+        ? `${heldByCap} new task(s) held — ${lastReviseCount ?? '?'} awaiting revision, ` +
+          `limit ${reviseLimit}; revisions go first`
+        : `${heldByCap} held until tomorrow` +
+          (cap ? ` (${cap.used} of ${cap.limit} submitted today)` : '')
     );
   }
 
@@ -2009,6 +2025,16 @@ function submitStillBlocked() {
 const MAX_SUBMIT_TRIES_PER_SWEEP = 3;
 
 /*
+ * How many times a task that passed the checks may be put back for another go at
+ * the Submit button.
+ *
+ * Each attempt is a full run — the zip goes up again and both platform checks run
+ * again — so this is deliberately small. Three says "the click did not land, that
+ * happens" without saying "keep uploading this forever".
+ */
+const MAX_SUBMIT_ATTEMPTS = 3;
+
+/*
  * What to do when the platform answers a check button with an error instead of
  * a result.
  *
@@ -2035,8 +2061,28 @@ async function maybeSubmitCheck(attempt = 0) {
   const capped = await submitAllowanceLeft();
   const atCap = capped.limited && capped.left <= 0;
 
+  /*
+   * A backlog at its limit is answered with revisions, not with a new task.
+   *
+   * The same rule auto-start already follows, applied one step later. Starting a
+   * new task was gated on the revise count; submitting one that had already been
+   * built was not — so a new task finished before the backlog grew went out
+   * anyway, and every submission of it adds another task that will come back for
+   * revision, on top of a list that is already over the line.
+   *
+   * Revisions are what shorten that list: handing one back takes it off. So while
+   * the backlog is at the limit, they go first — and the moment it drops below,
+   * the next sweep picks up the new task that was waiting.
+   */
+  const reviseLimit = Number(settings.revise_limit);
+  const backlogFull =
+    Number.isFinite(reviseLimit) &&
+    reviseLimit > 0 &&
+    lastReviseCount !== null &&
+    lastReviseCount >= reviseLimit;
+
   const found = await findReadyToSubmit(machineId(), {
-    excludeNew: atCap,
+    excludeNew: atCap || backlogFull,
     // Skipped for now, not skipped for good — see `parked`.
     skip: parkedUids(),
   }).catch((err) => {
@@ -2052,6 +2098,10 @@ async function maybeSubmitCheck(attempt = 0) {
     eligible: found.eligible || 0,
     waiting: found.waiting || 0,
     heldByCap: found.heldByCap || 0,
+    // Why they are held, because the two reasons want different sentences and
+    // "held until tomorrow" is wrong for a backlog that may clear in minutes.
+    heldReason: atCap ? 'cap' : backlogFull ? 'backlog' : null,
+    reviseLimit: backlogFull ? reviseLimit : null,
     parked: found.parked || 0,
     cap: capped.limited ? { used: capped.used, limit: capped.limit } : null,
   };
@@ -2217,6 +2267,55 @@ async function maybeSubmitCheck(attempt = 0) {
         });
       }
       /*
+       * The checks passed and the form did not go in, although it was meant to.
+       *
+       * saveStaticCheck above has already written "static checks pass" — the
+       * right status for a form filled and left for a person, and the wrong one
+       * here, because nothing sweeps it. `findReadyToSubmit` looks for "ready to
+       * submit" and nothing else, so a task that reaches this line silently
+       * stops: checked, filled, never handed in, and never looked at again.
+       *
+       * A missing answer is genuinely a person's problem — clicking Submit again
+       * would fail the same way — so that one keeps the status and says so. Any
+       * other reason is about the page, not the submission: no Submit button
+       * found, a click that did not land, a run that died on the way. Those go
+       * back to "ready to submit" and are tried again, a few times, and then left
+       * alone rather than retried into the ground.
+       */
+      if (maySubmit && form && !form.submitted) {
+        const attempts = Number(task.submit_attempts || 0) + 1;
+        const why = (form.skipped || []).find((s) => s.startsWith('submit (')) || 'no reason given';
+
+        if (form.blockers?.length) {
+          await patchTask(uid, { submit_withheld: { at: new Date().toISOString(), why, blockers: form.blockers } });
+        } else if (attempts < MAX_SUBMIT_ATTEMPTS) {
+          await patchTask(uid, { task_status: TASK_STATUS_READY, submit_attempts: attempts });
+          logEvent(
+            '🔁',
+            'submit_retry',
+            `${uid} passed the checks but was not handed in — ${why}. ` +
+              `Back to "ready to submit" (attempt ${attempts} of ${MAX_SUBMIT_ATTEMPTS}).`,
+            { uid, level: 'warn' }
+          );
+        } else {
+          await patchTask(uid, {
+            submit_attempts: attempts,
+            submit_withheld: { at: new Date().toISOString(), why, blockers: [] },
+          });
+          logEvent(
+            '✋',
+            'submit_withheld',
+            `${uid} passed the checks but would not submit after ${attempts} attempts — ${why}. ` +
+              `Left filled in for you.`,
+            { uid, level: 'warn' }
+          );
+        }
+      } else if (form?.submitted) {
+        // A clean submission clears whatever an earlier attempt left behind.
+        if (task.submit_attempts) await patchTask(uid, { submit_attempts: 0 });
+      }
+
+      /*
        * Said separately from the gaps above, and in the words that matter: the
        * form is ready and waiting, and it is waiting on a person. Buried in the
        * gap list it reads as one more field that did not fill, when it is the
@@ -2247,6 +2346,21 @@ async function maybeSubmitCheck(attempt = 0) {
         // The run finished, so the announcement has done its job.
         announcedSent.delete(uid);
         await markSent(uid);
+
+        /*
+         * A revision handed in is one fewer task awaiting revision.
+         *
+         * Known here and not otherwise until the next reading of the list, which
+         * can be minutes away — and the backlog is what decides whether a new
+         * task may go out. Without this the list is short enough but the server
+         * still believes it is full, and the new task waits for a read rather
+         * than for the thing it is actually waiting on.
+         *
+         * Optimistic, and corrected by the next real read either way.
+         */
+        if (task.is_new_task !== true && lastReviseCount !== null) {
+          lastReviseCount = Math.max(0, lastReviseCount - 1);
+        }
         const after = await submitAllowanceLeft();
         logEvent(
           '📮',

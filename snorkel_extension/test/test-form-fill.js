@@ -213,6 +213,60 @@ const fill = (window, answers) =>
     );
   }
 
+  /*
+   * "[Duplicate] What is your analysis…" is the same question as the one above
+   * it, and the page says so. The stored answer for it used a wording that is
+   * not on the page — "invalid/Not Fixable" against options Fixable, Invalid,
+   * Valid-as-is — so it never matched, and once an unfilled question stops the
+   * form being handed in, that one field parked every finished revision at
+   * "static checks pass" with nobody submitting it.
+   */
+  {
+    const { field, window } = radioField();
+    const res = await fill(window, {
+      validity_required: 'invalid',
+      duplicate: 'invalid/Not Fixable',
+    });
+    check(
+      'a wording the page does not use is covered by the twin question',
+      JSON.stringify(chosen(field)) === JSON.stringify(['Invalid']) &&
+        res.filled.some((f) => f.startsWith('duplicate')),
+      `selected ${JSON.stringify(chosen(field))} skipped=${JSON.stringify(res.skipped)}`
+    );
+    check(
+      'and that leaves nothing blocking the submission',
+      !(res.blockers || []).includes('duplicate'),
+      `blockers=${JSON.stringify(res.blockers)}`
+    );
+  }
+
+  {
+    /*
+     * The trap this must never fall into. "Fixable" is a substring of
+     * "invalid/Not Fixable", so any substring-based matching answers "this task
+     * is fine" to a question whose answer was "this task cannot be fixed" —
+     * which on this form is not a typo, it is the wrong submission.
+     */
+    const { field, window } = radioField();
+    const res = await fill(window, { duplicate: 'invalid/Not Fixable' });
+    check(
+      'with no twin to fall back on it is left alone, never guessed',
+      chosen(field).length === 0 &&
+        res.skipped.some((s) => s.startsWith('duplicate (no option')),
+      `selected ${JSON.stringify(chosen(field))} skipped=${JSON.stringify(res.skipped)}`
+    );
+  }
+
+  {
+    const { field, window } = radioField();
+    const res = await fill(window, { validity_required: 'fixable', duplicate: 'fixable' });
+    check(
+      'an answer the page does use still wins on its own',
+      JSON.stringify(chosen(field)) === JSON.stringify(['Fixable']),
+      `selected ${JSON.stringify(chosen(field))}`
+    );
+  }
+
   console.log(failures ? `\n${failures} failed\n` : '\nthe form filler holds\n');
   process.exit(failures ? 1 : 0);
 })().catch((err) => {

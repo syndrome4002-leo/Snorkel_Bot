@@ -448,6 +448,13 @@ export async function markTriaged(uid, status, note = '') {
     // cannot go on delaying a task that is now working.
     worker_failures: 0,
     worker_failed_at: null,
+    /*
+     * And the submit attempts, because this is a new round: whatever stopped the
+     * last one going in was about that submission, not this one. Without the
+     * reset a task that used up its attempts once could never be handed in
+     * again, however many times it was rebuilt.
+     */
+    submit_attempts: 0,
     updated_at: now,
   };
   await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });

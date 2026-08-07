@@ -997,15 +997,42 @@
     return isSet(el) === want;
   }
 
-  async function fillRadio(field, value) {
-    const wanted = SnorkelBot.normText(value).toLowerCase();
+  /**
+   * Chooses a radio option by value or by its visible text.
+   *
+   * Exact matching only. The options here are things like "Fixable", "Invalid"
+   * and "Valid-as-is", and a looser rule would be worse than no rule: "Fixable"
+   * is a substring of "invalid/Not Fixable", so anything substring-based can
+   * answer "this task is fine" to a question whose answer was "this task cannot
+   * be fixed". On this form that is not a typo, it is the wrong submission.
+   *
+   * `alternatives` are other spellings of the same answer, tried in order. The
+   * caller supplies them — a duplicated question whose twin is already answered,
+   * or a value stored before the wording changed.
+   */
+  async function fillRadio(field, value, alternatives = []) {
     const options = $$('button[role="radio"]', field);
-    const hit =
-      options.find((b) => SnorkelBot.normText(b.getAttribute('value') || '').toLowerCase() === wanted) ||
-      options.find((b) => SnorkelBot.normText(SnorkelBot.text(b)).toLowerCase() === wanted);
+    const matches = (candidate) => {
+      const wanted = SnorkelBot.normText(candidate).toLowerCase();
+      if (!wanted) return null;
+      return (
+        options.find((b) => SnorkelBot.normText(b.getAttribute('value') || '').toLowerCase() === wanted) ||
+        options.find((b) => SnorkelBot.normText(SnorkelBot.text(b)).toLowerCase() === wanted) ||
+        null
+      );
+    };
+
+    let hit = matches(value);
+    for (const alt of alternatives) {
+      if (hit) break;
+      hit = matches(alt);
+    }
 
     if (!hit) {
-      return { ok: false, why: `no option "${value}" (have: ${options.map((b) => b.getAttribute('value')).join(', ')})` };
+      return {
+        ok: false,
+        why: `no option "${value}" (have: ${options.map((b) => b.getAttribute('value')).join(', ')})`,
+      };
     }
 
     const already = isSet(hit);
@@ -1230,7 +1257,16 @@
 
       try {
         if (spec.kind === 'radio') {
-          const res = await fillRadio(field, value);
+          /*
+           * The fallback is not only for a missing answer. "[Duplicate] What is
+           * your analysis…" is the same question as the one above it — the page
+           * says so — and an answer stored for one is a correct answer to the
+           * other. So a value that no longer matches the page's wording, from
+           * before it changed, is covered by its twin rather than blocking the
+           * whole submission over a question already answered ten lines up.
+           */
+          const alternatives = spec.fallback ? [answers[spec.fallback]].filter(Boolean) : [];
+          const res = await fillRadio(field, value, alternatives);
           res.ok ? filled.push(spec.key) : miss(spec, res.why);
         } else if (spec.kind === 'multi') {
           const res = await fillMulti(field, Array.isArray(value) ? value : [value]);
@@ -1307,7 +1343,16 @@
 
       try {
         if (spec.kind === 'radio') {
-          const res = await fillRadio(field, value);
+          /*
+           * The fallback is not only for a missing answer. "[Duplicate] What is
+           * your analysis…" is the same question as the one above it — the page
+           * says so — and an answer stored for one is a correct answer to the
+           * other. So a value that no longer matches the page's wording, from
+           * before it changed, is covered by its twin rather than blocking the
+           * whole submission over a question already answered ten lines up.
+           */
+          const alternatives = spec.fallback ? [answers[spec.fallback]].filter(Boolean) : [];
+          const res = await fillRadio(field, value, alternatives);
           res.ok ? filled.push(spec.key) : miss(spec, res.why);
         } else if (spec.kind === 'multi') {
           const res = await fillMulti(field, Array.isArray(value) ? value : [value]);
