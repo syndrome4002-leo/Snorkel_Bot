@@ -77,7 +77,20 @@ function staticFixLimit() {
 }
 
 /** What this worker takes from the machines' settings. The rest is the server's. */
-const WORKER_SETTINGS = new Set(['worker_max_concurrent', 'static_fix_limit']);
+const WORKER_SETTINGS = new Set(['worker_max_concurrent', 'static_fix_limit', 'claude_model', 'resume_sessions']);
+
+/**
+ * Which model to build tasks with.
+ *
+ * Empty means the CLI's own default, which is what every machine did before this
+ * existed. Named on the dashboard because it is the largest single lever on cost
+ * and wants trying on one machine first — a cheaper model is only cheaper if it
+ * does not need more rounds to reach the same place.
+ */
+function claudeModel() {
+  const chosen = String(settings.claude_model || '').trim();
+  return chosen || config.claude.model || '';
+}
 
 function maxConcurrent() {
   const fromDashboard = Number(settings.worker_max_concurrent);
@@ -237,6 +250,10 @@ async function startTask(task) {
   (async () => {
     try {
       await workOnTask(claimed, {
+        // The dashboard's model for this machine, if it has one.
+        model: claudeModel(),
+        // One task, one conversation — unless the dashboard says otherwise.
+        resumeSessions: settings.resume_sessions !== false,
         // The fourth argument is forwarded, not dropped: it carries level and the
         // routing flags, and a line marked `recurring` that arrives without it
         // goes straight into the task history this is meant to keep clear.

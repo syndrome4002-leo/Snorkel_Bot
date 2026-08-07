@@ -1,4 +1,12 @@
-make the corrections and make zip file ( file name should be from the original directory name which is an info that I gave you at first saying infos from platform ) in this task directory.
+make the corrections in this task directory.
+
+Do not build a zip, and do not copy instruction.md over
+environment/problem_statement.md. Both are done for you after this session, from
+whatever the folder holds at the end — so the folder is the deliverable, and
+every minute spent zipping, unzipping to check it, and deleting the last attempt
+is a minute spent on something that gets redone anyway.
+
+Do not keep a todo list. Nothing reads it.
 
 and write answers to following questions:
 
@@ -98,4 +106,4 @@ does about it — for example, not "Addressed in a previous round" but "The
 instruction read like a generated numbered spec, so it is written as prose."
 
 
-{{lessons}}The zip must hold the task content at its root. Do not include runs/ or task/ and do not put an older zip inside it.
+The zip is packed for you from this folder, with runs/, task/ and any older zip left out. Leave the folder correct and it will be correct.

@@ -162,14 +162,6 @@ function describeFields(schema) {
 }
 
 /**
- * The last turn: the same answers, as JSON.
- *
- * A separate turn rather than asking for JSON up front, because the answers
- * themselves have to read as prose a person wrote, and "reply in JSON" would
- * pull against every instruction about tone in the question sheet. Reformatting
- * something already written is a much smaller ask than writing it twice.
- */
-/**
  * Asked when the extraction came back without a question the form requires.
  *
  * Deliberately narrow: the keys named and nothing else. A broad "check your
@@ -196,6 +188,40 @@ export async function gapPrompt(stage, keys) {
   ].join('\n');
 }
 
+/**
+ * The answers asked for in the same breath as the work, not in a second turn.
+ *
+ * Every prompt the worker sends is a separate `claude --print` process, and each
+ * one arrives with a cold cache: the conversation is re-written at full input
+ * price before anything happens. Measured on one task, that was 52 rebuilds
+ * totalling 14.1M tokens — more than the reads. A person working in one editor
+ * session sends one message and the cache stays warm between them.
+ *
+ * So the work and the answers are asked for together and come back
+ * in one reply. `parseJsonReply` already reads a fenced block out of prose, so
+ * the prose stays readable and the JSON is still machine-readable.
+ */
+export async function answersBlock(stage = null) {
+  const schema = await schemaForStage(stage);
+  return [
+    '',
+    '---',
+    '',
+    'When the work is done, and in this same reply, write the answers to the',
+    'submission questions twice over.',
+    '',
+    'First in prose, the way a person fills in a form.',
+    '',
+    'Then the same answers as JSON in a ```json fenced block, and nothing after it:',
+    '',
+    describeFields(schema),
+    '',
+    'Rules for the JSON: leave out any key that does not apply, use the allowed',
+    'values exactly as written, and keep the wording you used above — it is a',
+    'change of format, not a second attempt at the answer.',
+  ].join('\n');
+}
+
 export async function extractPrompt(stage = null) {
   return fill(await template('extract'), { fields: describeFields(await schemaForStage(stage)) });
 }
@@ -217,13 +243,13 @@ export async function triagePrompt({ uid, taskDir, initialInfos }) {
 }
 
 /** Turn three, only when triage said fixable: do the work and answer the form. */
-export async function fixPrompt({ uid, taskDir, lessons = '' }) {
-  return fill(await template('fix'), { uid, task_dir: taskDir, lessons: lessons ? `${lessons}\n` : '' });
+export async function fixPrompt({ uid, taskDir }) {
+  return fill(await template('fix'), { uid, task_dir: taskDir });
 }
 
 /** After the platform's own checks failed: here is what it said, fix it. */
-export async function staticFixPrompt({ uid, taskDir, logs, lessons = '' }) {
-  return fill(await template('staticfix'), { uid, task_dir: taskDir, logs, lessons });
+export async function staticFixPrompt({ uid, taskDir, logs }) {
+  return fill(await template('staticfix'), { uid, task_dir: taskDir, logs });
 }
 
 /**
@@ -272,24 +298,11 @@ export async function verdictPrompt({ uid, taskDir, verdict }) {
 }
 
 /** Asked once a fix is done: what should the next task have known? */
-export async function lessonPrompt() {
-  return template('lesson');
-}
-
-/**
- * Turn two, for a task the reviewer sent back.
- *
- * Built from the newest round only. Earlier rounds appear as a list of notes
- * already dealt with, not as more work: their corrections are already in the
- * folder, and putting the text back in front of the model invites it to redo
- * them, which is how a revision undoes the round before it.
- */
 export async function revisionPrompt({
   uid,
   taskDir,
   feedbacks,
   applied = [],
-  lessons = '',
   difficultyFile = null,
   missingAnswers = [],
 }) {
@@ -308,7 +321,6 @@ export async function revisionPrompt({
     automated_checks: automatedChecks(latest),
     scorecard: scorecard(rounds),
     history: roundHistory(rounds, applied),
-    lessons: lessons ? `\n${lessons}` : '',
     missing_answers: missingAnswersBlock(missingAnswers),
     difficulty_file: difficultyFile
       ? `\nThe platform's own difficulty check results are in the task folder as\n` +

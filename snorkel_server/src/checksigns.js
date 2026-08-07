@@ -26,7 +26,8 @@
  * signature rather than a guessed one, because a wrong signature makes a fix
  * look like a regression and a regression look like progress.
  *
- * This file is duplicated in snorkel_server/src — same reason lessons.js is.
+ * This file is duplicated in snorkel_worker/src: the two halves run as separate
+ * processes, often on different machines, and must read a failure the same way.
  * Keep the two identical.
  */
 

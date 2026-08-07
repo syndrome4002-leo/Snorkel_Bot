@@ -119,7 +119,6 @@ export const config = {
      * per distinct failure, shared by every machine — the point is that a task
      * benefits from failures it never had itself.
      */
-    lessonsCollection: process.env.FIREBASE_LESSONS_COLLECTION || 'CheckLessons',
 
     /**
      * Realtime Database URL — the channel the dashboard talks to this server

@@ -217,8 +217,6 @@ export const config = {
     ),
     projectId: process.env.FIREBASE_PROJECT_ID || '',
     collection: process.env.FIREBASE_COLLECTION || 'Tasks',
-    /** Shared with snorkel_server: what the platform's checks keep rejecting. */
-    lessonsCollection: process.env.FIREBASE_LESSONS_COLLECTION || 'CheckLessons',
     databaseUrl: process.env.FIREBASE_DATABASE_URL || '',
   },
 };

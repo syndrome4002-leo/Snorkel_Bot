@@ -18,7 +18,7 @@ Automated Checks ( maybe all could be passed ):
 {{automated_checks}}
 
 =================================================================================
-{{difficulty_file}}{{scorecard}}{{lessons}}{{history}}{{missing_answers}}
+{{difficulty_file}}{{scorecard}}{{history}}{{missing_answers}}
 Pls fix all issues that is addressed in the Automated Checks above, and update the
 task based on the Reviewer Note if this is the first time with that note.
 
@@ -34,8 +34,11 @@ How to work:
    holds the earlier round's work, and everything the feedback does not mention
    should come through this round unchanged.
 4. Run the task's own tests after your changes and make sure they still pass.
-5. Then rebuild the zip inside the task folder, named after the Original Directory
-   Name exactly as in the earlier round, replacing the zip already there.
+5. Leave the folder correct and stop there. The zip is packed for you when this
+   session ends, under the same name as the earlier round, and
+   environment/problem_statement.md is copied from instruction.md for you — so
+   there is no need to build an archive, check it, or keep those two files in
+   step by hand. Do not keep a todo list either; nothing reads it.
 
 When you are done, write out the answers to the submission questions that have
 CHANGED because of this round. Write each changed one out in full — the whole new

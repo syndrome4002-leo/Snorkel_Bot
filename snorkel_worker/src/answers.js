@@ -17,6 +17,16 @@ import { answerSchema, schemaForStage } from './prompts.js';
  * not a failure, and throwing the whole run away over one would be a poor
  * trade — so both are handled.
  */
+/** Whether a reply carries a fenced JSON object, without throwing to find out. */
+export function hasJsonReply(text) {
+  try {
+    parseJsonReply(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parseJsonReply(text) {
   const raw = String(text || '').trim();
   if (!raw) throw new Error('The model replied with nothing.');

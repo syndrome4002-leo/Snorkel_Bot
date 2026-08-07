@@ -70,6 +70,24 @@ const FIELDS = [
   },
   {
     group: 'Worker',
+    key: 'resume_sessions',
+    type: 'checkbox',
+    fallback: true,
+    label: 'One conversation per task',
+    help:
+      'On means every round of a task continues the same session, so the task is understood once at the first build and not read again. Off means each round starts fresh, which costs re-reading the task each time but keeps the per-turn context small — a long-running task gets more expensive per turn the longer its conversation grows.',
+  },
+  {
+    group: 'Worker',
+    key: 'claude_model',
+    type: 'text',
+    label: 'Model to build with',
+    help:
+      'Empty uses whatever Claude Code is set to, which is Opus by default and the largest single line on the bill. A task averages several rounds and each round is its own session, so this multiplies. Try one machine on claude-sonnet-5 and compare rounds-per-task before moving the rest — a cheaper model is only cheaper if it gets there in the same number of rounds.',
+    placeholder: 'claude-sonnet-5',
+  },
+  {
+    group: 'Worker',
     key: 'worker_max_concurrent',
     label: 'Max tasks at once',
     help: 'How many tasks Claude works on at the same time. Each one builds a repo and runs its tests, so more is not always faster. Defaults to 3.',

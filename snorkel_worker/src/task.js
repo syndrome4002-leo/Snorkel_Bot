@@ -15,13 +15,14 @@
  * can never leave a task whose only copy has just been deleted.
  */
 
-import { rm, stat, readdir } from 'node:fs/promises';
+import { rm, stat, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
 import { unzipTo, zipFolder } from './archive.js';
 import { downloadFile, deleteFile, uploadFile } from './dropbox.js';
-import { openSession } from './claude.js';
+import { openSession, latestSessionFor } from './claude.js';
 import {
+  answersBlock,
   documentPaths,
   extractPrompt,
   gapPrompt,
@@ -32,7 +33,6 @@ import {
   schemaForStage,
   rewritePrompt,
   reviewerNotes,
-  lessonPrompt,
   staticFixPrompt,
   triagePrompt,
   verdictPrompt,
@@ -41,12 +41,11 @@ import {
   issueFormatProblems,
   missingVerdicts,
   normaliseAnswers,
+  hasJsonReply,
   parseJsonReply,
   processNarration,
   wrappedLines,
 } from './answers.js';
-import { lessonsBlock, recordLesson } from './lessons.js';
-import { signaturesOf } from './checksigns.js';
 import {
   TASK_STATUS_BUILD,
   TASK_STATUS_NEEDS_REVISION,
@@ -129,6 +128,36 @@ export async function missingForStage(stage, answers) {
       if (Array.isArray(value)) return value.length === 0;
       return String(value).trim() === '';
     });
+}
+
+/**
+ * Keeps environment/problem_statement.md identical to instruction.md.
+ *
+ * The two files must always match, and every session spent turns keeping them
+ * that way by hand — one of them copied the file six times in a single round,
+ * because every edit to the instruction breaks the invariant again.
+ *
+ * It is a copy, not a judgement, so it belongs here: done once, at the end, when
+ * the instruction has stopped changing. Missing files are left alone — a task
+ * without one of them is not a task with a stale one.
+ */
+async function syncProblemStatement(taskDir, say) {
+  const source = path.join(taskDir, 'instruction.md');
+  const target = path.join(taskDir, 'environment', 'problem_statement.md');
+
+  try {
+    const [instruction, statement] = await Promise.all([
+      readFile(source, 'utf8'),
+      readFile(target, 'utf8').catch(() => null),
+    ]);
+    if (statement === null || statement === instruction) return;
+
+    await writeFile(target, instruction);
+    say('📄', 'problem_statement', 'environment/problem_statement.md brought back in line with instruction.md');
+  } catch {
+    // No instruction.md, or an unreadable folder. Neither is this function's
+    // business to report — the packing below will fail loudly if it matters.
+  }
 }
 
 /**
@@ -226,31 +255,26 @@ export function failedCheckLogs(task) {
  * Falling back to packing the folder keeps a run that got everything else right
  * from failing over a missing file.
  */
+/**
+ * The zip to hand to the platform, packed here rather than by Claude.
+ *
+ * It used to take whichever zip the session had left in the folder, and the
+ * prompts asked for one. That is an expensive way to run `zip`: in one session
+ * it cost nineteen turns of zipping, unzipping to check the result, and deleting
+ * the previous attempt — at Opus prices, on a job the worker does in one line
+ * and gets right every time.
+ *
+ * A zip a session happens to have built is ignored, not used: the folder is the
+ * work, and packing it here means the archive always matches what is on disk
+ * rather than whatever state it was in when somebody last ran `zip`.
+ */
 async function zipToUpload(task, taskDir) {
-  const zips = [];
-  for (const entry of await readdir(taskDir, { withFileTypes: true })) {
-    if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.zip') continue;
-    /*
-     * Never the difficulty artefact, however new it is. It is deleted before we
-     * get here, but a run that died between fetching and packing would leave one
-     * behind — and uploading the platform's own check results as the task is not
-     * a mistake worth leaving one failure away.
-     */
-    if (/^difficulty_/i.test(entry.name)) continue;
-    const full = path.join(taskDir, entry.name);
-    zips.push({ name: entry.name, path: full, mtime: (await stat(full)).mtimeMs });
-  }
-
-  if (zips.length) {
-    // Newest wins: an earlier round's zip may still be sitting there.
-    zips.sort((a, b) => b.mtime - a.mtime);
-    return { path: zips[0].path, name: zips[0].name, madeByClaude: true };
-  }
-
   const name = await zipNameFor(task, taskDir);
   const out = path.join(config.workDir, name);
   await zipFolder(taskDir, out);
-  return { path: out, name, madeByClaude: false };
+  // Packed outside the task folder, so it is ours to delete once uploaded and
+  // never becomes an input to the next round.
+  return { path: out, name };
 }
 
 /**
@@ -312,11 +336,11 @@ export async function reuploadTask(task, { log } = {}) {
     );
   }
 
-  const { path: outZip, name: zipName, madeByClaude } = await zipToUpload(task, taskDir);
+  const { path: outZip, name: zipName } = await zipToUpload(task, taskDir);
   say('⬆️', 'reupload', `putting ${zipName} back in Dropbox`);
 
   const uploaded = await uploadFile(outZip, { fileName: zipName });
-  if (!madeByClaude) await rm(outZip, { force: true });
+  await rm(outZip, { force: true });
 
   await markReady(uid, {
     file_name: zipName,
@@ -417,7 +441,7 @@ export async function deleteTaskFolder(uid) {
  * `task` is the record as it looked *before* being claimed, so `worked_from`
  * tells us which of the two paths to take.
  */
-export async function workOnTask(task, { log, onSession } = {}) {
+export async function workOnTask(task, { log, onSession, model = '', resumeSessions = true } = {}) {
   const uid = String(task.UID || task.id);
   const from = task.task_status;
   const say = log || (() => {});
@@ -545,15 +569,68 @@ export async function workOnTask(task, { log, onSession } = {}) {
    * a requirement, and `usedSession` records which way it went, because a fresh
    * conversation needs the documents and a resumed one already has them.
    */
-  const resumable = from === TASK_STATUS_STATIC_FAIL || from === TASK_STATUS_NEEDS_REVISION;
+  /*
+   * One task, one conversation, for every round of it.
+   *
+   * The task was understood during the first build; a revision continues that
+   * work rather than meeting it for the first time. So the session is resumed,
+   * and what it already knows — the files, the corrections it made, the reasons
+   * — is there without being read again.
+   *
+   * The cost of this is real and worth stating: a resumed conversation carries
+   * every file read and test run from every earlier round, and re-reads all of
+   * it on each turn, so a long-running task grows expensive per turn as it goes.
+   * Turn the dashboard setting off to start each round fresh instead, which
+   * trades that for re-reading the task at the start of every round.
+   */
+  /*
+   * Not "which statuses may resume" — every prompt this task ever gets belongs
+   * in the conversation it started in.
+   *
+   * The status used to decide: a revision or a failed check resumed, a build did
+   * not. But a build that failed and is being tried again is not a new task, and
+   * treating it as one is how a single task ended up with nine conversations on
+   * disk, each one reading the whole folder from scratch.
+   *
+   * So the folder decides. If a conversation exists for it, this is a
+   * continuation whatever the status says; only a folder that has never had one
+   * starts fresh, which happens exactly once per task.
+   */
+  const resume = resumeSessions ? await latestSessionFor(taskDir, task.worker_session_id) : null;
+  if (resume && resume !== task.worker_session_id) {
+    say('🧵', 'session', `continuing this task's existing conversation (${resume.slice(0, 8)})`);
+  }
   const session = openSession({
     cwd: taskDir,
+    // Chosen on the dashboard, per machine. Empty means the CLI's own default.
+    model,
     // The documents sit outside the task folder, so Claude has to be allowed to
     // read there explicitly.
     addDirs: config.docsDir ? [config.docsDir] : [],
     timeoutMs,
     label: uid,
-    resume: resumable ? task.worker_session_id || null : null,
+    resume,
+    /*
+     * Stored the moment the conversation exists, so one task keeps one session
+     * across every round of it.
+     *
+     * It used to be written only when a round finished, which meant any round
+     * that failed — a Claude error, an exhausted subscription, a timeout — left
+     * nothing to continue from, and the next attempt started a fresh
+     * conversation that had to read the whole task again. Every failure was
+     * quietly paying for a rebuild of the context.
+     */
+    onSessionId: (id, { lost } = {}) => {
+      if (id === task.worker_session_id) return;
+      if (lost) {
+        say('🧵', 'session_lost', `the earlier conversation could not be resumed — continuing in a new one`, {
+          level: 'warn',
+        });
+      }
+      patchTask(uid, { worker_session_id: id }).catch((err) =>
+        say('⚠️', 'session_lost', `could not record the session id: ${err.message}`, { level: 'warn' })
+      );
+    },
     // Sent before the first turn of any conversation that is not a resumed one,
     // including a resume that turned out to be dead. Nothing below has to know
     // which of those happened.
@@ -592,18 +669,10 @@ export async function workOnTask(task, { log, onSession } = {}) {
       const attempt = Number(task.static_fix_attempts || 0) + 1;
       say('🔁', 'static_fix', `${uid} failed the platform checks — fixing (attempt ${attempt})`);
 
-      await session.send(await staticFixPrompt({ uid, taskDir, logs, lessons: await lessonsBlock() }));
+      await session.send(
+        (await staticFixPrompt({ uid, taskDir, logs })) + (await answersBlock(stage))
+      );
       await patchTask(uid, { static_fix_attempts: attempt });
-
-      /*
-       * Write down what fixed it, against the signatures this failure was filed
-       * under. Recorded now but not trusted yet: snorkel_server marks it
-       * confirmed only if the platform actually passes the next upload, so a
-       * lesson that turns out to be wrong never reaches another task.
-       */
-      const lesson = await session.send(await lessonPrompt());
-      const written = await recordLesson(task.static_check_signatures, lesson.text);
-      if (written) say('📚', 'lesson', `noted what fixed this, against ${written} known failure(s)`);
     } else if (from === TASK_STATUS_BUILD) {
       // ---- a first build -------------------------------------------------
       stage = 'build';
@@ -629,9 +698,9 @@ export async function workOnTask(task, { log, onSession } = {}) {
       if (triage.verdict !== 'fixable') {
         stage = triage.verdict === 'invalid' ? 'invalid' : 'valid-as-is';
         say('🛑', 'triage_stop', `${uid} is ${triage.verdict} — filling in the form that says so`);
-        await session.send(await verdictPrompt({ uid, taskDir, verdict: stage }));
+        await session.send((await verdictPrompt({ uid, taskDir, verdict: stage })) + (await answersBlock(stage)));
       } else {
-        await session.send(await fixPrompt({ uid, taskDir, lessons: await lessonsBlock() }));
+        await session.send((await fixPrompt({ uid, taskDir })) + (await answersBlock(stage)));
       }
     } else {
       // ---- a reviewer sent it back ---------------------------------------
@@ -678,15 +747,14 @@ export async function workOnTask(task, { log, onSession } = {}) {
       }
 
       await session.send(
-        await revisionPrompt({
+        (await revisionPrompt({
           uid,
           taskDir,
           feedbacks: task.feedbacks,
           applied,
-          lessons: await lessonsBlock({ source: 'review' }),
           difficultyFile,
           missingAnswers: gaps,
-        })
+        })) + (await answersBlock(stage))
       );
 
       /*
@@ -697,19 +765,20 @@ export async function workOnTask(task, { log, onSession } = {}) {
        * round that introduced something new, so a fix that broke the oracle
        * teaches nothing.
        */
-      const open = signaturesOf(latest);
-      if (open.length) {
-        const lesson = await session.send(await lessonPrompt());
-        const written = await recordLesson(open, lesson.text, { source: 'review' });
-        if (written) {
-          say('📚', 'lesson', `noted what was done about ${written} review complaint(s)`);
-        }
-      }
     }
 
-    // The answers as prose are what a person reads; this turn is the same thing
-    // per field, so it can be stored and pasted into the form.
-    await session.send(await extractPrompt(stage));
+    /*
+     * The answers should already be in the reply above — the work prompt asked
+     * for them there, so that this round is one message and one process rather
+     * than three, each paying to rebuild the cache over the whole conversation.
+     *
+     * Asking again is the fallback for a reply that came back without them, not
+     * the normal path.
+     */
+    if (!hasJsonReply(session.turns[session.turns.length - 1]?.text)) {
+      say('📋', 'answers_second_ask', 'the reply had no answers block — asking for it on its own');
+      await session.send(await extractPrompt(stage));
+    }
   } finally {
     clearInterval(heartbeat);
   }
@@ -729,7 +798,17 @@ export async function workOnTask(task, { log, onSession } = {}) {
    * bad extraction of a good one.
    */
   const turns = session.turns;
-  const prose = turns.length > 1 ? turns[turns.length - 2].text : '';
+  /*
+   * The prose and the JSON arrive in one reply now, so the prose is whatever
+   * came before the fenced block. A reply that needed the fallback ask above has
+   * them in two turns, as before.
+   */
+  const last = turns[turns.length - 1]?.text || '';
+  const prose = hasJsonReply(last)
+    ? last.slice(0, last.search(/```(?:json)?/i)).trim()
+    : turns.length > 1
+      ? turns[turns.length - 2].text
+      : '';
   const { answers, ignored, problems } = await normaliseAnswers(
     parseJsonReply(turns[turns.length - 1].text),
     // A verdict run answers the form that verdict produces, whose questions and
@@ -934,15 +1013,16 @@ export async function workOnTask(task, { log, onSession } = {}) {
     say('🧹', 'difficulty_file', `${difficultyFile} removed before packing`);
   }
 
-  const { path: outZip, name: zipName, madeByClaude } = await zipToUpload(task, taskDir);
-  say('📦', 'packed', `${zipName}${madeByClaude ? ' (built by Claude)' : ' (packed from the folder)'}`);
+  await syncProblemStatement(taskDir, say);
+
+  const { path: outZip, name: zipName } = await zipToUpload(task, taskDir);
+  say('📦', 'packed', `${zipName} (packed from the folder)`);
 
   say('⬆️', 'upload', `uploading ${zipName}`);
   const uploaded = await uploadFile(outZip, { fileName: zipName });
 
-  // Only remove what we made ourselves. A zip Claude built belongs to the task
-  // folder and is what the next round starts from.
-  if (!madeByClaude) await rm(outZip, { force: true });
+  // Ours, built outside the task folder for this upload only.
+  await rm(outZip, { force: true });
 
   /*
    * Written only now, with the zip uploaded and the answers stored.

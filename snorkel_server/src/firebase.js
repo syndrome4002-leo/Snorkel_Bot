@@ -13,7 +13,6 @@ import { appendFile, readFile, writeFile, rm } from 'node:fs/promises';
 import admin from 'firebase-admin';
 import { config, serverRoot } from './config.js';
 import { machineId } from './machine.js';
-import { recordFailures, confirmLessons, recordReviewFailures, confirmReviewLessons } from './lessons.js';
 import { diffRounds, describeDiff, madeThingsWorse, signaturesOf } from './checksigns.js';
 import { deleteFile } from './dropbox.js';
 
@@ -631,24 +630,6 @@ export async function addFeedback(uid, entry, extra = {}) {
 
   await ref.set(record, { merge: true });
 
-  /*
-   * Feed the round into the lessons store.
-   *
-   * Counting what is open runs on every round; confirming what is fixed runs
-   * only when the round introduced nothing, because a round that broke
-   * something is not evidence about what fixes things. Neither is allowed to
-   * fail the write above — the feedback is the record, this is bookkeeping on
-   * top of it.
-   */
-  try {
-    await recordReviewFailures(uid, diff.open);
-    if (diff.fixed.length) {
-      await confirmReviewLessons(uid, diff.fixed, { clean: !madeThingsWorse(diff) });
-    }
-  } catch (err) {
-    console.warn(`[lessons] ${uid}: review pipeline skipped — ${err.message}`);
-  }
-
   console.log(
     `[firebase] ${config.firebase.collection}/${uid} -> task_status="${TASK_STATUS_NEEDS_REVISION}", ` +
       `round ${next.length} appended — ${describeDiff(diff)}`
@@ -846,25 +827,6 @@ export async function saveStaticCheck(uid, result) {
   // and accepted by the platform's own gates, and only a person submits it.
   patch.task_status = passed ? TASK_STATUS_STATIC_PASS : TASK_STATUS_STATIC_FAIL;
 
-  /*
-   * Every failure is filed against a signature so the same complaint on another
-   * task is recognised rather than rediscovered; every pass settles whichever
-   * failures this task was carrying.
-   *
-   * Deliberately not allowed to break the check itself. A knowledge base that
-   * can fail a working submission is worse than no knowledge base.
-   */
-  try {
-    if (passed) {
-      const carrying = (await getTask(uid))?.static_check_signatures || [];
-      await confirmLessons(uid, carrying);
-      patch.static_check_signatures = [];
-    } else {
-      patch.static_check_signatures = await recordFailures(uid, result);
-    }
-  } catch (err) {
-    console.warn('[lessons] could not be updated:', err.message);
-  }
 
   await db.collection(config.firebase.collection).doc(String(uid)).set(patch, { merge: true });
   console.log(

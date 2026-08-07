@@ -15,6 +15,9 @@
 
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { readdir, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import path from 'node:path';
 import { config } from './config.js';
 
 /** Turned into the CLI's own error message when it is not installed. */
@@ -37,14 +40,22 @@ function notInstalled(err) {
  * then complains that no prompt was given. stdin sidesteps that, and along with
  * it any limit on how long a feedback round can be.
  */
-function runTurn(prompt, { cwd, sessionId, resume, addDirs = [], timeoutMs, onLog }) {
+function runTurn(prompt, { cwd, sessionId, resume, addDirs = [], timeoutMs, onLog, model }) {
   const args = ['--print', '--output-format', 'json'];
 
   if (resume) args.push('--resume', sessionId);
   else args.push('--session-id', sessionId);
 
   if (config.claude.permissionMode) args.push('--permission-mode', config.claude.permissionMode);
-  if (config.claude.model) args.push('--model', config.claude.model);
+  /*
+   * The dashboard's choice, then the env var, then whatever the CLI is set to.
+   *
+   * Worth having on the dashboard because it is the largest single lever on what
+   * a task costs, and it wants trying on one machine before all of them: the
+   * cheaper model is only cheaper if it does not need more rounds to get there.
+   */
+  const wanted = model || config.claude.model;
+  if (wanted) args.push('--model', wanted);
   for (const dir of addDirs) args.push('--add-dir', dir);
   args.push(...config.claude.extraArgs);
 
@@ -133,6 +144,57 @@ function runTurn(prompt, { cwd, sessionId, resume, addDirs = [], timeoutMs, onLo
  * the task and the answers it wrote. Starting fresh would mean paying to read all
  * of that again and hoping for the same conclusions.
  */
+/**
+ * Where Claude Code keeps the conversations for one working directory.
+ *
+ * Its own layout, reproduced rather than asked for: the CLI has no command that
+ * answers "what sessions exist for this folder". The rule is the absolute path
+ * with everything that is not a letter or a digit turned into a dash, which is
+ * checked against the real directories in the tests.
+ */
+function sessionDirFor(cwd) {
+  return path.join(
+    process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude'),
+    'projects',
+    String(cwd).replace(/[^a-zA-Z0-9]/g, '-')
+  );
+}
+
+/**
+ * The conversation to continue for a task folder, newest first.
+ *
+ * A task is meant to have exactly one, and the id is on the task record — but a
+ * record can lose it (a round that died before it was written, a task built
+ * before ids were stored), and starting over is the expensive answer to that.
+ * The folder itself knows: whatever conversation was last written there is the
+ * one this task has been having.
+ *
+ * `preferred` wins when it is still on disk, so the record stays authoritative
+ * where it can be.
+ */
+export async function latestSessionFor(cwd, preferred = null) {
+  const dir = sessionDirFor(cwd);
+
+  let entries = [];
+  try {
+    entries = (await readdir(dir)).filter((name) => name.endsWith('.jsonl'));
+  } catch {
+    return null; // no conversation has ever been had here
+  }
+
+  const ids = entries.map((name) => name.replace(/\.jsonl$/, ''));
+  if (preferred && ids.includes(preferred)) return preferred;
+
+  const dated = await Promise.all(
+    entries.map(async (name) => ({
+      id: name.replace(/\.jsonl$/, ''),
+      at: await stat(path.join(dir, name)).then((s) => s.mtimeMs).catch(() => 0),
+    }))
+  );
+  dated.sort((a, b) => b.at - a.at);
+  return dated.length ? dated[0].id : null;
+}
+
 export function openSession({
   cwd,
   addDirs = [],
@@ -141,6 +203,8 @@ export function openSession({
   label = '',
   resume = null,
   preamble = null,
+  model = '',
+  onSessionId = null,
 } = {}) {
   let sessionId = resume || randomUUID();
   const started = Date.now();
@@ -151,7 +215,7 @@ export function openSession({
 
   const left = () => (timeoutMs ? timeoutMs - (Date.now() - started) : 0);
   const run = (prompt) =>
-    runTurn(prompt, { cwd, sessionId, resume: resumed, addDirs, timeoutMs: left(), onLog });
+    runTurn(prompt, { cwd, sessionId, resume: resumed, addDirs, timeoutMs: left(), onLog, model });
 
   /**
    * The first turn, which is the only one that can find the conversation gone.
@@ -175,6 +239,9 @@ export function openSession({
         if (onLog) onLog(`could not resume ${sessionId} (${err.message}) — starting a fresh session`);
         sessionId = randomUUID();
         resumed = false;
+        // The conversation this task was carrying is gone; whoever is keeping
+        // track needs the new id before the next round looks for the old one.
+        if (onSessionId) onSessionId(sessionId, { lost: true });
       }
     }
 
@@ -203,9 +270,17 @@ export function openSession({
         throw new Error(`Ran out of time before turn ${turns.length + 1}.`);
       }
 
-      const turn = turns.length === 0 ? await firstTurn(prompt) : await run(prompt);
+      const first = turns.length === 0;
+      const turn = first ? await firstTurn(prompt) : await run(prompt);
       resumed = true;
       turns.push(turn);
+      /*
+       * Recorded as soon as there is a conversation to record, not when the
+       * round finishes. A round that fails after this point still has to leave
+       * the next one somewhere to continue from — otherwise every failure
+       * silently starts the task over from an empty context.
+       */
+      if (first && onSessionId) onSessionId(sessionId, { lost: false });
       return turn;
     },
 
