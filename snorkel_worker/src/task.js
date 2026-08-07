@@ -132,6 +132,36 @@ export async function missingForStage(stage, answers) {
 }
 
 /**
+ * Which conversation this task should continue, if any.
+ *
+ * Every prompt a task ever gets belongs in the conversation it started in — a
+ * build that failed and is being retried is not a new task, and treating it as
+ * one is how a single task once ended up with nine conversations on disk, each
+ * reading the whole folder from scratch.
+ *
+ * But the *record* decides that, not the folder. Conversations outlive the task
+ * they were had for: delete a task from the dashboard, build it again, and the
+ * folder still holds every session belonging to the task that no longer exists.
+ * Letting the folder decide meant a fresh build silently adopted one of those
+ * and carried on as though it already understood work it had never done.
+ *
+ * `worker_session_id` is written the moment a conversation exists, so a task
+ * this worker has run carries one. No id means no conversation of ours, however
+ * much history the folder happens to hold — so it starts fresh, which is what a
+ * task being built for the first time should do.
+ *
+ * The folder is still the fallback for a task that *does* have an id whose file
+ * the CLI has since pruned: same task, same folder, and the newest surviving
+ * conversation there is still one of its own.
+ */
+export async function conversationFor(task, taskDir, { resumeSessions = true } = {}) {
+  if (!resumeSessions) return null;
+  const recorded = task.worker_session_id;
+  if (!recorded) return null;
+  return latestSessionFor(taskDir, recorded);
+}
+
+/**
  * Keeps environment/problem_statement.md identical to instruction.md.
  *
  * The two files must always match, and every session spent turns keeping them
@@ -594,20 +624,7 @@ export async function workOnTask(
    * Turn the dashboard setting off to start each round fresh instead, which
    * trades that for re-reading the task at the start of every round.
    */
-  /*
-   * Not "which statuses may resume" — every prompt this task ever gets belongs
-   * in the conversation it started in.
-   *
-   * The status used to decide: a revision or a failed check resumed, a build did
-   * not. But a build that failed and is being tried again is not a new task, and
-   * treating it as one is how a single task ended up with nine conversations on
-   * disk, each one reading the whole folder from scratch.
-   *
-   * So the folder decides. If a conversation exists for it, this is a
-   * continuation whatever the status says; only a folder that has never had one
-   * starts fresh, which happens exactly once per task.
-   */
-  const resume = resumeSessions ? await latestSessionFor(taskDir, task.worker_session_id) : null;
+  const resume = await conversationFor(task, taskDir, { resumeSessions });
   if (resume && resume !== task.worker_session_id) {
     say('🧵', 'session', `continuing this task's existing conversation (${resume.slice(0, 8)})`);
   }

@@ -97,6 +97,48 @@ await check('the slug matches Claude Code’s real directory layout', async () =
   assert.equal(slug(real), expected);
 });
 
+/*
+ * And the question above it: should this task continue anything at all?
+ *
+ * Conversations outlive the tasks they were had for. A task deleted from the
+ * dashboard and built again gets a new record but the same folder, and the
+ * folder still holds the old task's sessions — so "continue whatever is here"
+ * had a fresh build adopting a conversation about work it had never done.
+ */
+const { conversationFor } = await import('../src/task.js');
+
+await check('a task built for the first time starts its own conversation', async () => {
+  // The folder is full of history belonging to a task that was deleted.
+  await conversation(TASK, 'belongs-to-a-deleted-task', 5);
+  assert.equal(await conversationFor({ UID: 'new' }, TASK), null);
+});
+
+await check('a task adopted from the revise list does too', async () => {
+  // Somebody else built and submitted it; this worker has never had a session.
+  assert.equal(await conversationFor({ UID: 'adopted', feedbacks: [{}, {}] }, TASK), null);
+});
+
+await check('a task this worker has run continues that conversation', async () => {
+  assert.equal(
+    await conversationFor({ UID: 'ours', worker_session_id: 'newest' }, TASK),
+    'newest'
+  );
+});
+
+await check('a recorded conversation that was pruned falls back within the folder', async () => {
+  const id = await conversationFor({ UID: 'ours', worker_session_id: 'gone' }, TASK);
+  assert.ok(id && id !== 'gone', 'the same task’s newest surviving conversation');
+});
+
+await check('turning resuming off starts fresh however much history there is', async () => {
+  assert.equal(
+    await conversationFor({ UID: 'ours', worker_session_id: 'newest' }, TASK, {
+      resumeSessions: false,
+    }),
+    null
+  );
+});
+
 await rm(root, { recursive: true, force: true });
 console.log(failures ? `\n${failures} session check(s) failed` : '\nthe one-session rule holds');
 process.exit(failures ? 1 : 0);
