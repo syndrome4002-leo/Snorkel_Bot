@@ -222,6 +222,49 @@ export async function answersBlock(stage = null) {
   ].join('\n');
 }
 
+/**
+ * The answers section for a build, which does not yet know its own verdict.
+ *
+ * A build used to be two prompts: judge the task, then — knowing the judgement —
+ * ask for the work and the matching form. That is two cold starts to do one
+ * job, and the first produced a single word.
+ *
+ * Asking for both in one reply means the form has to be described before the
+ * judgement exists, so all three are laid out and Claude fills the one its own
+ * judgement calls for. The alternative — describing only the fixable form and
+ * letting a non-fixable verdict fall through to the gap-fill turn — would put
+ * the prompt we just saved straight back, on exactly the tasks that need it
+ * least.
+ */
+export async function buildAnswersBlock() {
+  const forVerdict = async (verdict, label) =>
+    [`If your judgement is ${label}, answer these:`, '', describeFields(await schemaForStage(verdict))].join('\n');
+
+  return [
+    '',
+    '---',
+    '',
+    'When the work is done, and in this same reply, write the answers to the',
+    'submission questions twice over.',
+    '',
+    'First in prose, the way a person fills in a form.',
+    '',
+    'Then the same answers as JSON in a ```json fenced block, and nothing after it.',
+    'Which questions apply depends on the judgement you gave at the top:',
+    '',
+    await forVerdict('build', 'FIXABLE'),
+    '',
+    await forVerdict('invalid', 'INVALID'),
+    '',
+    await forVerdict('valid-as-is', 'VALID-AS-IS'),
+    '',
+    'Rules for the JSON: answer only the set that matches your judgement, leave',
+    'out any key that does not apply, use the allowed values exactly as written,',
+    'and keep the wording you used above — it is a change of format, not a second',
+    'attempt at the answer.',
+  ].join('\n');
+}
+
 export async function extractPrompt(stage = null) {
   return fill(await template('extract'), { fields: describeFields(await schemaForStage(stage)) });
 }

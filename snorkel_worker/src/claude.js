@@ -245,12 +245,21 @@ export function openSession({
       }
     }
 
+    /*
+     * The preamble opens the first prompt rather than being a turn of its own.
+     *
+     * It used to be sent separately — "here are the documents", wait, then "here
+     * is the task". Two turns, and the first one is a whole process: a cold
+     * start, the conversation written to cache at full price, all to produce an
+     * acknowledgement. Measured over 119 runs it was the same overhead per unit
+     * of output as real work, for output that was only ever "understood".
+     *
+     * Joined on, it costs nothing: the documents are read as part of the same
+     * turn that asks for the work, which is how a person would send it.
+     */
     if (preamble) {
       const text = typeof preamble === 'function' ? await preamble() : preamble;
-      if (text) {
-        turns.push(await run(text));
-        resumed = true;
-      }
+      if (text) return run(`${text}\n\n${prompt}`);
     }
     return run(prompt);
   }

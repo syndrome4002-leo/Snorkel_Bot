@@ -1,3 +1,7 @@
-Please check these attached documents and memorize important things then I will give you a sentinel task details that you will need to work with.
+These are the reference documents for the work below. Read the ones that bear on
+it before you start, and follow them where they apply.
 
 {{docs}}
+
+--------------------------------------------------------------------------------
+

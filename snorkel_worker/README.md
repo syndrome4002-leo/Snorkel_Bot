@@ -20,14 +20,22 @@ It polls for tasks in one of two states and takes them to **`ready to submit`**.
 1. Download the zip into the work dir.
 2. Set `file_uploaded: false`, then **delete the zip from Dropbox**.
 3. Unpack it into `<work dir>/<UID>_submission/`.
-4. Two turns with Claude: the reference documents, then the task.
+4. **One turn with Claude**: the reference documents, the task, the judgement it
+   needs to make, the corrections that judgement calls for, and the submitter
+   form — in a single prompt.
 5. Repack, upload, `file_uploaded: true`, answers saved, `task_status: "ready to submit"`.
 
-A build is **the two prompts running successfully**, not a finished piece of
-engineering. The second prompt asks Claude to inspect the task and answer the
-submitter form, and explicitly tells it not to change anything yet. So "build
-done" means both turns returned, and what you get back is the form answers.
-Anything more than that is a later, human-driven step.
+Step 4 used to be three prompts: the documents, then "is this fixable?", then the
+work. Every prompt is a separate `claude --print` process, and each one pays the
+same toll before it does anything — a cold start, and the conversation so far
+written to the cache at full price. That toll is the same whether the reply is
+one word or a rewritten test suite, so the two preliminaries cost about as much
+as the prompt that did the work while producing almost none of it.
+
+They are now one prompt, which is how a person doing this by hand would send it.
+The judgement still happens first — it is the first line of the reply, and
+`readVerdict()` reads it from there — but it no longer costs a round trip to
+learn.
 
 **`needs revision`** — the folder is already on disk; nothing is downloaded.
 
@@ -264,13 +272,12 @@ task — no restart, no rebuild.
 
 | file | when |
 | --- | --- |
-| `intro.txt` | turn one of any session that is not a resumed one: the reference documents |
-| `triage.txt` | turn two for `in build` — fixable, invalid, or valid-as-is |
-| `fix.txt` | turn three for `in build`, only when triage said fixable: the corrections and the submitter form |
+| `intro.txt` | the reference documents, joined to the front of the first prompt of a new session rather than sent as a turn of its own |
+| `build.txt` | the whole of `in build` in one prompt: judge the task, correct it if it is fixable, and fill in the form for whichever judgement was given |
+| `fix.txt` | the corrections and the submitter form, for a task already judged fixable |
 | `revision.txt` | turn two for `needs revision` — the reviewer's note and the automated checks |
 | `staticfix.txt` | after a platform check came back FAIL, with its build logs |
 | `extract.txt` | only when a run's answers did not already come back as JSON |
-| `build.txt` | the old single-turn build, kept for reference; nothing sends it |
 
 `fix.txt` is the submitter form itself, verbatim, ending with the instruction to
 keep answers short, human-sounding, and free of markdown. Reword it there rather

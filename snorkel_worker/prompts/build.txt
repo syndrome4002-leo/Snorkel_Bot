@@ -5,113 +5,56 @@ Below is task infos from the snorkel platform:
 
 ==================================================================================================
 
-Here are the downloaded sentinel task files here in this task directory, please inspect all files and you need to make corrections. Before doing anything ( do not do anything before i order ), write answers here ( Not in a md file ) to following questions ( follow the answers structure in the attached document. never use hypen links and  markdown ):
+The downloaded task files are in this directory. Inspect them, decide what kind
+of task this is, and then do whatever that decision calls for — all in this one
+reply. Do not stop to check the decision with me first.
 
+Start with the judgement on a line of its own: fixable, invalid, or valid-as-is.
+Then a short paragraph saying why, in a human tone, with no markdown and no
+bullet points.
 
-1. (SEGMENTS) What is your analysis of this Sentinel task?
-- Fixable (The task has issues in the instructions, tests, and/or oracle but you can correct all issues)
-- Invalid/Not Fixable (The task is invalid and/or unfixable, as it requires changes outside of the instructions/tests/oracle, or is invalid due to other reasons)
-- Valid as-is (The task is valid without changes)
+Then, if the judgement is FIXABLE, make the corrections in this task directory.
 
+Do not build a zip, and do not copy instruction.md over
+environment/problem_statement.md. Both are done for you after this session, from
+whatever the folder holds at the end — so the folder is the deliverable, and
+every minute spent zipping, unzipping to check it, and deleting the last attempt
+is a minute spent on something that gets redone anyway.
 
+Do not keep a todo list. Nothing reads it.
 
-2. [Duplicate] What is your analysis of this Sentinel task? Ensure your selection matches the question above
-- Fixable (The task has issues in the instructions, tests, and/or oracle but you can correct all issues)
-- Invalid/Not Fixable (The task is invalid and/or unfixable, as it requires changes outside of the instructions/tests/oracle, or is invalid due to other reasons)
-- Valid-as-is (The task is valid without changes)
+If the judgement is INVALID or VALID-AS-IS, there is nothing to correct and
+nothing to upload. Leave the files as they are — the form below is the whole of
+what is left to do, and it is the only thing the reviewer will read.
 
+Writing answers rule:
+- Each answer should be not so long, just like human-written.
+- Never wrap a sentence onto the next line. A paragraph is one line however long
+  it runs; only a real break between parts or items is a new line.
+- The answers must not include hypen links or bullet points, symbols, formatting
+  patterns including "—"
+- In an answer field, there should be a blank line between each item. ( apply
+  only for answers that have multiple items )
 
-3.
+In the answer describing each issue, the category in brackets is one you selected
+above, copied exactly as written there — "[the instructions are
+overly-prescriptive]", not "[Instructions / Overly prescriptive]" — on a line of
+its own, with the description starting on the next line. An environment problem
+gets its own item headed [environment/dockerfile].
 
-3.1 if answer 2 is fixable
+Every numbered item needs all of what the question asks for: the category, the
+explanation, whether it is fixable, and how it was fixed — each of those on one
+line, however long it runs. Never wrap a sentence onto the next line: the line
+break is what separates one part from the next.
 
-	3.1.1 Select where the task had issues ( select all that apply )
-	- Instructions
-	- Tests
-	- Oracle Solution
-	- Environment/Dockerfile
+So a complete item reads — four lines, a blank line, then the next item:
 
-	3.1.2 What issues did you find with the task?
-	- Every requirement in the instructions is not properly tested
-	- All test requirements are not properly specified in the instructions
-	- The instructions appear LLM generated
-	- The instructions are overly-prescriptive
-	- The task leaks solution information
-	- The oracle does not implement the solution following the instructions.
-	- Less than 10 fail-to-pass tests in test suite
+1) [the instructions are overly-prescriptive]
+The instruction named the exact status strings and field names the tests assert on, which tells the agent what to write instead of what the code should do.
+This is fixable.
+Rewritten to describe the behaviour, keeping the contract vocabulary but not the test assertions.
 
-	3.1.3 Describe each issue in detail:
-
-	For each issue category selected, please give details in this format:
-
-	1) [Issue Category 1 - the first category you selected above]
-	Issue Description/explanation - give specific examples in the code when helpful
-	Is the issue fixable or not fixable?
-	If it IS fixable, how could this be fixed? If not, explain why not.
-
-	2) [Issue Category 2]...
-
-	[ Re-upload the entire task as a zip file with the corrected instructions, tests, or oracle below, ensuring the task remains valid. Ensure the upload is submitted as <all-task-content>. Do not include runs/ or task/directory ]
-
-	3.1.4 Files Changed - List every file you changed.
-	For each file, include: File path, what changed, why you changed it. You do not need to repeat full validation details here if you already included them in the validation section ( Write like this "[changed, updated, replaced, moved...] ...because..." )
-
-	3.1.5 If you added to the PR in any way, explain how. If you did not modify the PR in any way, write 'NA'. Remember you may not change or reduce the scope of the PR, but you may expand on it to add complexity.
-
-	3.1.6 Confirm your task meets all the following requirements:
-	- You must select all for the task to truly be valid
-	- Every requirement in the instructions is properly tested.
-	- All test requirements are properly specified in the instructions.
-	- The instructions do not sound like an LLM generated them.
-	- The instructions are not overly-prescriptive.
-	- The task does not leak solution information.
-	- The oracle implements the solution following the instructions.
-	- The PR was not modified in any way beyond what is allowed by the guidelines.
-	- More than 10 fail-to-pass tests in test suite
-
-	3.1.6 How long (in minutes) did it take you to complete the initial task rewrite only?
-
-3.2 If answer 2 is Invalid/Not Fixable
-
-	3.2.1 What issue did you find with the task/components?
-	- PR scope needs to be changed or reduced
-	- Environment Issues
-
-	3.2.2 If Environment Issues was selected above, what specific issues did you find with the task? (optional)
-	- Image/Dependency Build Failures
-	- Oracle timeout
-	- External-network dependency at build/solve time
-	- Dirty git history
-
-	3.3.3 Please explain in more detail why this task is unfixable
-
-3.3 If answer 2 is Valid-as-is
-
-	3.3.1 Confirm the task complies with all the following requirements:
-	- Every requirement in the instructions is properly tested.
-	- All test requirements are properly specified in the instructions.
-	- The instructions do not sound like an LLM generated them.
-	- The instructions are not overly-prescriptive.
-	- The task does not leak solution information.
-	- The oracle implements the solution following the instructions.
-	- Contains more than 10 fail-to-pass tests in test suite
-
-4. What makes this task difficult?
-Describe what makes this task technically challenging. Consider factors such as edge cases, implementation dependencies, requirements that may be overlooked on first reading, or complexity in the test setup.
-
-5. How much time would you estimate a senior engineer familiar with the codebase would take to solve this?
-- <10 minutes
-- 10-20 minutes
-- 20-40 minutes
-- 40+ minutes
-
-6. How long (in minutes) did it take you to review the initial task and determine its validity?
-
-7. How long (in minutes) did it take you to complete this entire submission?
-
-==================================================================================================================
-
-you should fill all time budgets with your expectation properly for the task and follow the sample .md file style attached, and you should summarize all comments and descriptions as shortly as possible like human writing style. And also do not write risky extension which will be appearing as hypen links in any answers.
-
-MOST IMPORTANT THING:
-All text answers should be not too long and written in human written style and human written tone ( Not in LLM written style). I think to make the those looks like written in human written style, should never use markdown and hyper including "—". just give me answers for now.
+2) [environment/dockerfile]
+task.toml was missing os, still carried network_mode in all three sections, and had no difficulty_explanation.
+This is fixable.
+Added os, removed the network fields, added difficulty_explanation.

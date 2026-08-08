@@ -24,10 +24,11 @@ import { openSession, latestSessionFor } from './claude.js';
 import { openInEditor } from './editor.js';
 import {
   answersBlock,
+  buildAnswersBlock,
+  buildPrompt,
   documentPaths,
   extractPrompt,
   gapPrompt,
-  fixPrompt,
   introPrompt,
   noteFingerprint,
   revisionPrompt,
@@ -35,8 +36,6 @@ import {
   rewritePrompt,
   reviewerNotes,
   staticFixPrompt,
-  triagePrompt,
-  verdictPrompt,
 } from './prompts.js';
 import {
   issueFormatProblems,
@@ -706,29 +705,42 @@ export async function workOnTask(
       stage = 'build';
       say('🧠', 'claude_start', `building ${uid} with ${docs.length} document(s) attached`);
 
-      const verdict = await session.send(
-        await triagePrompt({ uid, taskDir, initialInfos: task.initial_infos })
+      /*
+       * One prompt: judge the task, do what the judgement calls for, and fill in
+       * the matching form.
+       *
+       * It used to be two — "is this fixable?", then, knowing the answer, the
+       * work. Splitting it reads like the careful order to do things in, but the
+       * first prompt is a whole process that pays to establish the conversation
+       * and comes back with one word. Measured across 63 runs it cost as much
+       * per unit of output as the prompt that did the actual work.
+       *
+       * Nothing was gained by knowing the verdict first: every branch continues
+       * in the same conversation anyway, so the only thing the split bought was
+       * a second cold start. A person looking at one of these tasks decides and
+       * acts in one sitting; this now does the same.
+       */
+      const built = await session.send(
+        (await buildPrompt({ uid, taskDir, initialInfos: task.initial_infos })) +
+          (await buildAnswersBlock())
       );
 
-      triage = readVerdict(verdict.text);
-      say('🔎', 'triage', `${uid} is ${triage.verdict}`);
-
+      triage = readVerdict(built.text);
       /*
-       * Anything but fixable means there is nothing to correct and nothing to
-       * upload — but there is still a form to fill in, and it is the only thing
-       * the reviewer will read. The run used to stop here, which left that form
-       * empty and the task waiting for a person.
-       *
-       * The questions are a different, much shorter set: the platform drops the
-       * upload, the two checks and half the form the moment the verdict is not
-       * "fixable".
+       * Anything but fixable means there was nothing to correct and nothing to
+       * upload — but the form still had to be filled in, and it is the only
+       * thing the reviewer will read. The prompt above asks for the shorter set
+       * of questions in that case, so the answers are already in this reply.
        */
+      stage =
+        triage.verdict === 'fixable'
+          ? 'build'
+          : triage.verdict === 'invalid'
+            ? 'invalid'
+            : 'valid-as-is';
+      say('🔎', 'triage', `${uid} is ${triage.verdict}`);
       if (triage.verdict !== 'fixable') {
-        stage = triage.verdict === 'invalid' ? 'invalid' : 'valid-as-is';
-        say('🛑', 'triage_stop', `${uid} is ${triage.verdict} — filling in the form that says so`);
-        await session.send((await verdictPrompt({ uid, taskDir, verdict: stage })) + (await answersBlock(stage)));
-      } else {
-        await session.send((await fixPrompt({ uid, taskDir })) + (await answersBlock(stage)));
+        say('🛑', 'triage_stop', `${uid} is ${triage.verdict} — the form saying so is filled in`);
       }
     } else {
       // ---- a reviewer sent it back ---------------------------------------
