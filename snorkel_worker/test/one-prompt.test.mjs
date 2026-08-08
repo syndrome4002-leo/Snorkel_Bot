@@ -47,6 +47,7 @@ await writeFile(
   fake,
   `#!/bin/sh
 cat >> ${JSON.stringify(ledger)}.stdin
+echo "$@" >> ${JSON.stringify(ledger)}.args
 echo "run" >> ${JSON.stringify(ledger)}
 echo '{"result":"ok","session_id":"11111111-1111-1111-1111-111111111111","num_turns":1,"is_error":false}'
 `
@@ -78,6 +79,21 @@ await check('documents and the first prompt are one process, not two', async () 
     body.indexOf('THE DOCUMENTS GO HERE') < body.indexOf('THE ACTUAL WORK'),
     'documents first, so they are read before the work is asked for'
   );
+});
+
+await check('the conversation window is capped on every turn', async () => {
+  /*
+   * The flag a resumed round depends on. A revision arrives long after the
+   * five-minute cache window has closed, so the whole conversation is written
+   * again at full price before any work starts — bounded here, or not at all.
+   */
+  const before = await runs();
+  const session = openSession({ cwd: root, timeoutMs: 30000, autocompact: '150000' });
+  await session.send('WORK');
+  assert.equal(await runs(), before + 1);
+
+  const args = await readFile(`${ledger}.args`, 'utf8').catch(() => '');
+  assert.match(args, /--autocompact 150000/, 'the window never reached the CLI');
 });
 
 await check('a build asks for the judgement and the work in the same breath', async () => {

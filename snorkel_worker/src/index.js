@@ -96,6 +96,7 @@ const WORKER_SETTINGS = new Set([
   'resume_sessions',
   'open_in_editor',
   'revision_limit',
+  'autocompact',
 ]);
 
 /**
@@ -274,6 +275,8 @@ async function startTask(task) {
         model: claudeModel(),
         // One task, one conversation — unless the dashboard says otherwise.
         resumeSessions: settings.resume_sessions !== false,
+        // How large the conversation may grow before Claude Code compacts it.
+        autocompact: String(settings.autocompact ?? '').trim() || undefined,
         // Put the folder on screen, if this machine has a screen and wants it.
         // Unset on the dashboard leaves the decision to this machine's .env.
         openEditor:

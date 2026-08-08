@@ -473,7 +473,7 @@ export async function deleteTaskFolder(uid) {
  */
 export async function workOnTask(
   task,
-  { log, onSession, model = '', resumeSessions = true, openEditor } = {}
+  { log, onSession, model = '', resumeSessions = true, openEditor, autocompact } = {}
 ) {
   const uid = String(task.UID || task.id);
   const from = task.task_status;
@@ -631,6 +631,7 @@ export async function workOnTask(
     cwd: taskDir,
     // Chosen on the dashboard, per machine. Empty means the CLI's own default.
     model,
+    autocompact,
     // The documents sit outside the task folder, so Claude has to be allowed to
     // read there explicitly.
     addDirs: config.docsDir ? [config.docsDir] : [],

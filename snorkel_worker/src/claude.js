@@ -40,7 +40,7 @@ function notInstalled(err) {
  * then complains that no prompt was given. stdin sidesteps that, and along with
  * it any limit on how long a feedback round can be.
  */
-function runTurn(prompt, { cwd, sessionId, resume, addDirs = [], timeoutMs, onLog, model }) {
+function runTurn(prompt, { cwd, sessionId, resume, addDirs = [], timeoutMs, onLog, model, autocompact }) {
   const args = ['--print', '--output-format', 'json'];
 
   if (resume) args.push('--resume', sessionId);
@@ -56,6 +56,16 @@ function runTurn(prompt, { cwd, sessionId, resume, addDirs = [], timeoutMs, onLo
    */
   const wanted = model || config.claude.model;
   if (wanted) args.push('--model', wanted);
+
+  /*
+   * Bound the conversation, which is what a resumed round is really billed for:
+   * it arrives after the cache has expired, so the whole history is written
+   * again at full price before the work starts, then read back once per call.
+   * Left to grow, round eight pays to re-establish rounds one through seven in
+   * order to make one small edit.
+   */
+  const window = autocompact ?? config.claude.autocompact;
+  if (window) args.push('--autocompact', String(window));
   for (const dir of addDirs) args.push('--add-dir', dir);
   args.push(...config.claude.extraArgs);
 
@@ -204,6 +214,7 @@ export function openSession({
   resume = null,
   preamble = null,
   model = '',
+  autocompact = undefined,
   onSessionId = null,
 } = {}) {
   let sessionId = resume || randomUUID();
@@ -215,7 +226,7 @@ export function openSession({
 
   const left = () => (timeoutMs ? timeoutMs - (Date.now() - started) : 0);
   const run = (prompt) =>
-    runTurn(prompt, { cwd, sessionId, resume: resumed, addDirs, timeoutMs: left(), onLog, model });
+    runTurn(prompt, { cwd, sessionId, resume: resumed, addDirs, timeoutMs: left(), onLog, model, autocompact });
 
   /**
    * The first turn, which is the only one that can find the conversation gone.

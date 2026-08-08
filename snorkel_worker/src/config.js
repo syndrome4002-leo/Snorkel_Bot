@@ -206,6 +206,25 @@ export const config = {
      */
     credentials: process.env.CLAUDE_CREDENTIALS || '',
 
+    /**
+     * The conversation window, in tokens, before Claude Code compacts it.
+     *
+     * This is what a revision round actually pays for. Every prompt is a new
+     * process arriving after the five-minute cache window has closed, so the
+     * whole conversation is written to cache again at 1.25x before any work
+     * starts — and then read back once per API call while the work happens.
+     * Both costs scale with the conversation's size, so bounding it bounds them.
+     *
+     * Measured before this existed: a revision round sat at a 230k conversation
+     * and spent 473k of cache writes per prompt, against 151k for the same
+     * person doing the same kind of work by hand in a warm session.
+     *
+     * 150k rather than the 100k minimum: builds peaked at 144k and are left
+     * alone, while revisions and static fixes — which peaked at 230k and 244k —
+     * are the ones brought back down. Empty or 0 leaves the CLI's own default.
+     */
+    autocompact: process.env.CLAUDE_AUTOCOMPACT ?? '150000',
+
     /** Extra CLI arguments, split on spaces. Escape hatch for anything not modelled here. */
     extraArgs: String(process.env.CLAUDE_ARGS || '').split(/\s+/).filter(Boolean),
   },

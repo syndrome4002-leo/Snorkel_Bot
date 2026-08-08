@@ -170,6 +170,15 @@ const FIELDS = [
   },
   {
     group: 'Worker',
+    key: 'autocompact',
+    type: 'text',
+    label: 'Conversation window (tokens)',
+    help:
+      'How large a task’s conversation may grow before Claude Code compacts it. This is what a revision round is really billed for: it arrives long after the five-minute cache window has closed, so the whole conversation is written again at full price before any work starts, then read back once per call — both costs scale with its size. Measured before this existed, a revision sat on a 230k conversation and spent 473k of cache writes per round, against 151k for the same work done by hand in a warm session. Defaults to 150000, which leaves builds alone (they peaked at 144k) and brings revisions down. Blank uses the CLI’s own default; accepts 100000 to 1000000.',
+    placeholder: '150000',
+  },
+  {
+    group: 'Worker',
     key: 'revision_limit',
     label: 'Revision rounds per task',
     help:
