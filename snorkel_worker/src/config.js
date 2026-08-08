@@ -91,6 +91,22 @@ export const config = {
     maxStaticFixAttempts: num(process.env.MAX_STATIC_FIX_ATTEMPTS, 5),
 
     /**
+     * How many revision rounds to answer before leaving the task alone.
+     *
+     * 0 means no limit, which is the behaviour this system has always had.
+     *
+     * Rework is the most expensive work here and gets worse each round: the
+     * prompt pays to re-establish a conversation that has grown since last time,
+     * while the edit it asks for has not. Measured across 129 rounds it cost
+     * about five times as much per unit of work as a first build.
+     *
+     * Left off by default because the cost is not the only consideration — past
+     * the limit a task the reviewer is still asking about stops being answered,
+     * and that is a decision for whoever watches the queue.
+     */
+    maxRevisionRounds: num(process.env.MAX_REVISION_ROUNDS, 0),
+
+    /**
      * How long after the server hands a task's zip to the browser before that
      * task counts as stranded.
      *

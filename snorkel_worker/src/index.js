@@ -76,6 +76,18 @@ function staticFixLimit() {
   return Math.max(1, config.worker.maxStaticFixAttempts);
 }
 
+/**
+ * How many revision rounds to answer before leaving a task for a person.
+ *
+ * The dashboard's number wins; 0 or blank there falls back to this machine's
+ * env, and 0 in both means no limit — which is how it has always behaved.
+ */
+function revisionLimit() {
+  const fromDashboard = Number(settings.revision_limit);
+  if (Number.isFinite(fromDashboard) && fromDashboard > 0) return Math.floor(fromDashboard);
+  return Math.max(0, config.worker.maxRevisionRounds);
+}
+
 /** What this worker takes from the machines' settings. The rest is the server's. */
 const WORKER_SETTINGS = new Set([
   'worker_max_concurrent',
@@ -83,6 +95,7 @@ const WORKER_SETTINGS = new Set([
   'claude_model',
   'resume_sessions',
   'open_in_editor',
+  'revision_limit',
 ]);
 
 /**
@@ -113,6 +126,7 @@ async function snapshot() {
     running: running.size,
     max_concurrent: maxConcurrent(),
     static_fix_limit: staticFixLimit(),
+    revision_limit: revisionLimit(),
     // Null unless Claude has said there is nothing left to spend.
     paused_until: pausedUntil,
     paused_reason: pauseReason || null,
@@ -431,7 +445,7 @@ async function poll() {
 
     // Ask for more than there is room for: some will already be claimed by the
     // time we get to them, and a short list would leave slots idle.
-    const candidates = await findWorkableTasks(machines, free + 5, staticFixLimit());
+    const candidates = await findWorkableTasks(machines, free + 5, staticFixLimit(), revisionLimit());
     const available = candidates.filter((t) => !running.has(String(t.UID || t.id)));
     if (!available.length) return;
 

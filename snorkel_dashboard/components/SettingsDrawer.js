@@ -168,6 +168,15 @@ const FIELDS = [
     min: 1,
     placeholder: '5',
   },
+  {
+    group: 'Worker',
+    key: 'revision_limit',
+    label: 'Revision rounds per task',
+    help:
+      'How many times to answer a reviewer before leaving the task alone. Blank or 0 means no limit, which is the behaviour up to now. Rework is the most expensive thing here and gets worse with every round: the prompt pays to re-establish a conversation that has grown since the last round, while the edit it asks for has not — measured across 129 rounds it cost about five times as much per unit of work as a first build. Past the limit the task stays at "needs revision" for a person, so set it only if you are watching the queue.',
+    min: 0,
+    placeholder: 'no limit',
+  },
 ];
 
 /** Field order is fixed, so the groups render in the order they first appear. */
