@@ -22,7 +22,6 @@ import {
   staticFixPrompt,
   triagePrompt,
 } from '../src/prompts.js';
-import { lessonsBlock } from '../src/lessons.js';
 import { failedCheckLogs } from '../src/task.js';
 import { TASK_STATUS_BUILD, TASK_STATUS_STATIC_FAIL } from '../src/firebase.js';
 
@@ -69,7 +68,6 @@ if (!WORKABLE.includes(task.task_status)) {
 if (dry) {
   const taskDir = (await findTaskDir(uid)) || '(would be downloaded and unpacked)';
   const docs = await documentPaths();
-  const lessons = await lessonsBlock();
 
   /*
    * A revision and a static fix continue the conversation that built the task,
@@ -81,9 +79,9 @@ if (dry) {
   const turns = [];
   if (task.task_status === TASK_STATUS_BUILD) {
     turns.push(['triage', await triagePrompt({ uid, taskDir, initialInfos: task.initial_infos })]);
-    turns.push(['fix (only if triage says fixable)', await fixPrompt({ uid, taskDir, lessons })]);
+    turns.push(['fix (only if triage says fixable)', await fixPrompt({ uid, taskDir })]);
   } else if (task.task_status === TASK_STATUS_STATIC_FAIL) {
-    turns.push(['static fix', await staticFixPrompt({ uid, taskDir, logs: failedCheckLogs(task), lessons })]);
+    turns.push(['static fix', await staticFixPrompt({ uid, taskDir, logs: failedCheckLogs(task) })]);
   } else {
     turns.push([
       'revision',

@@ -211,34 +211,21 @@ overrides `MAX_CONCURRENT` live; a task already running is never interrupted.
 Each concurrent task is a full Claude session building a repo and running its
 tests, so more is not automatically faster.
 
-## Learning from failed checks
+## Signatures of a failed check
 
 Every failed platform check is filed under a **signature** — the log with build
 ids, timestamps, durations and paths normalised away, then hashed. That is what
 makes the same complaint on a different task the same entry rather than a new
-one, so the collection is an index instead of a pile.
+one, so a round's complaints can be compared with the last round's.
 
-```
-task A fails  ─┐
-task B fails  ─┴─► CheckLessons/<signature>   occurrences: 2
-                     ↓ worker fixes it, writes what fixed it
-                   lesson: "..."   confirmed: false
-                     ↓ the platform then passes the task
-                   confirmed: true
-                     ↓
-                   goes into every later build's prompt
-```
-
-A lesson is **written early and trusted late**. The worker records what it thinks
-fixed a failure right after fixing it, but nothing is shown to another task until
-the platform actually passes the upload. A guess about a failure nobody has
-beaten is how a knowledge base starts teaching its own mistakes.
-
-Only confirmed lessons reach a prompt, at most fifteen, most frequent first —
-frequency being the closest thing to importance the data has.
-
-Reading them can never fail a build: if the collection is unreachable the run
-carries on without them. They are an advantage, not a dependency.
+> **Removed in August 2026: the lessons store.** The worker used to ask Claude,
+> after each successful fix, what the next task should have known, and file the
+> answer under the signature for later builds to read. It was deleted — not
+> because the idea was wrong but because of what it cost: measured over 133 runs
+> it produced 12k tokens of output in total, for 12% of everything this system
+> spent. Every one of those prompts paid to re-establish an entire conversation
+> in order to write two sentences. If it ever comes back it should be a summary
+> the worker writes from data it already has, not another turn of Claude.
 
 ## What a round achieved
 
@@ -270,26 +257,6 @@ no signature rather than a guessed one, because a wrong signature makes a fix
 look like a regression and a regression look like progress. `npm test` runs it
 against the exact strings the panes produce.
 
-### And what it learns from it
-
-The signatures double as keys into `CheckLessons`, the same store the platform
-checks already use. After a revision the worker asks what it changed and files
-that against every complaint the round was answering; when the next round
-arrives, snorkel_server confirms the ones that disappeared.
-
-**A round that introduced something new confirms nothing at all.** Not because
-its fixes did not work — three of them did on `4418f8ec` round 3 — but because
-whatever Claude writes down after such a round describes the damage as well as
-the repair, and a store that files both starts teaching its own mistakes.
-
-Confirmed review lessons go into the revision prompt; build-log lessons stay in
-the build and static-fix prompts. `source` keeps them apart, and entries written
-before the split count as `static`.
-
-Note the encoding: a review signature contains a slash and a Firestore document
-id may not, so they are stored as `review__judge:discuss~overreach`. Both halves
-of the pipeline must agree on that — hence `reviewDocId` in each.
-
 ## Prompts
 
 The wording lives in `prompts/*.txt`, not in code. Edits take effect on the next
@@ -302,8 +269,7 @@ task — no restart, no rebuild.
 | `fix.txt` | turn three for `in build`, only when triage said fixable: the corrections and the submitter form |
 | `revision.txt` | turn two for `needs revision` — the reviewer's note and the automated checks |
 | `staticfix.txt` | after a platform check came back FAIL, with its build logs |
-| `lesson.txt` | after a fix worked: what should the next task have known? |
-| `extract.txt` | the last turn of every run: the same answers again, as JSON |
+| `extract.txt` | only when a run's answers did not already come back as JSON |
 | `build.txt` | the old single-turn build, kept for reference; nothing sends it |
 
 `fix.txt` is the submitter form itself, verbatim, ending with the instruction to
@@ -311,7 +277,7 @@ keep answers short, human-sounding, and free of markdown. Reword it there rather
 than in code.
 
 Placeholders: `{{docs}}`, `{{task_dir}}`, `{{uid}}`, `{{initial_infos}}`,
-`{{logs}}`, `{{lessons}}`, `{{fields}}`, and — in `revision.txt` —
+`{{logs}}`, `{{fields}}`, and — in `revision.txt` —
 `{{note_status}}`, `{{reviewer_notes}}`, `{{automated_checks}}`, `{{history}}`.
 An unrecognised one is left alone rather than blanked.
 
