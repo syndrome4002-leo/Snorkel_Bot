@@ -96,6 +96,23 @@ await check('the conversation window is capped on every turn', async () => {
   assert.match(args, /--autocompact 150000/, 'the window never reached the CLI');
 });
 
+await check('a resumed round gets the tighter window than a fresh one', async () => {
+  /*
+   * A build starts from nothing, so the window never binds on it. A resumed
+   * round starts by re-writing everything the task has said so far — 159k on a
+   * measured revision — and that is the write worth bounding as hard as the CLI
+   * allows.
+   */
+  const { config } = await import('../src/config.js');
+  assert.ok(
+    Number(config.claude.autocompactResumed) < Number(config.claude.autocompact),
+    'a resumed round must not be given the wider window'
+  );
+  // 100k is the CLI's floor; asking for less is refused, so this is the most
+  // that can be bounded without the round doing less work.
+  assert.equal(Number(config.claude.autocompactResumed), 100000);
+});
+
 await check('a build asks for the judgement and the work in the same breath', async () => {
   const prompt =
     (await buildPrompt({ uid: 'u', taskDir: '/tmp/u', initialInfos: 'infos' })) +

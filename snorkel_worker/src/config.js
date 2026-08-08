@@ -225,6 +225,21 @@ export const config = {
      */
     autocompact: process.env.CLAUDE_AUTOCOMPACT ?? '150000',
 
+    /**
+     * The same window, for a round that resumes an existing conversation.
+     *
+     * A build starts from nothing and its conversation peaked at 144k, so the
+     * window above never binds on it. A revision or a static fix starts by
+     * re-writing everything the task has said so far, and those peaked at 230k
+     * and 244k — which is the write nobody wants to be paying.
+     *
+     * 100000 is the CLI's floor; there is no smaller window to ask for. It does
+     * not get the write under 150k on its own — the rest is tool results
+     * accumulating during the round, which is work, not waste — but it is the
+     * largest reduction available without the round doing less.
+     */
+    autocompactResumed: process.env.CLAUDE_AUTOCOMPACT_RESUMED ?? '100000',
+
     /** Extra CLI arguments, split on spaces. Escape hatch for anything not modelled here. */
     extraArgs: String(process.env.CLAUDE_ARGS || '').split(/\s+/).filter(Boolean),
   },

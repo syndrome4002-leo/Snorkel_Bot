@@ -627,11 +627,23 @@ export async function workOnTask(
   if (resume && resume !== task.worker_session_id) {
     say('🧵', 'session', `continuing this task's existing conversation (${resume.slice(0, 8)})`);
   }
+
+  /*
+   * A resumed round gets the tighter window.
+   *
+   * It arrives long after the five-minute cache has gone, so its first call
+   * re-writes the whole conversation at full price before any work starts —
+   * measured at 159k on a revision, against 45k for the same work done by hand
+   * in a session still warm enough to write only the delta. A build has no
+   * history to re-write and its conversation never reached the wider window
+   * anyway, so it is left alone.
+   */
+  const window = autocompact ?? (resume ? config.claude.autocompactResumed : config.claude.autocompact);
   const session = openSession({
     cwd: taskDir,
     // Chosen on the dashboard, per machine. Empty means the CLI's own default.
     model,
-    autocompact,
+    autocompact: window,
     // The documents sit outside the task folder, so Claude has to be allowed to
     // read there explicitly.
     addDirs: config.docsDir ? [config.docsDir] : [],
