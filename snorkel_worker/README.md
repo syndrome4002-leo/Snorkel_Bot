@@ -37,26 +37,22 @@ The judgement still happens first — it is the first line of the reply, and
 `readVerdict()` reads it from there — but it no longer costs a round trip to
 learn.
 
-**`needs revision`** — the folder is already on disk; nothing is downloaded.
+**`static check fail`** — the folder is already on disk; nothing is downloaded.
 
 1. Find `<UID>_submission/`.
 2. Continue the conversation that built the task, by its recorded session id, and
-   hand it the newest feedback round: the reviewer's note and the automated check
-   panes, kept apart because they carry different weight. Only that round — the
-   earlier ones appear as a list of notes already dealt with, because their
-   corrections are in the folder and re-reading the text invites redoing them.
-3. Save whatever answers changed to `answers`, merged over the ones already
-   there; anything Claude leaves out is still correct and stays as it was.
-4. Repack, upload, `task_status: "ready to submit"` — from here it is the same
-   road as a new task: the server hands the zip to the browser, the extension
-   uploads it and runs the two platform checks, and a failure comes back as
-   `static check fail` for the worker to answer.
+   hand it the platform's build logs. It is the same upload being corrected, not
+   new work, so the session that produced it already knows what it did.
+3. Repack, upload, `task_status: "ready to submit"` — the server hands the zip
+   back to the browser and the checks run again. After
+   `MAX_STATIC_FIX_ATTEMPTS` the task is left for a person: "until it passes"
+   and "forever" are the same instruction when the fix is not working.
 
-The worker records a fingerprint of the reviewer's note in
-`revision_notes_applied` once the round is safely uploaded. A note that comes
-back unchanged is then labelled as already worked on rather than presented as new
-work, which is the difference between "the reviewer is repeating themselves" and
-"do all of that again".
+**Reviewer revisions are not this bot's job.** It builds a task, submits it, and
+answers the platform's own checks on that submission. What a reviewer says
+afterwards is for a person. The revise list is still *counted* — the site will
+not offer a new task while too many of this account's submissions are waiting to
+be reviewed — but nothing opens those tasks or reads their feedback.
 
 While a task is open its status is **`Working..`**, so the dashboard shows what
 Claude has in hand.
@@ -201,7 +197,7 @@ a debugging switch rather than a normal setting.
 
 This works across machines because the files travel through Dropbox: an `in build`
 task arrives as a zip and everything after that is local. The folder it unpacks
-stays put, so when that task later comes back for revision the worker finds it
+stays put, so when the platform rejects that upload the worker finds the folder
 where it left it.
 
 `EXTRA_TASK_DIRS` is searched read-only when looking for an existing folder, which
@@ -224,46 +220,9 @@ tests, so more is not automatically faster.
 Every failed platform check is filed under a **signature** — the log with build
 ids, timestamps, durations and paths normalised away, then hashed. That is what
 makes the same complaint on a different task the same entry rather than a new
-one, so a round's complaints can be compared with the last round's.
+one, so successive attempts at one upload can be compared.
 
-> **Removed in August 2026: the lessons store.** The worker used to ask Claude,
-> after each successful fix, what the next task should have known, and file the
-> answer under the signature for later builds to read. It was deleted — not
-> because the idea was wrong but because of what it cost: measured over 133 runs
-> it produced 12k tokens of output in total, for 12% of everything this system
-> spent. Every one of those prompts paid to re-establish an entire conversation
-> in order to write two sentences. If it ever comes back it should be a summary
-> the worker writes from data it already has, not another turn of Claude.
 
-## What a round achieved
-
-Every feedback round is reduced to a short list of signatures — what the four
-automated panes are complaining about, in a form two rounds can be subtracted
-from each other:
-
-    judge:discuss/overreach     judge:axis:test_coverage
-    quality:must_have_failed    oracle:runs_failed    difficulty:blocked
-
-Subtracting the previous round from this one gives the only honest measure of
-whether a revision worked:
-
-| | |
-| --- | --- |
-| `fixed` | in the last round, gone from this one |
-| `persisted` | in both — the fix did not take |
-| `introduced` | new this round, so the last revision **caused** it |
-
-`introduced` is the one that pays for this. A round that fixes three complaints
-and breaks the oracle looks, from every other angle in the system, exactly like a
-round that fixed three complaints. snorkel_server stores the diff on the task as
-`check_progress` and logs a regression at warn level; the revision prompt puts it
-in front of Claude as a scorecard, so the next round knows which fixes have
-already been tried and which damage it is being asked to undo.
-
-The reader is deliberately conservative: a pattern that does not match produces
-no signature rather than a guessed one, because a wrong signature makes a fix
-look like a regression and a regression look like progress. `npm test` runs it
-against the exact strings the panes produce.
 
 ## Prompts
 
@@ -275,7 +234,6 @@ task — no restart, no rebuild.
 | `intro.txt` | the reference documents, joined to the front of the first prompt of a new session rather than sent as a turn of its own |
 | `build.txt` | the whole of `in build` in one prompt: judge the task, correct it if it is fixable, and fill in the form for whichever judgement was given |
 | `fix.txt` | the corrections and the submitter form, for a task already judged fixable |
-| `revision.txt` | turn two for `needs revision` — the reviewer's note and the automated checks |
 | `staticfix.txt` | after a platform check came back FAIL, with its build logs |
 | `extract.txt` | only when a run's answers did not already come back as JSON |
 
@@ -284,7 +242,7 @@ keep answers short, human-sounding, and free of markdown. Reword it there rather
 than in code.
 
 Placeholders: `{{docs}}`, `{{task_dir}}`, `{{uid}}`, `{{initial_infos}}`,
-`{{logs}}`, `{{fields}}`, and — in `revision.txt` —
+`{{logs}}` and `{{fields}}`.
 `{{note_status}}`, `{{reviewer_notes}}`, `{{automated_checks}}`, `{{history}}`.
 An unrecognised one is left alone rather than blanked.
 
@@ -292,16 +250,7 @@ The documents are handed over as **paths**, not contents — Claude Code reads f
 itself, and pasting seven guides inline would spend most of the context window
 before the task is even mentioned.
 
-`revision.txt` gets the newest round only, split in two: the reviewer's note and
-the automated check panes. They are kept apart because they are not equal — a
-person looked at the task, the checks did not — and the prompt says to follow the
-reviewer where the two disagree.
 
-Earlier rounds appear as a one-line list of notes already dealt with, not as more
-work. Their corrections are already in the folder, and putting the text back in
-front of the model is how a revision quietly undoes the round before it. Whether
-a note is new is decided by the worker from `revision_notes_applied`, not by
-asking the model to remember a conversation it may not have had.
 
 ## Running one task by hand
 
@@ -345,7 +294,6 @@ A key that does not apply is left out rather than stored empty, so "not asked"
 and "answered with nothing" stay distinguishable.
 
 **This is why it is an object and not a list of rounds.** A reviewer sends back a
-few points, and the revision prompt asks for the changed answers *and only those*
 so you can replace them. Merging that reply over what is stored leaves every
 untouched answer exactly as it was. A list of rounds could not do that without
 somebody reading both and working out which one won.

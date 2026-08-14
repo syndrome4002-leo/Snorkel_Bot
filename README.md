@@ -89,14 +89,14 @@ it through Dropbox, so it never needs to see machine A's disk.
 
 **Step 3 — Claude** ([snorkel_worker/](snorkel_worker/), no endpoint)
 
-7. The worker polls Firestore for tasks in `"in build"` or `"needs revision"`,
+7. The worker polls Firestore for tasks in `"in build"` or `"static check fail"`,
    claims one with a transaction, and sets `task_status: "Working.."`.
 8. For `"in build"` it takes the zip back off Dropbox, **deletes it there**, sets
-   `file_uploaded: false` and unpacks it. For `"needs revision"` the folder is
+   `file_uploaded: false` and unpacks it. For `"static check fail"` the folder is
    already on disk and nothing is downloaded.
-9. Turns with the Claude Code agent, running in the task folder with its own
-   tools. A first build is triage then corrections; a revision continues the
-   conversation that built the task and hands it the newest feedback round.
+9. One turn with the Claude Code agent, running in the task folder with its own
+   tools: the documents, the task, the judgement it has to make, the corrections
+   that judgement calls for, and the submitter form, in a single prompt.
 10. The answer is appended to `answers`, the folder is repacked and uploaded, and
     `task_status` becomes `"ready to submit"`.
 
@@ -107,8 +107,8 @@ Three tasks at once by default, settable from the dashboard.
 11. The server looks for a task at `"ready to submit"` whose `file_uploaded` is
     true. One whose file has not reached Dropbox is skipped, not failed.
 12. It streams that zip from Dropbox at `/api/task-file/<uid>` and asks the
-    extension to put it back into the platform: **Start** for a new task,
-    **Revise** for one that has been through review.
+    extension to put it back into the platform through the task's **Start**
+    button.
 13. The extension attaches the zip to the re-upload field, then clicks
     **Check feedback** and **Check prescriptiveness** and reads both verdicts and
     their build logs.
@@ -170,18 +170,18 @@ upload, so the fields always exist and can be queried.
 | `static check fail` | server | the platform's own checks said no; needs a person |
 | `taken by other` | server | the platform reassigned it; a dead end, blocks nothing |
 | `sent` | you | submitted, waiting on a reviewer |
-| `needs revision` | server | the reviewer sent it back, with feedback attached |
+| `added by hand` | you | a UID recorded on the dashboard so the bot skips it |
 
-### The revise sweep
+### Counting the revise list
 
-The extension reloads the home page on a timer and reports every UID in the
-revise list. The server then opens only the ones that are **already in the
-database and marked `sent`**.
+The extension reloads the home page on a timer and reports **how many** UIDs are
+in the revise list. That number is the whole point of the sweep: the platform
+will not hand out a new task while too many of this account's submissions are
+waiting to be reviewed, so the bot has to know before it asks.
 
-The revise list belongs to the whole account, so submissions this bot never built
-appear there too. Those are counted and logged, never adopted — collecting them
-would fill `Tasks` with rows the bot cannot do anything with, and spend minutes
-per sweep opening their pages.
+Nothing is opened. The sweep used to walk into each task and copy the reviewer's
+notes back out, which fed revision rounds this bot no longer does — one page load
+per task, against one for the list.
 
 The server never moves a task off `"in build"` — see the note under **One task at
 a time** below. Only the worker advances a task from there.
@@ -496,37 +496,20 @@ queued. `pending_tasks` in `/api/status` is the current queue depth.
 
 ---
 
-## Taking on a task somebody submitted by hand
+## Submissions this bot did not make
 
 The revise list belongs to the whole account, so most of what is in it was never
-submitted by this system. Those are normally left alone. The exception is a
-submission **under the same owner** — one this person made by hand, that has now
-come back for revision.
+submitted by this system. They are counted and otherwise left alone.
 
-    row owner == sheet_owner  and  not in the database   ->  take it on
+A UID the bot has already handled is never built again either. `saveTask` refuses
+when the record exists: the site can offer the same submission twice, and merging
+over it would set the record back to "started" and buy a full Claude session to
+rebuild work already submitted.
 
-It is captured exactly like a new task — opened, scraped, its zip downloaded and
-put in Dropbox — so the worker builds it the usual way. Two things differ, and
-both follow from the submission already existing:
+For submissions made before the bot existed, or by somebody else on the account,
+the dashboard's **Add UID** puts a bare row in `Tasks`. Same list, same check —
+the bot skips any UID it finds there.
 
-| | |
-| --- | --- |
-| how it is submitted | its own **"Revise task"** row, not the project's "Begin Submission" |
-| the tracking sheet | **no new row** — whoever submitted it by hand already added one |
-
-Both come from `adopted: true` on the record, which also leaves `is_new_task`
-false, so the daily new-task cap does not apply to it either.
-
-**The owner comes from a script that is not part of this system.** The platform's
-own markup does not say who a row belongs to; a separate userscript annotates
-each one from the shared sheet, which is where `.snorkel-card-owner` comes from.
-So a row with no owner on it is treated as **not ours** — the annotation may
-simply not have loaded, and the cost of guessing wrong is downloading and
-rewriting somebody else's work. Same for an unset `sheet_owner`: nothing to
-compare against means nothing is adopted.
-
-One per sweep. They share the browser tab with the uploads and the revise check,
-and a backlog of six would hold it for half an hour.
 
 ## The selectors it depends on
 
