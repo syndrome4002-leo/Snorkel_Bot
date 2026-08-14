@@ -40,27 +40,21 @@ export const TASK_STATUS_VALID_AS_IS = 'valid-as-is';
 /**
  * The statuses the worker picks up, and nothing else.
  *
- * All three are on. Revisions were held back for a while so the first-build path
- * could be watched on its own; HANDLE_REVISIONS=false puts them back on hold
- * without removing anything.
- *
- * "static check fail" is not a reviewer's round — it is whatever was last
- * uploaded being corrected, whether that came from a build or a revision.
+ * The bot builds a task and submits it. "static check fail" is the platform
+ * rejecting that upload, which is the same piece of work being corrected rather
+ * than a new one — so it is picked up too. Reviewer revisions are not this
+ * bot's job and are never claimed.
  */
-export const WORKABLE = [
-  TASK_STATUS_BUILD,
-  TASK_STATUS_STATIC_FAIL,
-  ...(config.worker.handleRevisions ? [TASK_STATUS_NEEDS_REVISION] : []),
-];
+export const WORKABLE = [TASK_STATUS_BUILD, TASK_STATUS_STATIC_FAIL];
 
 /**
  * Every status a claimed task may be put back to.
  *
  * Deliberately not the same list. A task is picked up from WORKABLE, but it has
- * to be returned to wherever it actually came from — including a status the
- * worker is no longer taking. Sharing one list would quietly reset an
- * interrupted revision to "in build", and the next run would download the zip
- * again and rebuild it from scratch, losing the round it was part way through.
+ * to be returned to wherever it actually came from — including "needs revision",
+ * which this worker never claims but which older records still carry. Sharing
+ * one list would quietly reset such a task to "in build", and the next run would
+ * download a zip that is no longer in Dropbox.
  */
 export const RESTORABLE = [
   TASK_STATUS_BUILD,
@@ -245,7 +239,6 @@ export async function findWorkableTasks(
   machineIds = [],
   limit = 10,
   staticFixLimit = null,
-  revisionLimit = null
 ) {
   if (!db) return [];
 
@@ -278,29 +271,6 @@ export async function findWorkableTasks(
     // at the price of a whole Claude session — see retryDue().
     if (!retryDue(task)) return false;
 
-    /*
-     * A task that has been round the reviewer too many times is left alone too.
-     *
-     * Rework is the most expensive thing here, and it gets worse with every
-     * round: the round's prompt costs re-establishing a conversation that has
-     * grown since the last one, while the edit it asks for stays the same size.
-     * Measured over 129 rounds it took roughly five times as much to produce a
-     * unit of work as a first build did, and the ratio climbs with the round
-     * number. Past the limit the task stays at "needs revision" for a person.
-     *
-     * Off unless a number is set, because this abandons tasks the reviewer is
-     * still asking about — a call for whoever is watching the queue, not a
-     * default.
-     */
-    if (task.task_status === TASK_STATUS_NEEDS_REVISION) {
-      const cap = revisionLimit ?? config.worker.maxRevisionRounds;
-      const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
-      if (cap > 0 && rounds >= cap) {
-        console.log(`[firebase] ${task.UID} has had ${rounds} revision round(s) (limit ${cap}) — leaving it`);
-        return false;
-      }
-      return true;
-    }
 
     if (task.task_status !== TASK_STATUS_STATIC_FAIL) return true;
     const cap = staticFixLimit ?? config.worker.maxStaticFixAttempts;

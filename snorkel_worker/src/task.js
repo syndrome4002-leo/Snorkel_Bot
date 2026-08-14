@@ -3,10 +3,10 @@
  *
  * Two entry states, one exit state:
  *
- *   "in build"        the zip is on Dropbox. Fetch it, delete it there, unpack
- *                     it, work it, pack it, put it back.
- *   "needs revision"  the folder is already on disk. Work it from the feedback,
- *                     pack it, put it back.
+ *   "in build"          the zip is on Dropbox. Fetch it, delete it there, unpack
+ *                       it, work it, pack it, put it back.
+ *   "static check fail" the folder is already on disk. Answer the platform's
+ *                       complaint, pack it, put it back.
  *
  * Both end at "ready to submit" with the answer recorded.
  *
@@ -30,11 +30,8 @@ import {
   extractPrompt,
   gapPrompt,
   introPrompt,
-  noteFingerprint,
-  revisionPrompt,
   schemaForStage,
   rewritePrompt,
-  reviewerNotes,
   staticFixPrompt,
 } from './prompts.js';
 import {
@@ -48,7 +45,6 @@ import {
 } from './answers.js';
 import {
   TASK_STATUS_BUILD,
-  TASK_STATUS_NEEDS_REVISION,
   TASK_STATUS_STATIC_FAIL,
   markDownloaded,
   markReady,
@@ -97,21 +93,6 @@ export async function findTaskDir(uid) {
   }
 
   return null;
-}
-
-/**
- * The questions this task has no answer for.
- *
- * Every key the revision stage can write, minus three sets of exceptions:
- * the ones already stored; the ones that only apply in certain circumstances,
- * where no answer means the question did not apply rather than that it was
- * skipped; and the handling times, which the server draws once per task and
- * sends with the submission. Those last are on no task's record at all — asking
- * for them would report the same three gaps on every task forever, and get back
- * numbers that the form then ignores.
- */
-export async function missingAnswerKeys(task) {
-  return missingForStage('revision', task.answers);
 }
 
 /** The same question asked of any stage's answer set. */
@@ -385,57 +366,6 @@ export async function reuploadTask(task, { log } = {}) {
 }
 
 /**
- * Puts the difficulty check results into the task folder, if there are any.
- *
- * The platform attaches this once it has run the task: the agent simulation and
- * the per-verifier statistics behind the difficulty summary. The browser
- * downloaded it on another machine, so it comes back through Dropbox like
- * everything else.
- *
- * Returns the file name for the prompt to point at, or null. Never throws — a
- * revision without it is the revision we did yesterday, and losing the round
- * over an optional attachment would be a poor trade.
- */
-async function fetchDifficultyFile(task, taskDir, say) {
-  const meta = task.difficulty_file;
-  if (!meta || !meta.dropbox_path) return null;
-
-  const name = meta.name || path.basename(meta.dropbox_path);
-  const target = path.join(taskDir, name);
-
-  try {
-    // Already here from an earlier round; no reason to fetch it twice.
-    if (await stat(target).then(() => true).catch(() => false)) return name;
-
-    await downloadFile(meta.dropbox_path, target);
-    say('📐', 'difficulty_file', `${name} put in the task folder`);
-
-    /*
-     * Out of Dropbox now that it is on disk, and in that order.
-     *
-     * The record is cleared first so an interruption cannot leave a task
-     * pointing at a file that has just been deleted — the same reason the task
-     * zip is recorded before its remote copy goes. Losing the delete instead
-     * leaves one orphan file, which is the cheaper of the two failures.
-     *
-     * `dropbox_path` going null is also what stops the next round trying to
-     * fetch it again: the guard at the top of this function reads an absent path
-     * as "there is nothing waiting", which is exactly true.
-     */
-    await patchTask(String(task.UID || task.id), {
-      difficulty_file: { ...meta, dropbox_path: null, fetched_at: new Date().toISOString() },
-    });
-    await deleteFile(meta.dropbox_path);
-    say('🗑️', 'difficulty_file', `${name} removed from Dropbox — the folder has it now`);
-
-    return name;
-  } catch (err) {
-    say('⚠️', 'difficulty_file_failed', `could not fetch ${name}: ${err.message}`, { level: 'warn' });
-    return null;
-  }
-}
-
-/**
  * Removes a task's folder from this machine.
  *
  * Only the folder. The database record and the Dropbox copy are the server's to
@@ -568,7 +498,6 @@ export async function workOnTask(
   await openInEditor(taskDir, { log: say, enabled: openEditor });
 
   // ------------------------------------------------------------- Claude ---
-  const rounds = Array.isArray(task.feedbacks) ? task.feedbacks.length : 0;
 
   /*
    * A build is quiet for a long time — Claude reads, edits and runs tests
@@ -678,29 +607,12 @@ export async function workOnTask(
     onLog: (line) => onSession && onSession(line),
   });
 
-  let stage = 'revision';
+  let stage = 'build';
   let triage = null;
-  // The reviewer note this round is answering, so the next round can tell an
-  // unchanged note from a new one instead of asking Claude to remember.
-  const applied = Array.isArray(task.revision_notes_applied) ? task.revision_notes_applied : [];
-  let noteHash = '';
-  /*
-   * The difficulty artefact, if one was fetched into the folder for this round.
-   * Held out here because it goes in before the Claude turns and has to come
-   * out again after them, and those are in different branches.
-   */
-  let difficultyFile = null;
 
   try {
     if (from === TASK_STATUS_STATIC_FAIL) {
       // ---- the platform rejected the last upload -------------------------
-      /*
-       * Which set of answer keys this run may write depends on what the upload
-       * was, not on the failure. A check that fails on a revision is still a
-       * revision, and asking it for the build's keys would leave the reviewer's
-       * own questions out of anything it wants to change.
-       */
-      stage = rounds > 0 ? 'revision' : 'build';
       const logs = failedCheckLogs(task);
       if (!logs) {
         throw new Error(`${uid} is at "${from}" but has no static_check_result logs to work from.`);
@@ -756,68 +668,12 @@ export async function workOnTask(
         say('🛑', 'triage_stop', `${uid} is ${triage.verdict} — the form saying so is filled in`);
       }
     } else {
-      // ---- a reviewer sent it back ---------------------------------------
-      const latest = Array.isArray(task.feedbacks) ? task.feedbacks[task.feedbacks.length - 1] : null;
-      const notes = reviewerNotes(latest);
-      noteHash = noteFingerprint(notes);
-      const seen = noteHash && applied.some((entry) => entry?.hash === noteHash);
-
-      say(
-        '🧠',
-        'claude_start',
-        `revising ${uid} — round ${rounds}, ` +
-          (notes ? (seen ? 'the reviewer note repeats an earlier one' : 'a new reviewer note') : 'no reviewer note') +
-          `, ${(latest?.checks || []).filter((c) => c.text).length} check pane(s)`
-      );
-
       /*
-       * The counter belongs to an upload, not to a task. Leaving the build's
-       * tally in place would let one round's spent attempts stop the platform's
-       * checks from ever being answered on the next.
+       * The bot builds and submits; nothing else is worked. A task reaching
+       * here is at a status this worker was never meant to claim, which is a
+       * bug in the query rather than something to guess its way through.
        */
-      if (Number(task.static_fix_attempts || 0)) await patchTask(uid, { static_fix_attempts: 0 });
-
-      difficultyFile = await fetchDifficultyFile(task, taskDir, say);
-
-      /*
-       * A task this system never submitted has no answers on record.
-       *
-       * It was submitted by hand and only came to us when the reviewer sent it
-       * back, so there is nothing for this round's changes to merge over — and a
-       * revision, which is asked only for what changed, would store three
-       * answers and leave the other nine blank on the form. Named here so the
-       * round writes them out as well.
-       */
-      const gaps = await missingAnswerKeys(task);
-      if (gaps.length) {
-        say(
-          '📝',
-          'answers_missing',
-          `${uid} has no stored answer for ${gaps.length} question(s) — asking for them ` +
-            `in full this round: ${gaps.join(', ')}`,
-          { level: 'warn' }
-        );
-      }
-
-      await session.send(
-        (await revisionPrompt({
-          uid,
-          taskDir,
-          feedbacks: task.feedbacks,
-          applied,
-          difficultyFile,
-          missingAnswers: gaps,
-        })) + (await answersBlock(stage))
-      );
-
-      /*
-       * Write down what was done about each complaint this round was answering.
-       *
-       * Recorded now, trusted later: it stays unconfirmed until the NEXT round
-       * shows the complaint gone — and snorkel_server refuses to confirm from a
-       * round that introduced something new, so a fix that broke the oracle
-       * teaches nothing.
-       */
+      throw new Error(`${uid} is at "${from}", which this worker does not handle.`);
     }
 
     /*
@@ -1002,8 +858,6 @@ export async function workOnTask(
   const saved = await saveAnswers(uid, answers, {
     from,
     session_id: session.id,
-    // Lines an answer round up with the feedback round it responds to.
-    feedback_rounds: rounds,
     text: prose,
   });
 
@@ -1048,24 +902,6 @@ export async function workOnTask(
     };
   }
 
-  /*
-   * The difficulty artefact goes before anything is packed.
-   *
-   * It was reference material for this round, not part of the task — leaving it
-   * would put the platform's own check results inside the submission. Worse, it
-   * is a .zip in the task folder and the packer below takes the newest zip it
-   * finds: a round where Claude did not build one would upload the difficulty
-   * results to the platform as the task.
-   */
-  if (difficultyFile) {
-    await rm(path.join(taskDir, difficultyFile), { force: true }).catch((err) =>
-      say('⚠️', 'difficulty_file_failed', `could not remove ${difficultyFile}: ${err.message}`, {
-        level: 'warn',
-      })
-    );
-    say('🧹', 'difficulty_file', `${difficultyFile} removed before packing`);
-  }
-
   await syncProblemStatement(taskDir, say);
 
   const { path: outZip, name: zipName } = await zipToUpload(task, taskDir);
@@ -1077,16 +913,6 @@ export async function workOnTask(
   // Ours, built outside the task folder for this upload only.
   await rm(outZip, { force: true });
 
-  /*
-   * Written only now, with the zip uploaded and the answers stored.
-   *
-   * Recording it any earlier would mark a note as dealt with on a round that
-   * then failed, and the next round would be told to skip the very thing that
-   * never happened. Bounded, because only the recent rounds are ever compared.
-   */
-  const notesApplied = noteHash
-    ? [...applied.filter((entry) => entry?.hash !== noteHash), { hash: noteHash, at: new Date().toISOString(), round: rounds }].slice(-20)
-    : applied;
 
   await markReady(uid, {
     file_name: zipName,
@@ -1094,7 +920,6 @@ export async function workOnTask(
     local_path: taskDir,
     worker_session_id: session.id,
     worker_cost_usd: session.costUsd || null,
-    ...(noteHash ? { revision_notes_applied: notesApplied } : {}),
   });
 
   say('🏁', 'ready', `${uid} is ready to submit (answers round ${saved.round})`);

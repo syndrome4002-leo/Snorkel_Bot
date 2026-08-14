@@ -31,12 +31,12 @@ await check('the unfixable form asks with its own two options', async () => {
   assert.deepEqual(spec.enum, ['PR scope needs to be changed or reduced', 'Environment Issues']);
 });
 
-await check('the fixable stages keep all seven categories', async () => {
-  for (const stage of ['build', 'revision']) {
-    const spec = (await schemaForStage(stage)).what_issues_found;
-    assert.equal(spec.enum.length, 7, `${stage} should keep the full list`);
-    assert.ok(spec.enum.includes('the instructions are overly-prescriptive'), stage);
-  }
+await check('the fixable stage keeps all seven categories', async () => {
+  // 'revision' was a stage here until reviewer revisions were removed; a build
+  // and the check-fix that answers its upload are all that is left.
+  const spec = (await schemaForStage('build')).what_issues_found;
+  assert.equal(spec.enum.length, 7, 'build should keep the full list');
+  assert.ok(spec.enum.includes('the instructions are overly-prescriptive'));
 });
 
 await check('valid-as-is is never asked the question at all', async () => {

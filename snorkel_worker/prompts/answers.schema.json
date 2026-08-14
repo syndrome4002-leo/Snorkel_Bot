@@ -23,7 +23,6 @@
     "label": "What is your analysis of the Sentinel task you downloaded above?",
     "stages": [
       "build",
-      "revision",
       "invalid",
       "valid-as-is"
     ],
@@ -36,8 +35,7 @@
   "where_task_had_issues": {
     "question": "1",
     "stages": [
-      "build",
-      "revision"
+      "build"
     ],
     "list": true,
     "enum": [
@@ -52,7 +50,6 @@
     "label": "What issue did you find with the task/components?",
     "stages": [
       "build",
-      "revision",
       "invalid"
     ],
     "list": true,
@@ -89,8 +86,7 @@
   "issues_in_detail": {
     "question": "3",
     "stages": [
-      "build",
-      "revision"
+      "build"
     ],
     "text": true
   },
@@ -114,16 +110,14 @@
   "files_changed": {
     "question": "4",
     "stages": [
-      "build",
-      "revision"
+      "build"
     ],
     "text": true
   },
   "added_PR_explain": {
     "question": "5",
     "stages": [
-      "build",
-      "revision"
+      "build"
     ],
     "text": true,
     "when": "NA if the PR was not touched"
@@ -133,7 +127,6 @@
     "label": "What makes this task difficult?",
     "stages": [
       "build",
-      "revision",
       "invalid",
       "valid-as-is"
     ],
@@ -144,7 +137,6 @@
     "label": "How much time would you estimate a senior engineer familiar with the codebase would take to solve this?",
     "stages": [
       "build",
-      "revision",
       "invalid",
       "valid-as-is"
     ],
@@ -157,25 +149,19 @@
   },
   "rewrite_time_min": {
     "question": "3.1.6",
-    "stages": [
-      "revision"
-    ],
+    "stages": [],
     "number": true,
     "supplied_by_server": true
   },
   "review_time_min": {
     "question": "6",
-    "stages": [
-      "revision"
-    ],
+    "stages": [],
     "number": true,
     "supplied_by_server": true
   },
   "submission_time_min": {
     "question": "7",
-    "stages": [
-      "revision"
-    ],
+    "stages": [],
     "number": true,
     "supplied_by_server": true
   }

@@ -2,8 +2,8 @@
  * index.js — the worker loop.
  *
  * There is no API and nothing to call. The worker polls Firestore for tasks in
- * "in build" or "needs revision", claims what it has room for, and runs each one
- * through Claude. Firestore is the queue; the dashboard changes settings, not
+ * "in build" or "static check fail", claims what it has room for, and runs each
+ * one through Claude. Firestore is the queue; the dashboard changes settings, not
  * commands.
  *
  * Concurrency is capped, and the cap is read live from the dashboard: three
@@ -76,18 +76,6 @@ function staticFixLimit() {
   return Math.max(1, config.worker.maxStaticFixAttempts);
 }
 
-/**
- * How many revision rounds to answer before leaving a task for a person.
- *
- * The dashboard's number wins; 0 or blank there falls back to this machine's
- * env, and 0 in both means no limit — which is how it has always behaved.
- */
-function revisionLimit() {
-  const fromDashboard = Number(settings.revision_limit);
-  if (Number.isFinite(fromDashboard) && fromDashboard > 0) return Math.floor(fromDashboard);
-  return Math.max(0, config.worker.maxRevisionRounds);
-}
-
 /** What this worker takes from the machines' settings. The rest is the server's. */
 const WORKER_SETTINGS = new Set([
   'worker_max_concurrent',
@@ -95,7 +83,6 @@ const WORKER_SETTINGS = new Set([
   'claude_model',
   'resume_sessions',
   'open_in_editor',
-  'revision_limit',
   'autocompact',
 ]);
 
@@ -127,7 +114,6 @@ async function snapshot() {
     running: running.size,
     max_concurrent: maxConcurrent(),
     static_fix_limit: staticFixLimit(),
-    revision_limit: revisionLimit(),
     // Null unless Claude has said there is nothing left to spend.
     paused_until: pausedUntil,
     paused_reason: pauseReason || null,
@@ -448,7 +434,7 @@ async function poll() {
 
     // Ask for more than there is room for: some will already be claimed by the
     // time we get to them, and a short list would leave slots idle.
-    const candidates = await findWorkableTasks(machines, free + 5, staticFixLimit(), revisionLimit());
+    const candidates = await findWorkableTasks(machines, free + 5, staticFixLimit());
     const available = candidates.filter((t) => !running.has(String(t.UID || t.id)));
     if (!available.length) return;
 
@@ -745,11 +731,6 @@ async function main() {
       `Worker ready — up to ${maxConcurrent()} task(s) at once, working for ` +
         `${machines.length} machine(s): ${machines.join(', ')}`
     );
-    // Worth saying every start: a revision sitting untouched looks like a bug
-    // unless you know revisions are switched off.
-    if (!config.worker.handleRevisions) {
-      log('⏭️', 'revisions_off', 'Reviewer revisions are off — only new tasks are picked up (HANDLE_REVISIONS=true turns them back on)');
-    }
   } else if (config.worker.anyMachine) {
     log('🤖', 'worker_up', `Worker ready — up to ${maxConcurrent()} task(s) at once, taking work from any machine`);
   } else {
