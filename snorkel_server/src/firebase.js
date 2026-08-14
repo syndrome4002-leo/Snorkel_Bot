@@ -643,58 +643,6 @@ export async function addFeedback(uid, entry, extra = {}) {
 }
 
 /**
- * Which of `uids` are worth opening to read feedback from.
- *
- * Exactly two cases:
- *   - this database has never seen the task, or
- *   - it is marked "sent" and so is waiting on a reviewer.
- *
- * A task that already carries feedback is NOT reopened. Re-reading every task
- * in the revise list on every sweep meant visiting pages whose feedback was
- * already stored — minutes of browsing per sweep to re-read text that had not
- * changed.
- *
- * The cost of that is real: a task can only pick up a second round of feedback
- * by returning to "sent" first.
- */
-export async function findFeedbackCandidates(uids) {
-  if (!db || !uids.length) return { wanted: [], reasons: {}, unknown: [] };
-
-  const wanted = [];
-  const reasons = {};
-  const unknown = [];
-
-  // Read one at a time by document id: an "in" query is capped at 30 values and
-  // these lists are short.
-  for (const uid of uids) {
-    const snap = await db.collection(config.firebase.collection).doc(String(uid)).get();
-
-    /*
-     * A submission this database has never seen is left alone.
-     *
-     * It used to be collected and stored as a new task. The revise list is the
-     * whole account's, though, not just this bot's — anything worked by hand, or
-     * before the bot existed, shows up there too. Adopting those meant the Tasks
-     * collection filled with rows the bot had never built and could not do
-     * anything useful with, and every sweep spent minutes opening their pages.
-     *
-     * Only tasks this bot already knows about are followed now.
-     */
-    if (!snap.exists) {
-      unknown.push(String(uid));
-      continue;
-    }
-
-    if (snap.data().task_status === TASK_STATUS_SENT) {
-      wanted.push(String(uid));
-      reasons[uid] = 'sent, awaiting a reviewer';
-    }
-  }
-
-  return { wanted, reasons, unknown };
-}
-
-/**
  * The task this machine is still working on, if any.
  *
  * Two equality filters need no composite index — Firestore merges the automatic

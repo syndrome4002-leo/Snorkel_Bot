@@ -79,7 +79,6 @@ import {
   findReadyToSubmit,
   markSent,
   addFeedback,
-  findFeedbackCandidates,
   firebaseStatus,
   flushPending,
   pendingCount,
@@ -947,135 +946,6 @@ function backOff(why, { level = 'warn' } = {}) {
  * Anything else in the list is already in build or already recorded as needing
  * revision, so there is nothing new to fetch.
  */
-/**
- * The unknown rows that are ours to take on.
- *
- * Two gates, and both have to open. `adopt_unknown` on the dashboard says
- * whether to do this at all and whether to do it for everything or only for
- * UIDs listed by hand; the owner column says which rows could ever qualify.
- *
- * "Ours" is that owner column, which a separate script annotates each row with
- * from the shared sheet. Three deliberate refusals:
- *
- *   - no owner on the row means unknown, not ours. The annotation is not the
- *     platform's markup and may simply not have loaded, and the cost of guessing
- *     wrong is downloading and rewriting somebody else's task.
- *   - no `sheet_owner` configured means the same: nothing to compare against.
- *   - one per sweep. They share the browser tab with everything else, and a
- *     backlog of six would hold it for half an hour.
- */
-function adoptable(unknown, rows) {
-  /*
-   * Off unless somebody turned it on. Taking on work nobody asked for is the
-   * kind of surprise a default should never spring, so an unset value reads as
-   * "leave them alone" rather than as "all".
-   */
-  const mode = String(settings.adopt_unknown || 'off').trim().toLowerCase();
-  if (mode !== 'all' && mode !== 'listed') return [];
-
-  const owner = String(settings.sheet_owner || '').trim().toLowerCase();
-  if (!owner) return [];
-
-  // Split on anything that is not part of a UID, so a list pasted as lines, as
-  // commas, or as both comes out the same.
-  const listed = new Set(
-    String(settings.adopt_uids || '')
-      .split(/[^0-9a-fA-F-]+/)
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-  if (mode === 'listed' && !listed.size) return [];
-
-  const byUid = new Map((rows || []).map((r) => [String(r.uid || '').toLowerCase(), r]));
-  return unknown
-    .map((uid) => byUid.get(String(uid).toLowerCase()))
-    .filter((row) => row && String(row.owner || '').trim().toLowerCase() === owner)
-    .filter((row) => mode === 'all' || listed.has(String(row.uid).toLowerCase()));
-}
-
-/**
- * Takes on one revise-list task that this system never submitted.
- *
- * The browser opens it by its own "Revise task" row, scrapes it and downloads
- * the zip — the same capture a new task gets — and from there it is an ordinary
- * build. It is marked `adopted` so the two things that differ are handled: the
- * submission already exists, so it goes back through Revise rather than through
- * a new start, and it is already in the tracking sheet.
- */
-async function adoptFromReviseList(row) {
-  const uid = String(row.uid);
-  logEvent('🫱', 'adopt_start', `${uid} is ${row.owner}'s and not in the database — taking it on`, {
-    uid,
-  });
-
-  const captured = await hub.command(
-    'snorkel',
-    { type: 'adopt_revision', options: { uid } },
-    config.submitTimeoutMs
-  );
-
-  if (!captured || !captured.task || !captured.task.UID) {
-    logEvent('⚠️', 'adopt_failed', `${uid}: nothing was captured from the page`, { uid, level: 'warn' });
-    return false;
-  }
-
-  const saved = await saveTask(captured.task, { ...(captured.meta || {}), adopted: true });
-  if (!saved.saved) {
-    logEvent('⚠️', 'adopt_failed', `${uid} could not be saved: ${saved.reason}`, { uid, level: 'warn' });
-    return false;
-  }
-  logEvent('⬇️', 'task_downloaded', `${captured.task.file_name} (${uid}, adopted)`, { uid });
-
-  try {
-    const dropbox = await runDropboxStep(uid, {});
-    if (dropbox.uploaded) {
-      logEvent('☁️', 'task_uploaded', `${dropbox.file.name} -> ${dropbox.task.dropbox_path}`, { uid });
-    }
-  } catch (err) {
-    // The record exists and the file is on disk, so the ordinary upload retry
-    // path can still finish this.
-    logEvent('⚠️', 'task_warn', `${uid} was saved but not uploaded: ${err.message}`, {
-      uid,
-      level: 'warn',
-    });
-  }
-  return true;
-}
-
-/**
- * Puts a downloaded difficulty artefact where the worker can reach it.
- *
- * Named after the task rather than kept as the platform named it, because the
- * platform's name says nothing about which task it belongs to and Dropbox is
- * one flat folder.
- *
- * Never fails the sweep. The file is optional and the feedback it accompanies
- * is already stored; losing it costs the next revision some context, not the
- * round.
- */
-async function stashDifficultyFile(uid, file) {
-  const name = `difficulty_${uid}${path.extname(file.name || '') || '.zip'}`;
-  try {
-    const uploaded = await uploadFile(file.path, { fileName: name });
-    await patchTask(uid, {
-      difficulty_file: {
-        name,
-        dropbox_path: uploaded.dropbox_path,
-        original_name: file.name || null,
-        bytes: file.bytes || null,
-        at: new Date().toISOString(),
-      },
-    });
-    logEvent('📐', 'difficulty_file', `${uid}: ${file.name || name} kept for the next revision`, { uid });
-
-    // The browser's copy has served its purpose; the worker takes it from
-    // Dropbox now.
-    await rm(file.path, { force: true }).catch(() => {});
-  } catch (err) {
-    logEvent('⚠️', 'difficulty_file_failed', `${uid}: ${err.message}`, { uid, level: 'warn' });
-  }
-}
-
 /*
  * How many tasks one collect_feedback command carries.
  *
@@ -1083,193 +953,31 @@ async function stashDifficultyFile(uid, file) {
  * batch is also the amount of work at risk if it times out — and reading a task
  * is minutes of page loading and pane stitching, not seconds.
  */
-const FEEDBACK_BATCH = 3;
-
-/**
- * What to allow one batch, in milliseconds.
- *
- * Per task rather than per command: the waits inside one are generous on
- * purpose — ninety seconds for the row to appear, two minutes for the review
- * page — because a slow page is common and a lost read is expensive. Three of
- * those in series do not fit in a budget written for one.
- */
-function feedbackTimeoutFor(count) {
-  return Math.max(config.commandTimeoutMs, 60000 + count * 150000);
-}
 
 /** Splits a list into fixed-size batches, keeping the order. */
-function inBatches(items, size) {
-  const out = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
-async function handleRevisionReport(uids, rows = []) {
-  // Reading the list is harmless, but opening task pages to collect feedback is
-  // work, and work is what the switch stops.
-  if (!systemEnabled) {
-    console.log('[revisions] system is disabled — not collecting feedback');
-    return { considered: uids.length, collected: 0, disabled: true };
-  }
-  // Always says something. An empty report used to return in silence, which
-  // looked identical to the report never arriving.
+async function handleRevisionReport(uids) {
+  /*
+   * The count, and nothing else.
+   *
+   * The site will not offer a new task while too many of this account's
+   * submissions are waiting to be reviewed, so the bot has to know how many
+   * there are before it can start one. That is the whole reason this still
+   * exists — it used to also open each task's review page and copy the
+   * reviewer's notes back, which is what fed the revision rounds the bot no
+   * longer does.
+   *
+   * Reading the list is one page. Collecting feedback was one page per task.
+   */
   console.log(`[revisions] extension reported ${uids.length} awaiting revision`);
+
   /*
    * A task parked for having no row is waiting for exactly this. The list is the
    * authority on what can be opened, so its arrival answers the question sooner
    * than the timer would.
    */
   unparkListed(uids);
-  if (!uids.length) return { considered: 0, collected: 0 };
 
-  const { wanted, reasons, unknown } = await findFeedbackCandidates(uids);
-
-  /*
-   * Said out loud rather than passed over. The revise list belongs to the whole
-   * account, so submissions this bot never built are normal and expected there —
-   * but "12 awaiting revision, collecting 0" reads like a broken sweep unless
-   * you can see that 12 of them are simply not ours.
-   */
-  if (unknown.length) {
-    console.log(`[revisions] ignoring ${unknown.length} not in the database: ${unknown.join(', ')}`);
-    logEvent('🙈', 'feedback_skip', `${unknown.length} in the revise list are not this bot's tasks`);
-  }
-
-  /*
-   * One of those may be ours after all — submitted by hand, under the same
-   * owner. Taken on before the feedback collection below, because adopting is
-   * what makes it collectable next time round.
-   */
-  const mine = adoptable(unknown, rows);
-  if (mine.length) {
-    const mode = String(settings.adopt_unknown || 'off').toLowerCase();
-    logEvent(
-      '👤',
-      'adopt_found',
-      `${mine.length} of ${unknown.length} unknown task(s) are ${settings.sheet_owner}'s` +
-        (mode === 'listed' ? ' and on the list' : '') +
-        ` — taking on ${mine[0].uid}` +
-        (mine.length > 1 ? ', the rest next sweep' : '')
-    );
-    try {
-      await adoptFromReviseList(mine[0]);
-    } catch (err) {
-      logEvent('⚠️', 'adopt_failed', `${mine[0].uid}: ${err.message}`, {
-        uid: mine[0].uid,
-        level: 'warn',
-      });
-    }
-  }
-
-  if (!wanted.length) {
-    console.log(
-      `[revisions] ${uids.length} awaiting revision, nothing to collect ` +
-        `(${unknown.length} not ours, ${uids.length - unknown.length} already read)`
-    );
-    return { considered: uids.length, collected: 0, ignored: unknown.length };
-  }
-
-  console.log(
-    `[revisions] ${wanted.length} to collect feedback for — ` +
-      wanted.map((uid) => `${uid} (${reasons[uid]})`).join(', ')
-  );
-
-  logEvent('📥', 'feedback_start', `collecting feedback for ${wanted.length} task(s)`);
-
-  /*
-   * Every task in the list, in one sweep — but not in one command.
-   *
-   * Reading a task means loading the home page, opening its review page and
-   * stitching several Monaco panes together, and the command carrying all of
-   * them had a fixed four minutes for the lot. One slow task spent the budget,
-   * the command timed out, and everything already read was thrown away with it:
-   * the results only come back at the end. The next sweep then started again
-   * from the top and hit the same wall, which is why some tasks never seemed to
-   * get read at all.
-   *
-   * So they go in small batches, each with a budget scaled to its size. A batch
-   * that fails costs that batch, not the sweep, and what came back before it is
-   * already stored.
-   */
-  const result = { collected: [], failures: [] };
-  for (const batch of inBatches(wanted, FEEDBACK_BATCH)) {
-    try {
-      const part = await hub.command(
-        'snorkel',
-        { type: 'collect_feedback', uids: batch },
-        feedbackTimeoutFor(batch.length)
-      );
-      result.collected.push(...(part.collected || []));
-      result.failures.push(...(part.failures || []));
-    } catch (err) {
-      /*
-       * Named, so a task that was never read is distinguishable from one that
-       * was read and had nothing to say.
-       */
-      logEvent('⚠️', 'feedback_failed', `${batch.join(', ')}: ${err.message}`, { level: 'warn' });
-      result.failures.push(...batch.map((uid) => ({ uid, error: err.message })));
-    }
-  }
-
-  let stored = 0;
-  for (const item of result.collected || []) {
-    const saved = await addFeedback(
-      item.uid,
-      {
-        text: item.feedback,
-        notes: item.notes || [],
-        // Automated check output, kept separate from the reviewer's prose.
-        checks: item.checks || [],
-        collected_at: item.collected_at || new Date().toISOString(),
-      },
-      { source_url: item.page_url || null }
-    );
-
-    if (saved.skipped) {
-      logEvent('⚠️', 'feedback_skipped', `${item.uid}: ${saved.reason}`, { level: 'warn', uid: item.uid });
-      continue;
-    }
-
-    stored++;
-    logEvent('📝', 'feedback_saved', `feedback stored for ${item.uid}`, { uid: item.uid });
-
-    /*
-     * The difficulty check results, on their way to the worker.
-     *
-     * The browser downloaded them onto THIS machine; the task folder they
-     * belong in is on whichever machine the worker runs on. Dropbox is how
-     * everything else crosses that gap, so it is how this does too — the worker
-     * fetches it into the folder before the revision starts.
-     */
-    if (item.difficulty_file && item.difficulty_file.path) {
-      await stashDifficultyFile(item.uid, item.difficulty_file);
-    }
-
-    /*
-     * What the round says about the revision before it. A regression gets its
-     * own line at warn level: it is the only outcome here that means the bot
-     * made the task worse, and it is invisible everywhere else.
-     */
-    const progress = saved.progress;
-    if (progress && progress.summary) {
-      logEvent(
-        progress.regressed ? '📉' : progress.first ? '🧾' : '📈',
-        progress.regressed ? 'checks_regressed' : 'checks_progress',
-        `${item.uid}: ${progress.summary}`,
-        { uid: item.uid, level: progress.regressed ? 'warn' : 'info' }
-      );
-    }
-  }
-  for (const failure of result.failures || []) {
-    logEvent('⚠️', 'feedback_failed', `${failure.uid}: ${failure.error}`, { level: 'warn', uid: failure.uid });
-  }
-
-  return {
-    considered: uids.length,
-    collected: stored,
-    ignored: unknown.length,
-    failed: (result.failures || []).length,
-  };
+  return { considered: uids.length };
 }
 
 // ----------------------------------------------------- the whole thing ----
