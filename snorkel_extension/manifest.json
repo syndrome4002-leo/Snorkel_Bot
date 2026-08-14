@@ -26,8 +26,7 @@
         "https://experts.snorkel-ai.com/*"
       ],
       "js": [
-        "content/unload-guard.js",
-        "content/feedback-main.js"
+        "content/unload-guard.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",

@@ -238,24 +238,6 @@ async function handleServerMessage(msg) {
     return;
   }
 
-  // The server asks for feedback only for the UIDs it cares about, so this
-  // never opens more task pages than necessary.
-  if (msg.type === 'collect_feedback') {
-    const requestId = msg.requestId || String(Date.now());
-    if (busy) {
-      return void send({ type: 'result', requestId, ok: false, error: 'Extension is busy.' });
-    }
-    busy = true;
-    try {
-      const result = await collectFeedback(requestId, msg.uids || [], msg.options || {});
-      send({ type: 'result', requestId, ok: true, ...result });
-    } catch (err) {
-      send({ type: 'result', requestId, ok: false, error: String((err && err.message) || err), code: err && err.code });
-    } finally {
-      busy = false;
-    }
-  }
-
   if (msg.type === 'check_revisions') {
     const requestId = msg.requestId || String(Date.now());
     // Reading the revise list navigates the tab, which would walk out from under
@@ -1076,89 +1058,6 @@ async function submitCheck(requestId, options) {
   return { uid, page_uid: page.uid || null, prepared, attached, form, ...checks };
 }
 
-async function collectFeedback(requestId, uids, options) {
-  const cfg = await getConfig();
-  const collected = [];
-  const failures = [];
-
-  // Overridable per command, so a slow machine can be paced from the server
-  // without editing the extension.
-  const afterLoad = options.paceAfterLoadMs ?? cfg.paceAfterLoadMs;
-  const beforeCopy = options.paceBeforeCopyMs ?? cfg.paceBeforeCopyMs;
-  const betweenTasks = options.paceBetweenTasksMs ?? cfg.paceBetweenTasksMs;
-
-  for (const [index, uid] of uids.entries()) {
-    // Between tasks, not after the last one — no point idling before finishing.
-    if (index > 0) {
-      progress(requestId, 'pausing', `${betweenTasks}ms before the next task`);
-      await sleep(betweenTasks);
-    }
-
-    progress(requestId, 'feedback', uid);
-    try {
-      // Back to the list each time: after reading one task the tab is on that
-      // task's page, and the next Revise button only exists on the home page.
-      const tab = await openHome(options.homeUrl || cfg.homeUrl);
-      await sleep(afterLoad);
-
-      await askTab(tab.id, { type: 'CLICK_REVISE', uid, projectKey: cfg.projectKey, timeout: 90000 });
-      await waitForUrl(tab.id, REVIEW_URL_RE, options.reviewTimeout || 120000);
-      await askTab(tab.id, { type: 'WAIT_READY', timeout: 120000 });
-
-      // The review page is heavy: the sidebar cards and the Monaco panes mount
-      // after WAIT_READY is satisfied. Reading immediately is what returned
-      // half-drawn panes.
-      await sleep(beforeCopy);
-
-      const res = await askTab(tab.id, { type: 'COPY_FEEDBACK' });
-
-      /*
-       * The difficulty check artefact, if the platform has attached one.
-       *
-       * Taken here because the page is already open on this task and will not
-       * be again — the alternative is a second navigation per task. Failure is
-       * never fatal: the file is optional, and feedback without it is still
-       * worth having.
-       */
-      const difficulty = await grabDifficultyFile(requestId, tab, uid);
-
-      collected.push({
-        uid,
-        difficulty_file: difficulty,
-        // The page's own UID is kept when it disagrees with the card's, so a
-        // mismatch is visible in the data rather than silently wrong.
-        page_uid: res.uid || null,
-        feedback: res.feedback,
-        // Kept apart as well as joined, so "Reviewer Feedback" and "Automated
-        // feedback" stay distinguishable in the database.
-        notes: res.notes || [],
-        checks: res.checks || [],
-        page_url: res.page_url,
-        collected_at: res.collected_at,
-      });
-      const d = res.check_diagnostics || {};
-      progress(
-        requestId,
-        'feedback_ok',
-        `${uid} (${res.feedback.length} chars, ${(res.notes || []).length} note(s), ` +
-          `${(res.checks || []).filter((c) => c.text).length}/${(res.checks || []).length} check pane(s))`
-      );
-      // Printed in full so a pane that came back empty can be told apart from
-      // one that was never on the page.
-      log(
-        `check panes for ${uid}: ${d.panes_with_text}/${d.panes_found} with text, ` +
-          `missing [${(d.missing || []).join(', ') || 'none'}], ` +
-          `opened ${d.sections_opened} section(s) + ${d.notes_opened} note(s), ` +
-          `monaco ${d.monaco ? 'found' : 'NOT FOUND'} — ${(d.via || []).join(' ')}`
-      );
-    } catch (err) {
-      log(`feedback for ${uid} failed:`, err.message);
-      failures.push({ uid, error: String(err.message || err) });
-    }
-  }
-
-  return { collected, failures };
-}
 
 // --------------------------------------------------- popup / lifecycle ----
 
