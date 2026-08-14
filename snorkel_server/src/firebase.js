@@ -378,7 +378,37 @@ export async function saveTask(task, meta = {}) {
   try {
     const ref = db.collection(config.firebase.collection).doc(record.UID);
     const existing = await ref.get();
-    if (!existing.exists) record.created_at = record.updated_at;
+
+    /*
+     * A UID already on record is one this account has handled, and it is not
+     * built again.
+     *
+     * The site can offer the same submission twice — a task started and left,
+     * or one added here by hand because it was done before the bot existed.
+     * Merging over the record would set it back to "started" and the worker
+     * would build it from scratch: a full Claude session, and a second
+     * submission of work that has already been submitted.
+     *
+     * The download is already done by the time this runs, because the UID is
+     * only readable once the page has opened. That costs a file. Building it
+     * would cost the thing worth saving.
+     */
+    if (existing.exists) {
+      const already = existing.data() || {};
+      console.log(`[firebase] ${record.UID} is already on record — not building it again`);
+      return {
+        saved: false,
+        skipped: true,
+        id: record.UID,
+        record: { ...already, UID: record.UID },
+        reason:
+          `${record.UID} is already in the database` +
+          (already.task_status ? ` at "${already.task_status}"` : '') +
+          ' — skipped rather than built again.',
+      };
+    }
+
+    record.created_at = record.updated_at;
 
     await ref.set(record, { merge: true });
     console.log(`[firebase] saved ${config.firebase.collection}/${record.UID} (${record.file_name})`);

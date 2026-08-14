@@ -383,7 +383,11 @@ async function runSnorkelStep(options) {
   return {
     task: saved.record,
     saved: saved.saved,
-    ...(saved.saved ? {} : { warning: `Task NOT saved to Firestore: ${saved.reason}` }),
+    skipped: Boolean(saved.skipped),
+    // A skip is the system working, not a failure: the UID was already known,
+    // so nothing more happens to it. Only a real write failure is a warning.
+    ...(saved.saved || saved.skipped ? {} : { warning: `Task NOT saved to Firestore: ${saved.reason}` }),
+    ...(saved.skipped ? { reason: saved.reason } : {}),
     meta,
     progress,
   };
@@ -997,6 +1001,14 @@ async function runPipelineSteps(options, onStep) {
     logEvent('⬇️', 'task_downloaded', `${snorkel.task.file_name} (${snorkel.task.UID})`, {
       uid: snorkel.task.UID,
     });
+  }
+
+  if (snorkel.skipped) {
+    // A UID already on record. It is not uploaded and not built — the whole
+    // point of recognising it is that nothing further happens.
+    logEvent('⏭️', 'task_known', snorkel.reason, { uid: snorkel.task.UID });
+    onStep('done');
+    return { snorkel, dropbox: { skipped: true, reason: snorkel.reason } };
   }
 
   if (!snorkel.saved) {
@@ -2218,6 +2230,10 @@ async function adoptTakenTask(taken, pageUid) {
   logEvent('🚀', 'task_start', `taking on ${uid} instead`, { uid });
 
   const saved = await saveTask(taken.task, taken.meta || {});
+  if (saved.skipped) {
+    logEvent('⏭️', 'task_known', saved.reason, { uid });
+    return;
+  }
   if (!saved.saved) {
     logEvent('⚠️', 'task_warn', `${uid} could not be saved: ${saved.reason}`, { uid, level: 'warn' });
     return;

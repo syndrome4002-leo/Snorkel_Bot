@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { addKnownUid } from '@/lib/tasks';
 import TaskLogsDrawer from './TaskLogsDrawer';
 import StaticCheckDrawer from './StaticCheckDrawer';
 
@@ -24,8 +25,6 @@ function TaskRow({ task, showMachine, onOpenLogs, onOpenCheck, onDelete }) {
   const [open, setOpen] = useState(false);
   const status = task.task_status || '—';
   const check = task.static_check_result || null;
-  // Tasks written before this field existed have neither true nor false, and
-  // guessing would be worse than saying nothing.
 
   return (
     <>
@@ -90,7 +89,7 @@ function TaskRow({ task, showMachine, onOpenLogs, onOpenCheck, onDelete }) {
       </tr>
       {open ? (
         <tr className="details">
-          <td colSpan={showMachine ? 8 : 7}>
+          <td colSpan={showMachine ? 7 : 6}>
             {/* The task's own info, and nothing else — every other field is
                 already a column. */}
             <pre>{task.initial_infos || '(no infos captured)'}</pre>
@@ -103,6 +102,28 @@ function TaskRow({ task, showMachine, onOpenLogs, onOpenCheck, onDelete }) {
 
 export default function TaskTable({ tasks, note, onRefresh, showMachine = false, onDelete }) {
   const [filter, setFilter] = useState('');
+  const [newUid, setNewUid] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
+
+  const addUid = useCallback(
+    async (event) => {
+      event.preventDefault();
+      setAddError('');
+      setAdding(true);
+      try {
+        await addKnownUid(newUid);
+        setNewUid('');
+      } catch (err) {
+        // Shown rather than thrown: the usual cause is a UID already on the
+        // list, which is worth saying plainly and is not an error to chase.
+        setAddError(String(err?.message || err));
+      } finally {
+        setAdding(false);
+      }
+    },
+    [newUid]
+  );
   const [logsTask, setLogsTask] = useState(null);
   const [checkTask, setCheckTask] = useState(null);
 
@@ -138,6 +159,26 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false,
         </div>
       </div>
 
+      {/*
+        Adding a UID by hand records one the bot must leave alone: a submission
+        done before the bot existed, or by somebody else on this account. It is
+        the same list either way — the bot skips any UID already in it — so this
+        sits with the table rather than in a drawer of its own.
+      */}
+      <form className="row add-uid" onSubmit={addUid}>
+        <input
+          type="text"
+          placeholder="add a UID the bot should skip…"
+          value={newUid}
+          onChange={(event) => setNewUid(event.target.value)}
+          disabled={adding}
+        />
+        <button type="submit" disabled={adding || !newUid.trim()}>
+          {adding ? 'Adding…' : 'Add UID'}
+        </button>
+      </form>
+      {addError ? <p className="muted error">{addError}</p> : null}
+
       <p className="muted">{note}</p>
 
       <div className="table-wrap">
@@ -148,7 +189,6 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false,
               {showMachine ? <th>Machine</th> : null}
               <th>File</th>
               <th>Status</th>
-              <th>Kind</th>
               <th>Uploaded</th>
               <th>Updated</th>
               <th />
@@ -168,7 +208,7 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false,
               ))
             ) : (
               <tr>
-                <td colSpan={showMachine ? 8 : 7} className="muted">
+                <td colSpan={showMachine ? 7 : 6} className="muted">
                   {tasks.length ? 'Nothing matches that filter.' : 'No tasks yet.'}
                 </td>
               </tr>

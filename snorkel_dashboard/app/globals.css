@@ -1107,3 +1107,11 @@ button.machine:hover { background: var(--hover); }
 .score-row.good .score-items { color: var(--ok); }
 .score-row.warn .score-items { color: var(--warn); }
 .score-row.bad .score-items { color: var(--bad); }
+
+/*
+ * Adding a UID by hand. Sits directly under the table's header row, so it reads
+ * as part of the same list rather than a separate tool: the UIDs the bot knows
+ * about and the UIDs you tell it about are the same list.
+ */
+.add-uid { gap: 8px; margin: 4px 0 8px; }
+.add-uid input { flex: 1 1 auto; min-width: 0; font-family: var(--mono, monospace); }

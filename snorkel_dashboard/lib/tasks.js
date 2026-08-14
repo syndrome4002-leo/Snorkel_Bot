@@ -6,7 +6,18 @@
  * refresh button and no request to the server.
  */
 
-import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import { firestore } from './firebase';
 
 export const TASKS_COLLECTION = process.env.NEXT_PUBLIC_FIREBASE_COLLECTION || 'Tasks';
@@ -83,4 +94,42 @@ export function watchTasks(machine, mine, onUpdate, onError, max = 200) {
  */
 export function deleteTask(uid) {
   return deleteDoc(doc(firestore(), TASKS_COLLECTION, String(uid)));
+}
+
+/** Set on records added here rather than downloaded, so the two can be told apart. */
+export const ADDED_BY_HAND = 'added by hand';
+
+/**
+ * Records a UID the bot should leave alone.
+ *
+ * For submissions done before the bot existed, or by somebody else on this
+ * account. The bot skips any UID already in this collection, so a row here is
+ * enough — it does not need to look like a real task, and deliberately does
+ * not: no file, no Dropbox path, nothing for the worker to pick up.
+ *
+ * Refuses rather than overwrites when the UID is already known. Writing over a
+ * real task's record with a bare one would lose its answers and its history,
+ * and "add" is not a word anybody expects to mean that.
+ */
+export async function addKnownUid(uid, { machine = '' } = {}) {
+  const id = String(uid || '').trim();
+  if (!id) throw new Error('Enter a UID.');
+
+  const ref = doc(firestore(), TASKS_COLLECTION, id);
+  const existing = await getDoc(ref);
+  if (existing.exists()) {
+    const status = existing.data()?.task_status;
+    throw new Error(`${id} is already on the list${status ? ` (${status})` : ''}.`);
+  }
+
+  const now = new Date().toISOString();
+  await setDoc(ref, {
+    UID: id,
+    task_status: ADDED_BY_HAND,
+    added_by_hand: true,
+    ...(machine ? { machine_id: machine } : {}),
+    created_at: now,
+    updated_at: now,
+  });
+  return id;
 }
