@@ -30,6 +30,15 @@ const FIELDS = [
   },
   {
     group: 'Auto-start',
+    key: 'start_every_min',
+    label: 'Try for a new task every (minutes)',
+    help:
+      'Asks for a new task on a timer, whatever else has happened. Without it, a task is only started when something changes on our side — the revise count arriving, or a wait expiring — so a stretch where the platform has work and this machine has room can pass with nothing asking. Every other guard still applies: the revise limit, the daily cap, a build already running. Empty or 0 leaves it off.',
+    min: 0,
+    placeholder: 'off',
+  },
+  {
+    group: 'Auto-start',
     key: 'check_revise_every_min',
     label: 'Check revise list in (minutes)',
     help: 'How often the extension reloads the home page and re-counts the tasks awaiting revision. Defaults to 5.',

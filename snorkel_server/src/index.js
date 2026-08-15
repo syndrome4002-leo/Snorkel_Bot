@@ -620,6 +620,9 @@ let lastReviseCount = null;
 let nextAutoTryAt = null;
 /** When the upload sweep next runs, and what it found the last time it did. */
 let nextSubmitCheckAt = null;
+/** The periodic new-task attempt, when one is configured. */
+let startTimer = null;
+let nextStartSweepAt = null;
 let lastSubmitScan = null;
 /** Refreshed alongside the ticker so the countdown can say why it will not run. */
 let inBuildUid = null;
@@ -2291,6 +2294,45 @@ async function adoptTakenTask(taken, pageUid) {
   }
 }
 
+/**
+ * Tries for a new task on its own timer, whatever else has or has not happened.
+ *
+ * Everything else that starts a task is a reaction: a revise count arriving, a
+ * backoff expiring. Both are real signals, but between them there are stretches
+ * where the platform has work, this machine has room, and nothing asks —
+ * because nothing changed on our side. This is the one that just asks anyway.
+ *
+ * maybeAutoStart does all the deciding, so this cannot start anything it should
+ * not: the revise limit, the daily cap, a build in flight and an outstanding
+ * backoff are all still checked. It only ensures the question gets asked.
+ *
+ * Empty or 0 turns it off, leaving the reactive paths as they were.
+ */
+function scheduleStartSweep() {
+  const every = minutes(settings.start_every_min, 0);
+  if (startTimer) clearInterval(startTimer);
+  startTimer = null;
+  nextStartSweepAt = null;
+  if (!every) return;
+
+  const stamp = () => {
+    nextStartSweepAt = new Date(Date.now() + every * 60000).toISOString();
+  };
+  stamp();
+
+  startTimer = setInterval(() => {
+    stamp();
+    updateTicker();
+    // The last count we were told. Null means the extension has not reported
+    // yet, and maybeAutoStart treats an unknown list as "do not guess".
+    if (lastReviseCount === null) return;
+    maybeAutoStart(lastReviseCount).catch((err) =>
+      console.warn('[server] start sweep failed:', err.message)
+    );
+  }, every * 60000);
+  startTimer.unref?.();
+}
+
 function scheduleSubmitSweep() {
   const every = minutes(settings.submit_check_every_min, DEFAULT_SUBMIT_EVERY);
   if (submitTimer) clearInterval(submitTimer);
@@ -2373,6 +2415,12 @@ watchSettings((value) => {
       `look for tasks to upload every ${minutes(settings.submit_check_every_min, DEFAULT_SUBMIT_EVERY)} min`);
     scheduleSubmitSweep();
   }
+
+  if (before.start_every_min !== settings.start_every_min) {
+    const every = minutes(settings.start_every_min, 0);
+    logEvent('⚙️', 'settings', every ? `try for a new task every ${every} min` : 'periodic new-task tries off');
+    scheduleStartSweep();
+  }
   updateTicker();
 });
 
@@ -2435,6 +2483,7 @@ hub.onEvent((event) => {
 
 scheduleAutoTry();
 scheduleSubmitSweep();
+scheduleStartSweep();
 
 watchCommands(async (command, report) => {
   /*
