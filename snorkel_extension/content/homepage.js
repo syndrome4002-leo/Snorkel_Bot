@@ -320,6 +320,47 @@
     }
 
     SnorkelBot.click(button);
+
+    /*
+     * "All done! / No assignments remaining."
+     *
+     * The platform answers the click with a modal instead of a page when it has
+     * nothing to hand out. Left alone it stays open: the run never reaches the
+     * review page, never finishes, and the next attempt finds the previous one
+     * still in flight and reports "a task is already running" — which was never
+     * true and sent anybody reading the log looking for the wrong thing.
+     *
+     * So it is recognised, dismissed, and reported as what it is. Short wait:
+     * the modal is rendered by the click itself, and a real hand-out navigates
+     * instead, so anything longer would delay every successful start.
+     */
+    const modal = await SnorkelBot.waitFor(
+      () => {
+        const box =
+          document.querySelector('[data-testid="dialog-content"][data-state="open"]') ||
+          document.querySelector('[role="alertdialog"][data-state="open"]');
+        if (!box) return null;
+        return /no assignments remaining|all done/i.test(SnorkelBot.normText(text(box))) ? box : null;
+      },
+      { timeout: msg.modalTimeout || 4000, label: 'the "no assignments" dialog' }
+    ).catch(() => null);
+
+    if (modal) {
+      // OK by its label, not its position: the same dialog also carries a close
+      // button in the corner, and clicking that leaves the same state behind.
+      const ok =
+        buttonBy(modal, /^ok$/i) ||
+        modal.querySelector('[data-testid="dialog-close-button"]');
+      if (ok) SnorkelBot.click(ok);
+
+      const failure = new Error(
+        'Snorkel has no assignments remaining — it answered with "All done!" instead of ' +
+          'handing out a task. Dismissed; there is nothing to start right now.'
+      );
+      failure.code = 'NO_ASSIGNMENTS';
+      throw failure;
+    }
+
     return { clicked: true, buttonLabel: SnorkelBot.normText(text(button)) };
   });
 

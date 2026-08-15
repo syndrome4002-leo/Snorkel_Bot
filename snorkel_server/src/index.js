@@ -916,7 +916,15 @@ async function maybeAutoStart(reviseCount) {
   } catch (err) {
     // Both of these are ordinary outcomes, not faults: the site may hand out
     // nothing, and a task may already be in build.
-    if (err.code === 'START_UNAVAILABLE') {
+    if (err.code === 'NO_ASSIGNMENTS') {
+      /*
+       * "All done! — No assignments remaining." The platform answers the click
+       * with a modal rather than a page. The extension dismisses it; there is
+       * simply no work, which is worth saying in those words rather than as a
+       * failure.
+       */
+      backOff('Snorkel has no assignments remaining');
+    } else if (err.code === 'START_UNAVAILABLE') {
       backOff('Snorkel handed out no task this time');
     } else if (err.code === 'TASK_IN_BUILD') {
       // Not a failed attempt: it will clear when the build finishes, and the
