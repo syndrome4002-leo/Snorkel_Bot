@@ -10,7 +10,7 @@
     "dev": "node --watch src/index.js",
     "check": "node scripts/check.mjs",
     "once": "node scripts/run-one.mjs",
-    "test": "node test/checksigns.test.mjs && node test/answers-narration.test.mjs && node test/settings-merge.test.mjs && node test/out-of-usage.test.mjs && node test/retry-backoff.test.mjs && node test/verdict-answers.test.mjs && node test/resume-download.test.mjs && node test/log-routing.test.mjs && node test/answer-gaps.test.mjs && node test/one-session.test.mjs && node test/editor.test.mjs && node test/one-prompt.test.mjs",
+    "test": "node test/checksigns.test.mjs && node test/answers-narration.test.mjs && node test/settings-merge.test.mjs && node test/out-of-usage.test.mjs && node test/retry-backoff.test.mjs && node test/verdict-answers.test.mjs && node test/resume-download.test.mjs && node test/log-routing.test.mjs && node test/answer-gaps.test.mjs && node test/one-session.test.mjs && node test/editor.test.mjs && node test/one-prompt.test.mjs && node test/lost-files.test.mjs",
     "usage": "node scripts/usage-report.mjs",
     "drop:lessons": "node scripts/drop-check-lessons.mjs"
   },

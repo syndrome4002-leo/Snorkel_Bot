@@ -17,6 +17,7 @@ import { deleteFile } from './dropbox.js';
 import { machineId } from './machine.js';
 import {
   TASK_STATUS_BUILD,
+  TASK_STATUS_LOST,
   TASK_STATUS_WORKING,
   WORKABLE,
   RESTORABLE,
@@ -26,6 +27,7 @@ import {
   findLostUploads,
   firebaseStatus,
   initFirebase,
+  patchTask,
   releaseTask,
 } from './firebase.js';
 import {
@@ -277,6 +279,28 @@ async function startTask(task) {
         },
       });
     } catch (err) {
+      /*
+       * A task with no zip in Dropbox and no folder on disk cannot be built —
+       * not now and not in five minutes. Putting it back would claim it, call
+       * Dropbox, fail and log again every few minutes for as long as the worker
+       * runs, which is what nine leftover records were doing.
+       *
+       * The file would have to come back from the platform, and only the
+       * extension can fetch it. So it is parked with a status that says why, and
+       * a person decides whether to start it again or throw it away.
+       */
+      if (err.code === 'DROPBOX_NOT_FOUND') {
+        log('🗑️', 'task_lost', `${uid}: its zip is gone from Dropbox and there is no folder here — not retrying`, {
+          level: 'warn',
+          uid,
+        });
+        await patchTask(uid, {
+          task_status: TASK_STATUS_LOST,
+          last_error: err.message,
+        }).catch((e) => console.error(`[worker] could not park ${uid}:`, e.message));
+        return;
+      }
+
       log('❌', 'task_failed', `${uid}: ${err.message}`, { level: 'error', uid });
       // Put the task back first — it is not at fault and must stay claimable —
       // then stop taking anything until there is usage to work with.

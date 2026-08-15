@@ -34,6 +34,16 @@ export const TASK_STATUS_STATIC_PASS = 'static checks pass';
  * corrections to make, no zip to build and no form to fill in, so the run stops
  * at the answer and the task waits for a person.
  */
+/**
+ * Its zip is not in Dropbox and its folder is not on this disk.
+ *
+ * There is nothing left to build from. Retrying costs a claim, a Dropbox call
+ * and a log line every few minutes, forever, and cannot ever succeed — the file
+ * would have to come back from the platform, which only the extension can do.
+ * So the task stops here and says so once.
+ */
+export const TASK_STATUS_LOST = 'files lost';
+
 export const TASK_STATUS_INVALID = 'invalid';
 export const TASK_STATUS_VALID_AS_IS = 'valid-as-is';
 
