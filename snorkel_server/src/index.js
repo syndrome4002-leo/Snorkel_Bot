@@ -865,7 +865,13 @@ async function maybeAutoStart(reviseCount) {
   }
 
   if (currentRun()) {
-    logEvent('⏸️', 'auto_skip', 'a task is already running');
+    /*
+     * Console only. A timer asking every minute while a run is in flight would
+     * otherwise write the same line into the task log until the run ends, and
+     * "a task is already running" is not news — the run that is already running
+     * announced itself.
+     */
+    console.log('[server] a task is already running — not starting another');
     return;
   }
 

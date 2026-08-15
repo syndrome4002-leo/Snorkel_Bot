@@ -144,6 +144,33 @@
     assertOnReviewPage();
     return SnorkelBot.waitFor(
       () => {
+        /*
+         * "All done! — No assignments remaining."
+         *
+         * Checked here as well as at the click, because the dialog does not
+         * always arrive on the page the click was made from: it has been seen
+         * after the navigation, on a review page that then never renders. Left
+         * to the timeout that is ninety wasted seconds followed by a message
+         * about missing fields, which describes the symptom and hides the cause.
+         *
+         * Returned rather than thrown: waitFor catches whatever the predicate
+         * throws and keeps polling to its deadline, so a throw here would be
+         * swallowed and cost the ninety seconds it is meant to save. A truthy
+         * return is the only thing that ends the wait early.
+         */
+        const box =
+          document.querySelector('[data-testid="dialog-content"][data-state="open"]') ||
+          document.querySelector('[role="alertdialog"][data-state="open"]');
+        if (box && /no assignments remaining|all done/i.test(SnorkelBot.normText(SnorkelBot.text(box)))) {
+          const ok =
+            Array.from(box.querySelectorAll('button')).find((b) =>
+              /^ok$/i.test(SnorkelBot.normText(SnorkelBot.text(b)))
+            ) || box.querySelector('[data-testid="dialog-close-button"]');
+          if (ok) SnorkelBot.click(ok);
+
+          return { noAssignments: true };
+        }
+
         const uid = findUid();
         const panel = readLeftPanel();
         const field = findDownloadField();
@@ -154,7 +181,16 @@
         timeout: msg.timeout || 120000,
         label: 'the Sentinel review page to finish rendering (UID + left panel + download field)',
       }
-    );
+    ).then((result) => {
+      if (result && result.noAssignments) {
+        const failure = new Error(
+          'Snorkel has no assignments remaining — it showed "All done!" instead of a task. Dismissed.'
+        );
+        failure.code = 'NO_ASSIGNMENTS';
+        throw failure;
+      }
+      return result;
+    });
   });
 
   SnorkelBot.on('SCRAPE', async () => {
