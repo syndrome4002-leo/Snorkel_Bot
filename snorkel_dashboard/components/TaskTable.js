@@ -100,7 +100,7 @@ function TaskRow({ task, showMachine, onOpenLogs, onOpenCheck, onDelete }) {
   );
 }
 
-export default function TaskTable({ tasks, note, onRefresh, showMachine = false, onDelete }) {
+export default function TaskTable({ tasks, note, onRefresh, showMachine = false, onDelete, machine = '' }) {
   const [filter, setFilter] = useState('');
   const [newUid, setNewUid] = useState('');
   const [adding, setAdding] = useState(false);
@@ -112,7 +112,7 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false,
       setAddError('');
       setAdding(true);
       try {
-        await addKnownUid(newUid);
+        await addKnownUid(newUid, { machine });
         setNewUid('');
       } catch (err) {
         // Shown rather than thrown: the usual cause is a UID already on the
@@ -122,7 +122,7 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false,
         setAdding(false);
       }
     },
-    [newUid]
+    [newUid, machine]
   );
   const [logsTask, setLogsTask] = useState(null);
   const [checkTask, setCheckTask] = useState(null);
@@ -168,12 +168,14 @@ export default function TaskTable({ tasks, note, onRefresh, showMachine = false,
       <form className="row add-uid" onSubmit={addUid}>
         <input
           type="text"
-          placeholder="add a UID the bot should skip…"
+          placeholder={
+            machine ? 'add a UID the bot should skip…' : 'add a machine first — UIDs are filed under one'
+          }
           value={newUid}
           onChange={(event) => setNewUid(event.target.value)}
-          disabled={adding}
+          disabled={adding || !machine}
         />
-        <button type="submit" disabled={adding || !newUid.trim()}>
+        <button type="submit" disabled={adding || !newUid.trim() || !machine}>
           {adding ? 'Adding…' : 'Add UID'}
         </button>
       </form>

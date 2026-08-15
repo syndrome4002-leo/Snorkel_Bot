@@ -216,7 +216,16 @@ export default function Page() {
           column, the table needs the width. */}
       <div className={`main-area${selected ? ' workspace' : ''}`}>
         {selected ? <SystemLogs machine={selected} /> : null}
-        <TaskTable tasks={tasks} note={tasksNote} showMachine={!selected} onDelete={remove_task} />
+        {/* `machine` is what a hand-added UID is filed under. The list is
+            scoped by machine, so a row without one would be saved and then
+            invisible — which is exactly what happened the first time. */}
+        <TaskTable
+          tasks={tasks}
+          note={tasksNote}
+          showMachine={!selected}
+          onDelete={remove_task}
+          machine={selected || machines[0] || ''}
+        />
       </div>
 
       {settingsOpen && selected ? (
