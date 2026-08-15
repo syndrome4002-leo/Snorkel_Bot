@@ -330,9 +330,13 @@
      * still in flight and reports "a task is already running" — which was never
      * true and sent anybody reading the log looking for the wrong thing.
      *
-     * So it is recognised, dismissed, and reported as what it is. Short wait:
-     * the modal is rendered by the click itself, and a real hand-out navigates
-     * instead, so anything longer would delay every successful start.
+     * So it is recognised, dismissed, and reported as what it is.
+     *
+     * Ten seconds, which is also ten seconds added to every successful start —
+     * the wait cannot end early, because a hand-out navigates and this content
+     * script is torn down with the page rather than telling anyone. That is the
+     * trade: ten seconds on a start against ninety on the WAIT_READY timeout
+     * that follows a modal nobody closed.
      */
     const modal = await SnorkelBot.waitFor(
       () => {
@@ -342,7 +346,7 @@
         if (!box) return null;
         return /no assignments remaining|all done/i.test(SnorkelBot.normText(text(box))) ? box : null;
       },
-      { timeout: msg.modalTimeout || 4000, label: 'the "no assignments" dialog' }
+      { timeout: msg.modalTimeout || 10000, interval: 200, label: 'the "no assignments" dialog' }
     ).catch(() => null);
 
     if (modal) {
