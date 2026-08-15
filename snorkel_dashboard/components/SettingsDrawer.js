@@ -22,9 +22,9 @@ const FIELDS = [
   {
     group: 'Auto-start',
     key: 'try_new_task_every_min',
-    label: 'Wait after a failed start (minutes)',
+    label: 'Try a new task again after (minutes)',
     help:
-      'A task is started as soon as the revise list is under the limit above — there is no timer for it. This is only how long to wait after an attempt that did not work, because Snorkel handing out nothing is not something that changes second to second. Defaults to 5.',
+      'How long to wait before trying again when a start attempt did not work. There is no timer for the normal case — a task is started as soon as the revise list is under the limit above. This wait exists because Snorkel handing out nothing is not something that changes second to second. It is cut short the moment the revise count drops below the limit, since that is usually the reason it handed out nothing, so the number here is an upper bound rather than a fixed delay. Defaults to 5.',
     min: 1,
     placeholder: '5',
   },
@@ -124,7 +124,7 @@ const FIELDS = [
     group: 'Submitting',
     key: 'daily_submit_limit',
     label: 'New tasks to submit per day',
-    help: 'Counts new tasks only, not revisions. From midnight, across every machine. At the limit a task is still built, uploaded and checked, and the form filled in for you to submit by hand. Leave it empty for no limit; 0 stops new tasks altogether, and revisions carry on either way.',
+    help: 'From midnight, across every machine. At the limit a task is still built, uploaded and checked, and the form filled in for you to submit by hand. Leave it empty for no limit; 0 stops new tasks altogether.',
     min: 0,
     placeholder: 'no limit',
   },
@@ -135,30 +135,6 @@ const FIELDS = [
     label: 'Submit automatically',
     help: 'Clicks Submit after filling the form. Off means the bot fills everything in and stops, leaving the last click to you. On means a task can reach a reviewer with nobody having read it.',
     fallback: false,
-  },
-  {
-    group: 'Taking on other tasks',
-    key: 'adopt_unknown',
-    type: 'choice',
-    label: 'Tasks in the revise list this system never submitted',
-    help:
-      'Submissions made by hand under the same owner, that have come back for revision. Taking one on downloads it and builds it like a new task, but it goes back through its own "Revise task" row and gets no new sheet row. Only ever tasks whose owner matches the Owner ID above — a row with no owner on it is left alone.',
-    options: [
-      { value: 'off', label: 'Leave them alone' },
-      { value: 'all', label: 'Take on any of them' },
-      { value: 'listed', label: 'Only the UIDs listed below' },
-    ],
-    placeholder: 'off',
-  },
-  {
-    group: 'Taking on other tasks',
-    key: 'adopt_uids',
-    type: 'text',
-    label: 'UIDs to take on',
-    help:
-      'One per line, or separated by commas. Only used when "Only the UIDs listed below" is chosen; anything not on the list is left alone.',
-    multiline: true,
-    placeholder: '0cb4eb47-ea97-4ab8-a541-c4828399407b',
   },
   {
     group: 'Worker',

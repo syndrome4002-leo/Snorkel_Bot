@@ -1314,7 +1314,35 @@ async function applyRevisionReport({ uids = [], rows = [], checked_at, next_chec
     // change that schedule, so an absent value keeps the one already known.
     next_check_at: next_check_at || lastRevisionReport?.next_check_at || null,
   };
+  const previous = lastReviseCount;
   lastReviseCount = uids.length;
+
+  /*
+   * A backoff outlives its reason, and this is the reason.
+   *
+   * Snorkel hands out nothing when too many of this account's submissions are
+   * awaiting review, so "handed out no task" and "the revise list is full" are
+   * usually the same fact. Backing off for five minutes is right while that
+   * stays true and wrong the moment it stops: the count dropping below the
+   * limit is exactly the event that changes the answer, and waiting out a timer
+   * after it is waiting for nothing.
+   *
+   * So a drop below the limit clears the wait. Anything else keeps it — a
+   * failure with the list already under its limit had some other cause, and
+   * asking again immediately would get the same answer.
+   */
+  const limit = Number(settings.revise_limit);
+  const roomNow = Number.isFinite(limit) && limit > 0 && uids.length < limit;
+  const wasFull = previous === null || previous >= limit;
+  if (nextAutoTryAt && roomNow && wasFull) {
+    logEvent(
+      '▶️',
+      'auto_unblocked',
+      `${uids.length} awaiting revision, below the limit of ${limit} — not waiting out the backoff`
+    );
+    nextAutoTryAt = null;
+  }
+
   updateTicker();
   logEvent('🔍', 'revision_check', `${uids.length} task(s) awaiting revision`);
 
