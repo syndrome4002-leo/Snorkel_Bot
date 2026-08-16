@@ -919,8 +919,19 @@ async function maybeAutoStart(reviseCount) {
       // what holds the next one off now.
       nextAutoTryAt = null;
       logEvent('✅', 'auto_done', `started ${result.snorkel.task.UID}`, { uid: result.snorkel.task.UID });
+    } else if (result.snorkel.skipped) {
+      /*
+       * The platform handed out a task this account has already done. Not a
+       * fault and not a write failure — the check working — but the two shared
+       * a branch, and a skip carries no `warning`, so the log said "undefined".
+       *
+       * Still a wait: asking again straight away tends to be offered the same
+       * one, and the download has already been spent on it.
+       */
+      logEvent('⏭️', 'task_known', result.snorkel.reason, { uid: result.snorkel.task?.UID });
+      backOff('Snorkel handed out a task that is already in the database');
     } else {
-      backOff(result.snorkel.warning);
+      backOff(result.snorkel.warning || 'the task could not be saved');
     }
   } catch (err) {
     // Both of these are ordinary outcomes, not faults: the site may hand out
@@ -947,9 +958,12 @@ async function maybeAutoStart(reviseCount) {
 
 /** Waits before trying again, and says how long for. */
 function backOff(why, { level = 'warn' } = {}) {
+  // A caller with nothing to say still gets a readable line rather than the
+  // word "undefined", which says nothing and looks like a crash.
+  const reason = String(why || '').trim() || 'the attempt did not produce a task';
   const wait = minutes(settings.try_new_task_every_min, DEFAULT_TRY_EVERY);
   nextAutoTryAt = new Date(Date.now() + wait * 60000).toISOString();
-  logEvent('🚫', 'auto_unavailable', `${why} — trying again in ${wait} min`, { level });
+  logEvent('🚫', 'auto_unavailable', `${reason} — trying again in ${wait} min`, { level });
   updateTicker();
 }
 
